@@ -4,11 +4,11 @@ package com.thunderhead.core;
  * Created by Mike on 7/3/16.
  */
 public interface DataManager {
-    State getKnownState();
+    StateImpl getKnownState();
 
-    Stamp getLocalStamp();
+    StampImpl getLocalStamp();
 
-    void mergeWith(State other) throws TdException;
+    void mergeWith(StateImpl other) throws TdException;
 
     // TODO: what does data manager merging look like?
     // Think of what the fastest solution would be.

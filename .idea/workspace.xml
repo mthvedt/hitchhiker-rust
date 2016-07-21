@@ -2,21 +2,33 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="a2675935-e7ef-405a-ab75-1976351e4727" name="Default" comment="">
-      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/AbstractDbObject.java" />
-      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/DataManager.java" />
-      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/DataReactor.java" />
-      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/DataResolver.java" />
-      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/DatastoreFactory.java" />
-      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/DbCreationContext.java" />
-      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/DbCreator.java" />
-      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/DbObject.java" />
-      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/TreeRepo.java" />
-      <change type="MOVED" beforePath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/ByteSource.java" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/ByteString.java" />
-      <change type="MOVED" beforePath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/ByteString.java" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/AbstractByteString.java" />
+      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/KvStore.java" />
+      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/KvTransaction.java" />
+      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/StampImpl.java" />
+      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/StateImpl.java" />
+      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/backend/tx/TxDataManager.java" />
+      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/backend/tx/TxHistoryStore.java" />
+      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/dist/ClusterView.java" />
+      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/dist/LocalJob.java" />
+      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/dist/LocalReactor.java" />
+      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/dist/MasterJob.java" />
+      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/dist/MasterReactor.java" />
+      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/manifold/LocalManifold.java" />
+      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/manifold/WideManifold.java" />
+      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/tx/DistTxManager.java" />
+      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/tx/LocalTx.java" />
+      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/tx/LocalTxManager.java" />
+      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/tx/TxDatastore.java" />
+      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/tx/TxHistory.java" />
+      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/tx/TxSnapshot.java" />
+      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/tx/TxStamp.java" />
+      <change type="MOVED" beforePath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/DbObject.java" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/Datum.java" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/.idea/workspace.xml" afterPath="$PROJECT_DIR$/.idea/workspace.xml" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/DataManager.java" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/DataManager.java" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/Stamp.java" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/Stamp.java" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/State.java" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/State.java" />
+      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/TreeRepo.java" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/TreeRepo.java" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/ValueSink.java" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/ValueSink.java" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/mock/KVStore.java" afterPath="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/mock/KVStore.java" />
     </list>
     <ignored path="thunderhead.iws" />
     <ignored path=".idea/workspace.xml" />
@@ -38,18 +50,28 @@
   </component>
   <component name="FileEditorManager">
     <leaf SIDE_TABS_SIZE_LIMIT_KEY="300">
-      <file leaf-file-name="ValueSink.java" pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/ValueSink.java">
+      <file leaf-file-name="TxDatastore.java" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/tx/TxDatastore.java">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="105">
-              <caret line="7" column="0" selection-start-line="7" selection-start-column="0" selection-end-line="7" selection-end-column="0" />
+            <state relative-caret-position="90">
+              <caret line="6" column="22" selection-start-line="6" selection-start-column="22" selection-end-line="6" selection-end-column="22" />
               <folding />
             </state>
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="DataReactor.java" pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/DataReactor.java">
+      <file leaf-file-name="TxSnapshot.java" pinned="false" current-in-tab="true">
+        <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/tx/TxSnapshot.java">
+          <provider selected="true" editor-type-id="text-editor">
+            <state relative-caret-position="150">
+              <caret line="10" column="56" selection-start-line="10" selection-start-column="56" selection-end-line="10" selection-end-column="56" />
+              <folding />
+            </state>
+          </provider>
+        </entry>
+      </file>
+      <file leaf-file-name="TxHistory.java" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/tx/TxHistory.java">
           <provider selected="true" editor-type-id="text-editor">
             <state relative-caret-position="75">
               <caret line="5" column="17" selection-start-line="5" selection-start-column="17" selection-end-line="5" selection-end-column="17" />
@@ -58,81 +80,71 @@
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="DataManager.java" pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/DataManager.java">
-          <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="255">
-              <caret line="17" column="54" selection-start-line="17" selection-start-column="54" selection-end-line="17" selection-end-column="54" />
-              <folding />
-            </state>
-          </provider>
-        </entry>
-      </file>
-      <file leaf-file-name="DatastoreFactory.java" pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/DatastoreFactory.java">
+      <file leaf-file-name="LocalTxManager.java" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/tx/LocalTxManager.java">
           <provider selected="true" editor-type-id="text-editor">
             <state relative-caret-position="75">
-              <caret line="5" column="29" selection-start-line="5" selection-start-column="13" selection-end-line="5" selection-end-column="29" />
+              <caret line="5" column="17" selection-start-line="5" selection-start-column="17" selection-end-line="5" selection-end-column="17" />
               <folding />
             </state>
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="State.java" pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/State.java">
+      <file leaf-file-name="LocalTx.java" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/tx/LocalTx.java">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="135">
-              <caret line="9" column="0" selection-start-line="9" selection-start-column="0" selection-end-line="9" selection-end-column="0" />
+            <state relative-caret-position="75">
+              <caret line="5" column="17" selection-start-line="5" selection-start-column="17" selection-end-line="5" selection-end-column="17" />
               <folding />
             </state>
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="DbCreationContext.java" pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/DbCreationContext.java">
+      <file leaf-file-name="TxStamp.java" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/tx/TxStamp.java">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="255">
-              <caret line="17" column="17" selection-start-line="17" selection-start-column="17" selection-end-line="17" selection-end-column="17" />
+            <state relative-caret-position="75">
+              <caret line="5" column="24" selection-start-line="5" selection-start-column="17" selection-end-line="5" selection-end-column="24" />
               <folding />
             </state>
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="DbCreator.java" pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/DbCreator.java">
+      <file leaf-file-name="LocalJob.java" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/dist/LocalJob.java">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="90">
-              <caret line="6" column="44" selection-start-line="6" selection-start-column="44" selection-end-line="6" selection-end-column="44" />
+            <state relative-caret-position="75">
+              <caret line="5" column="17" selection-start-line="5" selection-start-column="17" selection-end-line="5" selection-end-column="17" />
               <folding />
             </state>
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="KVStore.java" pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/mock/KVStore.java">
+      <file leaf-file-name="LocalReactor.java" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/dist/LocalReactor.java">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="120">
-              <caret line="10" column="64" selection-start-line="10" selection-start-column="64" selection-end-line="10" selection-end-column="64" />
+            <state relative-caret-position="75">
+              <caret line="5" column="17" selection-start-line="5" selection-start-column="17" selection-end-line="5" selection-end-column="17" />
               <folding />
             </state>
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="TreeRepo.java" pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/TreeRepo.java">
+      <file leaf-file-name="MasterJob.java" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/dist/MasterJob.java">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="90">
-              <caret line="6" column="51" selection-start-line="6" selection-start-column="51" selection-end-line="6" selection-end-column="51" />
+            <state relative-caret-position="75">
+              <caret line="5" column="17" selection-start-line="5" selection-start-column="17" selection-end-line="5" selection-end-column="17" />
               <folding />
             </state>
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="Stamp.java" pinned="false" current-in-tab="true">
-        <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/Stamp.java">
+      <file leaf-file-name="MasterReactor.java" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/dist/MasterReactor.java">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="195">
-              <caret line="13" column="5" selection-start-line="13" selection-start-column="5" selection-end-line="13" selection-end-column="5" />
+            <state relative-caret-position="75">
+              <caret line="5" column="17" selection-start-line="5" selection-start-column="17" selection-end-line="5" selection-end-column="17" />
               <folding />
             </state>
           </provider>
@@ -143,8 +155,8 @@
   <component name="FileTemplateManagerImpl">
     <option name="RECENT_TEMPLATES">
       <list>
-        <option value="Interface" />
         <option value="Class" />
+        <option value="Interface" />
       </list>
     </option>
   </component>
@@ -166,7 +178,6 @@
         <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/mock/KVStore.java" />
         <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/ValueSink.java" />
         <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/State.java" />
-        <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/Stamp.java" />
         <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/AbstractAllocatedByteString.java" />
         <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/ByteString.java" />
         <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/DbObject.java" />
@@ -179,6 +190,32 @@
         <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/DatabaseContext.java" />
         <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/DbCreator.java" />
         <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/DbCreationContext.java" />
+        <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/StampImpl.java" />
+        <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/StateImpl.java" />
+        <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/Stamp.java" />
+        <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/KvStore.java" />
+        <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/KvSnapshot.java" />
+        <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/KvTransaction.java" />
+        <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/DistributedTransactionManager.java" />
+        <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/dist/DistributedTransactionManager.java" />
+        <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/dist/LocalTransactionManager.java" />
+        <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/dist/LocalJob.java" />
+        <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/dist/TxHistory.java" />
+        <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/dist/LocalTxManager.java" />
+        <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/manifold/Manifold.java" />
+        <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/manifold/WideManifold.java" />
+        <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/manifold/LocalManifold.java" />
+        <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/dist/TxDatastore.java" />
+        <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/dist/TxDataManager.java" />
+        <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/backend/dist/TxDataManager.java" />
+        <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/tx/TxStamp.java" />
+        <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/dist/MasterReactor.java" />
+        <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/dist/LocalReactor.java" />
+        <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/backend/tx/TxHistoryStore.java" />
+        <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/backend/tx/TxDataManager.java" />
+        <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/tx/TxDatastore.java" />
+        <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/tx/Snapshot.java" />
+        <option value="$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/tx/TxSnapshot.java" />
       </list>
     </option>
   </component>
@@ -200,7 +237,7 @@
     <OptionsSetting value="true" id="Update" />
     <OptionsSetting value="true" id="Status" />
     <OptionsSetting value="true" id="Edit" />
-    <ConfirmationsSetting value="0" id="Add" />
+    <ConfirmationsSetting value="2" id="Add" />
     <ConfirmationsSetting value="0" id="Remove" />
   </component>
   <component name="ProjectView">
@@ -370,6 +407,158 @@
             </PATH_ELEMENT>
             <PATH_ELEMENT>
               <option name="myItemId" value="core" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+          </PATH>
+          <PATH>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="thunderhead" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.ProjectViewProjectNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="thunderhead" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="mono" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="src" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="main" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="scala" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="thunderhead" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="core" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="tx" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+          </PATH>
+          <PATH>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="thunderhead" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.ProjectViewProjectNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="thunderhead" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="mono" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="src" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="main" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="scala" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="thunderhead" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="core" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="manifold" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+          </PATH>
+          <PATH>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="thunderhead" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.ProjectViewProjectNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="thunderhead" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="mono" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="src" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="main" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="scala" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="thunderhead" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="core" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="dist" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+          </PATH>
+          <PATH>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="thunderhead" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.ProjectViewProjectNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="thunderhead" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="mono" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="src" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="main" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="scala" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="thunderhead" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="core" />
+              <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
+            </PATH_ELEMENT>
+            <PATH_ELEMENT>
+              <option name="myItemId" value="tx" />
               <option name="myItemType" value="com.intellij.ide.projectView.impl.nodes.PsiDirectoryNode" />
             </PATH_ELEMENT>
           </PATH>
@@ -711,11 +900,12 @@
       <window_info id="Capture Analysis" active="false" anchor="right" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="3" side_tool="false" content_ui="tabs" />
       <window_info id="Event Log" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="7" side_tool="true" content_ui="tabs" />
       <window_info id="Maven Projects" active="false" anchor="right" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="3" side_tool="false" content_ui="tabs" />
-      <window_info id="Version Control" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="true" show_stripe_button="true" weight="0.3296131" sideWeight="0.5" order="7" side_tool="false" content_ui="tabs" />
+      <window_info id="Version Control" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.3296131" sideWeight="0.5" order="7" side_tool="false" content_ui="tabs" />
       <window_info id="Terminal" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="7" side_tool="false" content_ui="tabs" />
       <window_info id="Capture Tool" active="false" anchor="left" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="2" side_tool="false" content_ui="tabs" />
       <window_info id="Designer" active="false" anchor="right" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="3" side_tool="false" content_ui="tabs" />
       <window_info id="Project" active="false" anchor="left" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="true" show_stripe_button="true" weight="0.24980143" sideWeight="0.5" order="0" side_tool="false" content_ui="combo" />
+      <window_info id="Find" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.3296131" sideWeight="0.5" order="1" side_tool="false" content_ui="tabs" />
       <window_info id="Structure" active="false" anchor="left" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.25" sideWeight="0.5" order="1" side_tool="false" content_ui="tabs" />
       <window_info id="Ant Build" active="false" anchor="right" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.25" sideWeight="0.5" order="1" side_tool="false" content_ui="tabs" />
       <window_info id="UI Designer" active="false" anchor="left" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="2" side_tool="false" content_ui="tabs" />
@@ -726,7 +916,6 @@
       <window_info id="Inspection" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.4" sideWeight="0.5" order="5" side_tool="false" content_ui="tabs" />
       <window_info id="Run" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="2" side_tool="false" content_ui="tabs" />
       <window_info id="Hierarchy" active="false" anchor="right" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.25" sideWeight="0.5" order="2" side_tool="false" content_ui="combo" />
-      <window_info id="Find" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="1" side_tool="false" content_ui="tabs" />
       <window_info id="Debug" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.4" sideWeight="0.5" order="3" side_tool="false" content_ui="tabs" />
     </layout>
   </component>
@@ -793,62 +982,11 @@
       </provider>
     </entry>
     <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/mock/KVStore.scala" />
-    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/EventHandler.java">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="75">
-          <caret line="5" column="25" selection-start-line="5" selection-start-column="25" selection-end-line="5" selection-end-column="25" />
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/KVSink.java" />
     <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/DataResolver.java">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="75">
           <caret line="5" column="25" selection-start-line="5" selection-start-column="25" selection-end-line="5" selection-end-column="25" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/ByteString.java">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="105">
-          <caret line="9" column="5" selection-start-line="9" selection-start-column="5" selection-end-line="9" selection-end-column="5" />
-          <folding>
-            <element signature="e#204#205#0" expanded="false" />
-            <element signature="e#232#233#0" expanded="false" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/DbObject.java">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="120">
-          <caret line="8" column="27" selection-start-line="8" selection-start-column="27" selection-end-line="8" selection-end-column="27" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/AbstractByteString.java">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="225">
-          <caret line="19" column="13" selection-start-line="19" selection-start-column="13" selection-end-line="19" selection-end-column="13" />
-          <folding>
-            <element signature="e#269#270#0" expanded="true" />
-            <element signature="e#311#312#0" expanded="true" />
-            <element signature="e#343#344#0" expanded="true" />
-            <element signature="e#379#380#0" expanded="true" />
-            <element signature="e#485#486#0" expanded="true" />
-            <element signature="e#537#538#0" expanded="true" />
-            <element signature="e#1591#1592#0" expanded="true" />
-            <element signature="e#1636#1637#0" expanded="true" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/AbstractDbObject.java">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="405">
-          <caret line="27" column="19" selection-start-line="27" selection-start-column="19" selection-end-line="27" selection-end-column="19" />
           <folding />
         </state>
       </provider>
@@ -861,34 +999,10 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/DatastoreFactory.java">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="75">
-          <caret line="5" column="29" selection-start-line="5" selection-start-column="13" selection-end-line="5" selection-end-column="29" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/ValueSink.java">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="105">
           <caret line="7" column="0" selection-start-line="7" selection-start-column="0" selection-end-line="7" selection-end-column="0" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/State.java">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="135">
-          <caret line="9" column="0" selection-start-line="9" selection-start-column="0" selection-end-line="9" selection-end-column="0" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/DataReactor.java">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="75">
-          <caret line="5" column="17" selection-start-line="5" selection-start-column="17" selection-end-line="5" selection-end-column="17" />
           <folding />
         </state>
       </provider>
@@ -901,14 +1015,6 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/DbCreationContext.java">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="255">
-          <caret line="17" column="17" selection-start-line="17" selection-start-column="17" selection-end-line="17" selection-end-column="17" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/mock/KVStore.java">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="120">
@@ -917,18 +1023,255 @@
         </state>
       </provider>
     </entry>
+    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/DataReactor.java">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="75">
+          <caret line="5" column="17" selection-start-line="5" selection-start-column="17" selection-end-line="5" selection-end-column="17" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/AbstractDbObject.java">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="405">
+          <caret line="27" column="19" selection-start-line="27" selection-start-column="19" selection-end-line="27" selection-end-column="19" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/AbstractByteString.java">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="225">
+          <caret line="19" column="13" selection-start-line="19" selection-start-column="13" selection-end-line="19" selection-end-column="13" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/EventHandler.java">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="75">
+          <caret line="5" column="25" selection-start-line="5" selection-start-column="25" selection-end-line="5" selection-end-column="25" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
     <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/TreeRepo.java">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="90">
-          <caret line="6" column="51" selection-start-line="6" selection-start-column="51" selection-end-line="6" selection-end-column="51" />
+          <caret line="6" column="59" selection-start-line="6" selection-start-column="59" selection-end-line="6" selection-end-column="59" />
           <folding />
         </state>
       </provider>
     </entry>
     <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/Stamp.java">
       <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="135">
+          <caret line="9" column="0" selection-start-line="9" selection-start-column="0" selection-end-line="9" selection-end-column="0" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/DbCreationContext.java">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="255">
+          <caret line="17" column="17" selection-start-line="17" selection-start-column="17" selection-end-line="17" selection-end-column="17" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/DatastoreFactory.java">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="75">
+          <caret line="5" column="29" selection-start-line="5" selection-start-column="13" selection-end-line="5" selection-end-column="29" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/StateImpl.java">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="135">
+          <caret line="9" column="0" selection-start-line="9" selection-start-column="0" selection-end-line="9" selection-end-column="0" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/StampImpl.java">
+      <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="195">
           <caret line="13" column="5" selection-start-line="13" selection-start-column="5" selection-end-line="13" selection-end-column="5" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/State.java">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="75">
+          <caret line="5" column="24" selection-start-line="5" selection-start-column="24" selection-end-line="5" selection-end-column="24" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/ByteString.java">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="135">
+          <caret line="9" column="5" selection-start-line="9" selection-start-column="5" selection-end-line="9" selection-end-column="5" />
+          <folding>
+            <element signature="e#204#205#0" expanded="true" />
+            <element signature="e#232#233#0" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/Datum.java">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="120">
+          <caret line="8" column="27" selection-start-line="8" selection-start-column="27" selection-end-line="8" selection-end-column="27" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/KvStore.java">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="75">
+          <caret line="5" column="26" selection-start-line="5" selection-start-column="26" selection-end-line="5" selection-end-column="26" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/KvTransaction.java">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="210">
+          <caret line="14" column="0" selection-start-line="14" selection-start-column="0" selection-end-line="14" selection-end-column="0" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/dist/ClusterView.java">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="75">
+          <caret line="5" column="17" selection-start-line="5" selection-start-column="17" selection-end-line="5" selection-end-column="17" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/manifold/LocalManifold.java">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="90">
+          <caret line="6" column="1" selection-start-line="6" selection-start-column="1" selection-end-line="6" selection-end-column="1" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/manifold/WideManifold.java">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="30">
+          <caret line="2" column="3" selection-start-line="2" selection-start-column="3" selection-end-line="3" selection-end-column="117" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/tx/DistTxManager.java">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="75">
+          <caret line="5" column="17" selection-start-line="5" selection-start-column="17" selection-end-line="5" selection-end-column="17" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/backend/tx/TxHistoryStore.java">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="75">
+          <caret line="5" column="17" selection-start-line="5" selection-start-column="17" selection-end-line="5" selection-end-column="17" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/backend/tx/TxDataManager.java">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="225">
+          <caret line="15" column="0" selection-start-line="15" selection-start-column="0" selection-end-line="15" selection-end-column="0" />
+          <folding>
+            <element signature="imports" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/tx/TxStamp.java">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="75">
+          <caret line="5" column="24" selection-start-line="5" selection-start-column="17" selection-end-line="5" selection-end-column="24" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/tx/TxHistory.java">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="75">
+          <caret line="5" column="17" selection-start-line="5" selection-start-column="17" selection-end-line="5" selection-end-column="17" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/dist/LocalJob.java">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="75">
+          <caret line="5" column="17" selection-start-line="5" selection-start-column="17" selection-end-line="5" selection-end-column="17" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/dist/LocalReactor.java">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="75">
+          <caret line="5" column="17" selection-start-line="5" selection-start-column="17" selection-end-line="5" selection-end-column="17" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/dist/MasterJob.java">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="75">
+          <caret line="5" column="17" selection-start-line="5" selection-start-column="17" selection-end-line="5" selection-end-column="17" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/dist/MasterReactor.java">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="75">
+          <caret line="5" column="17" selection-start-line="5" selection-start-column="17" selection-end-line="5" selection-end-column="17" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/tx/LocalTx.java">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="75">
+          <caret line="5" column="17" selection-start-line="5" selection-start-column="17" selection-end-line="5" selection-end-column="17" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/tx/LocalTxManager.java">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="75">
+          <caret line="5" column="17" selection-start-line="5" selection-start-column="17" selection-end-line="5" selection-end-column="17" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/tx/TxDatastore.java">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="90">
+          <caret line="6" column="22" selection-start-line="6" selection-start-column="22" selection-end-line="6" selection-end-column="22" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/mono/src/main/scala/com/thunderhead/core/tx/TxSnapshot.java">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="150">
+          <caret line="10" column="56" selection-start-line="10" selection-start-column="56" selection-end-line="10" selection-end-column="56" />
           <folding />
         </state>
       </provider>

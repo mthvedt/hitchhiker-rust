@@ -6,7 +6,7 @@ package com.thunderhead.core.tx;
 public interface TxSnapshot {
     TxStamp getStamp();
 
-    // TODO: implements Snapshot?
+    // TODO: implements SnapshotRange?
 
     // TODO: maybe a store is a snapshot -> store map...
 

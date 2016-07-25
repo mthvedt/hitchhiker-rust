@@ -16,35 +16,43 @@ abstract class Response[A] {
     val thisCapture: Response[A] = this
 
     new Response[B] {
-      override def executeWith(r: Reactor, responder: Responder[B]): Unit =
-        thisCapture.executeWith(r, new Responder[A] {
-          override def continue(a: A, r: Reactor): Unit = f(a).executeWith(r, responder)
+      override def executeWith(r: Reactor, cont: ResponseListener[B]): Unit =
+        thisCapture.executeWith(r, new ResponseListener[A] {
+          override def continue(a: A, r: Reactor): Unit = f(a).executeWith(r, cont)
+          override def handleError(error: Object, r: Reactor): Unit = cont.handleError(error, r)
         })
     }
   }
 
   //  def withFilter(p: A => Boolean) TODO what to put here?
 //  def foreach[U](f: A => U): Unit TODO what to put here?
-  def executeWith(r: Reactor, responder: Responder[A])
+  def executeWith(r: Reactor, responder: ResponseListener[A])
 }
 
 object Response {
   // We use this to implement the box function.
-  class ReqeustBox[A](a: A) extends Response[A] {
+  class ResponseBox[A](a: A) extends Response[A] {
     // Easy to see the monad laws hold here.
     override def flatMap[B](f: (A) => Response[B]) = f(a)
 
-    override def executeWith(r: Reactor, cont: Responder[A]) = r.trampoline(a, cont)
+    override def executeWith(r: Reactor, cont: ResponseListener[A]) = r.trampoline(a, cont)
+  }
+
+  // TODO error types
+  class ResponseError[A](err: Object) extends Response[A] {
+    //  def withFilter(p: A => Boolean) TODO what to put here?
+    override def flatMap[B](f: (A) => Response[B]): Response[B] = this.asInstanceOf[Response[B]]
+    override def executeWith(r: Reactor, cont: ResponseListener[A]): Unit = r.trampolineError(err, cont)
   }
 
   // TODO do something with this
   class ComboResponse[T](rs: Response[T]*) extends Response[Seq[T]] {
-    override def executeWith(reactor: Reactor, cont: Responder[Seq[T]]) = {
+    override def executeWith(reactor: Reactor, cont: ResponseListener[Seq[T]]) = {
       val ts = new Array[T](rs.length)
       var countdown = rs.length
 
       for ((r, i) <- rs.zipWithIndex) {
-        r.executeWith(reactor, new Responder[T] {
+        r.executeWith(reactor, new ResponseListener[T] {
           override def continue(t: T, r: Reactor): Unit = {
             countdown -= 1
             ts(i) = t
@@ -52,12 +60,15 @@ object Response {
               cont.continue(ts, r)
             }
           }
+
+          // TODO trampoline error instead
+          override def handleError(err: Object, r: Reactor): Unit = r.trampolineError(err, cont)
         })
       }
     }
   }
 
-  def apply[A](a: A): Response[A] = new ReqeustBox(a)
+  def apply[A](a: A): Response[A] = new ResponseBox(a)
 }
 
 object test {

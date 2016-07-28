@@ -1,0 +1,618 @@
+#LyX 2.2 created this file. For more info see http://www.lyx.org/
+\lyxformat 508
+\begin_document
+\begin_header
+\save_transient_properties true
+\origin unavailable
+\textclass article
+\use_default_options true
+\maintain_unincluded_children false
+\language english
+\language_package default
+\inputencoding auto
+\fontencoding global
+\font_roman "default" "default"
+\font_sans "default" "default"
+\font_typewriter "default" "default"
+\font_math "auto" "auto"
+\font_default_family default
+\use_non_tex_fonts false
+\font_sc false
+\font_osf false
+\font_sf_scale 100 100
+\font_tt_scale 100 100
+\graphics default
+\default_output_format default
+\output_sync 0
+\bibtex_command default
+\index_command default
+\paperfontsize default
+\use_hyperref false
+\papersize default
+\use_geometry false
+\use_package amsmath 1
+\use_package amssymb 1
+\use_package cancel 1
+\use_package esint 1
+\use_package mathdots 1
+\use_package mathtools 1
+\use_package mhchem 1
+\use_package stackrel 1
+\use_package stmaryrd 1
+\use_package undertilde 1
+\cite_engine basic
+\cite_engine_type default
+\biblio_style plain
+\use_bibtopic false
+\use_indices false
+\paperorientation portrait
+\suppress_date false
+\justification true
+\use_refstyle 1
+\index Index
+\shortcut idx
+\color #008000
+\end_index
+\secnumdepth 3
+\tocdepth 3
+\paragraph_separation indent
+\paragraph_indentation default
+\quotes_language english
+\papercolumns 1
+\papersides 1
+\paperpagestyle default
+\tracking_changes false
+\output_changes false
+\html_math_output 0
+\html_css_as_file 0
+\html_be_strict false
+\end_header
+
+\begin_body
+
+\begin_layout Section
+Definitions
+\end_layout
+
+\begin_layout Standard
+Let 
+\begin_inset Formula $D$
+\end_inset
+
+ be a set of tuples 
+\begin_inset Formula $(k,v,t)$
+\end_inset
+
+ where 
+\begin_inset Formula $k$
+\end_inset
+
+ are arbitrary keys, 
+\begin_inset Formula $v$
+\end_inset
+
+ arbitrary values, and 
+\begin_inset Formula $t$
+\end_inset
+
+ time values drawn from some totally ordered set.
+\end_layout
+
+\begin_layout Standard
+A committed transaction 
+\begin_inset Formula $CT$
+\end_inset
+
+ is a tuple 
+\begin_inset Formula $(Read(CT),Write(CT),time(CT))$
+\end_inset
+
+, the read and write sets of a transaction.
+ No two committed transactions have the same time value 
+\begin_inset Formula $t$
+\end_inset
+
+.
+ The elements formed by the write set, 
+\begin_inset Formula $\{(k,v,t)|(k,v)\in Write(CT)\}$
+\end_inset
+
+, are a subset of 
+\begin_inset Formula $D$
+\end_inset
+
+, and no such element exists that is not part of a committed transaction's
+ write set expressed in this way.
+\end_layout
+
+\begin_layout Standard
+Two transactions have a temporal dependency, 
+\begin_inset Formula $T1\rightarrow T2$
+\end_inset
+
+, iff 
+\begin_inset Formula $T2$
+\end_inset
+
+ reads the write set of 
+\begin_inset Formula $T1$
+\end_inset
+
+, or 
+\begin_inset Formula $T2$
+\end_inset
+
+ writes to the read set of 
+\begin_inset Formula $T1$
+\end_inset
+
+, or if there exists a transaction 
+\begin_inset Formula $T3$
+\end_inset
+
+ such that 
+\begin_inset Formula $T1\rightarrow T3\rightarrow T2$
+\end_inset
+
+.
+ The Illuminati are very active and prevent transaction cycles from existing,
+ so transactions form a partial order.
+\end_layout
+
+\begin_layout Standard
+Let 
+\begin_inset Formula $LT$
+\end_inset
+
+ be the free meet semilattice on transactions.
+ (Is there such a thing? Define it.) That is, for each pair 
+\begin_inset Formula $(T1,T2)$
+\end_inset
+
+, we define a member 
+\begin_inset Formula $Tmeet_{1,2}$
+\end_inset
+
+ such that a transaction depends on the 
+\begin_inset Quotes eld
+\end_inset
+
+phantom transaction
+\begin_inset Quotes erd
+\end_inset
+
+ 
+\begin_inset Formula $Tmeet_{1,2}$
+\end_inset
+
+ iff it depends on 
+\begin_inset Formula $T1$
+\end_inset
+
+ or 
+\begin_inset Formula $T2$
+\end_inset
+
+, and the same for dependencies the other way.
+ (Prove this is sound) It is possible for this 
+\begin_inset Quotes eld
+\end_inset
+
+phantom transaction
+\begin_inset Quotes erd
+\end_inset
+
+ to be in the transaction set, but it usually isn't.
+ (Proof?)
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $Tmeet_{1,2}$
+\end_inset
+
+ has as its read set the union of the transactions' sets.
+ Its time is 
+\begin_inset Formula $max(t1,t2)$
+\end_inset
+
+, and its write set is the keywise union, preferring the value of the later
+ transaction if one depends on the other.
+\end_layout
+
+\begin_layout Standard
+TODO: interval proof.
+ First, define a snapshot...
+\end_layout
+
+\begin_layout Standard
+A snapshot 
+\begin_inset Formula $S$
+\end_inset
+
+ of a datastore 
+\begin_inset Formula $D$
+\end_inset
+
+ at time 
+\begin_inset Formula $t$
+\end_inset
+
+ is the set of all the tuples 'up to time t' in 
+\begin_inset Formula $D$
+\end_inset
+
+.
+ Formally, given 
+\begin_inset Formula $t$
+\end_inset
+
+and 
+\begin_inset Formula $d$
+\end_inset
+
+, define 
+\begin_inset Formula $S$
+\end_inset
+
+ as follows:
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $S=\{(k,v)\mid(k,v,t_{1})\in D\&\forall(k_{2},v_{2},t_{2})\in D,t_{2}<t_{1}ort_{2}>t\}$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Every transaction yields a natural snapshot, with 
+\begin_inset Formula $t=time(CT)$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Section
+Finding the least dependency and dependent of an in-progress transaction
+\end_layout
+
+\begin_layout Standard
+We open a transaction 
+\begin_inset Formula $T$
+\end_inset
+
+ on a snapshot 
+\begin_inset Formula $S$
+\end_inset
+
+ at time 
+\begin_inset Formula $t$
+\end_inset
+
+.
+ In the intervening time we might commit more transactions to 
+\begin_inset Formula $D$
+\end_inset
+
+.
+ As we build 
+\begin_inset Formula $T$
+\end_inset
+
+, we want to know if it is legal or whether the Illuminati should kill it.
+\end_layout
+
+\begin_layout Standard
+Recall that 
+\begin_inset Formula $T\rightarrow T_{p}$
+\end_inset
+
+ if 
+\begin_inset Formula $T$
+\end_inset
+
+ reads a write from 
+\begin_inset Formula $T_{p}$
+\end_inset
+
+ and 
+\begin_inset Formula $T_{f}\rightarrow T$
+\end_inset
+
+ if 
+\begin_inset Formula $T$
+\end_inset
+
+ writes to a read from 
+\begin_inset Formula $T_{f}$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+When we read a write, it's our option which write to read.
+ We have no interest in reading obsolete writes (proof?) Intresting question
+ is if we want to read committed writes after 
+\begin_inset Formula $S$
+\end_inset
+
+.
+ If we imagine a transaction as a process that accepts read input and produces
+ write output (formalize this) we have to make those read decisions immediately.
+\end_layout
+
+\begin_layout Standard
+We generally don't want transactions to ever read uncommitted data.
+ (TODO: think if this constraint can be relaxed/generalized.
+ But this is true in the normal use case.) So if 
+\begin_inset Formula $T1$
+\end_inset
+
+ (uncommitted) reads from 
+\begin_inset Formula $k$
+\end_inset
+
+ and 
+\begin_inset Formula $T2$
+\end_inset
+
+ (uncommitted) writes to 
+\begin_inset Formula $k$
+\end_inset
+
+, we can assign a dependency.
+\end_layout
+
+\begin_layout Subsection
+Idea 1
+\end_layout
+
+\begin_layout Standard
+Track all (read, write) sets from all active transactions.
+ Associate with each transaction an divisible ephemeral timestamp 
+\begin_inset Formula $DET(T)$
+\end_inset
+
+.
+ (TODO: describe DET.) The initial 
+\begin_inset Formula $DET(T)$
+\end_inset
+
+ for any transaction is 
+\begin_inset Formula $(0,1)$
+\end_inset
+
+.
+ Read-write conflicts establishing 
+\begin_inset Formula $T_{1}\rightarrow T_{2}$
+\end_inset
+
+ have the effect of splitting the space at some point in 
+\begin_inset Formula $DET(T_{1})\cup DET(T_{2})$
+\end_inset
+
+ s.t.
+ 
+\begin_inset Formula $DET(T_{1})<DET(T_{2})$
+\end_inset
+
+.
+ If 
+\begin_inset Formula $DET(T_{1})$
+\end_inset
+
+ is already less than 
+\begin_inset Formula $DET(T_{2})$
+\end_inset
+
+, no split is needed.
+ If the reverse, one transaction must be aborted.
+\end_layout
+
+\begin_layout Subsubsection
+Idea: Priority theorem for split points
+\end_layout
+
+\begin_layout Standard
+Assign each transaction a priority 
+\begin_inset Formula $p(T)$
+\end_inset
+
+.
+ Our goal is that higher priority transactions (= lower in the 
+\begin_inset Formula $DET$
+\end_inset
+
+ state space) never abort lower priority ones, and in fact we try to reduce
+ cross-priority interference.
+\end_layout
+
+\begin_layout Standard
+I had an elegant idea for this, but I forgot what it was.
+ Something about assigning split points based on priority...
+\end_layout
+
+\begin_layout Subsection
+Idea 2: Lazy split points
+\end_layout
+
+\begin_layout Standard
+We defer the choice of splitting a 
+\begin_inset Formula $DET$
+\end_inset
+
+.
+ When 
+\begin_inset Formula $T_{1}$
+\end_inset
+
+ and 
+\begin_inset Formula $T_{2}$
+\end_inset
+
+ conflict, we associate a split point 
+\begin_inset Formula $S_{1,2}^{-}$
+\end_inset
+
+ with 
+\begin_inset Formula $T_{1}$
+\end_inset
+
+ and 
+\begin_inset Formula $S_{1,2}^{+}$
+\end_inset
+
+ with 
+\begin_inset Formula $T_{2}$
+\end_inset
+
+.
+ 
+\end_layout
+
+\begin_layout Standard
+We might be barking up the wrong tree with this idea: cycle detection is
+ not polynomial time.
+ Ew.
+\end_layout
+
+\begin_layout Subsection
+Idea 3: Past and future pushing
+\end_layout
+
+\begin_layout Standard
+Each transaction is assigned a range 
+\begin_inset Formula $(a,b)\in\mathbb{T}$
+\end_inset
+
+, with the 
+\begin_inset Quotes eld
+\end_inset
+
+circle-ordering
+\begin_inset Quotes erd
+\end_inset
+
+ 
+\begin_inset Formula $a>b$
+\end_inset
+
+ when 
+\begin_inset Formula $Re(a/b)>0$
+\end_inset
+
+.
+ A global distributed state restricts the allowed ranges to a subset of
+ 
+\begin_inset Formula $\mathbb{T}$
+\end_inset
+
+ such that the circle-ordering forms a well-defined total ordering.
+ This can be easily implemented with elements of a cyclic group, such as
+ the group of n-bit signed integers.
+ In a distributed system, local heartbeats make sure that 
+\begin_inset Formula $a$
+\end_inset
+
+ is approximately the same across nodes.
+\end_layout
+
+\begin_layout Standard
+When two transactions conflict, we choose a transaction to push into the
+ past/future.
+\end_layout
+
+\begin_layout Section
+From local to global
+\end_layout
+
+\begin_layout Standard
+Define a data strucutre of key time clocks.
+\end_layout
+
+\begin_layout Standard
+A global clock 
+\begin_inset Formula $g$
+\end_inset
+
+ is a function 
+\begin_inset Formula $k\rightarrow(t_{1},t_{2})$
+\end_inset
+
+.
+ 
+\begin_inset Formula $t_{1}$
+\end_inset
+
+ is the 
+\begin_inset Quotes eld
+\end_inset
+
+not modified since
+\begin_inset Quotes erd
+\end_inset
+
+ time and 
+\begin_inset Formula $t_{2}$
+\end_inset
+
+ is the 
+\begin_inset Quotes eld
+\end_inset
+
+latest known consistent
+\begin_inset Quotes erd
+\end_inset
+
+ time.
+\end_layout
+
+\begin_layout Standard
+Each key 
+\begin_inset Formula $k$
+\end_inset
+
+ has a global clock associated with it.
+\end_layout
+
+\begin_layout Standard
+Nodes are constantly interested in gossiping to update the 
+\begin_inset Formula $t_{2}$
+\end_inset
+
+ times for a node-shared global clock.
+\end_layout
+
+\begin_layout Standard
+For cache purposes, a node is only interested in a subset of 
+\begin_inset Formula $g$
+\end_inset
+
+ corresponding to those keys and values in its cache.
+\end_layout
+
+\begin_layout Standard
+What we need is a fast way to say: 'Is my cache invalid'? Everything else
+ is easily solved.
+ Or: 'Is my cache invalid w.r.t.
+ a given read?'
+\end_layout
+
+\begin_layout Standard
+Leading, trailing global states?
+\end_layout
+
+\begin_layout Standard
+\begin_inset Quotes eld
+\end_inset
+
+Tree a + delta = tree b
+\begin_inset Quotes erd
+\end_inset
+
+ where delta is a DS3 tree
+\end_layout
+
+\end_body
+\end_document

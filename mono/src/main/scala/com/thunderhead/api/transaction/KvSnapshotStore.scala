@@ -1,6 +1,6 @@
 package com.thunderhead.api.transaction
 
-import com.thunderhead.core.Response
+import com.thunderhead.core.Task$
 
 /**
   * Created by mike on 7/22/16.
@@ -8,5 +8,5 @@ import com.thunderhead.core.Response
 trait KvSnapshotStore {
   def open(): KvReadWriteSnapshot
 
-  def delete(snapshotId: Counter): Response[Unit]
+  def delete(snapshotId: Counter): Task[Unit]
 }

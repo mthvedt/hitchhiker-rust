@@ -2,7 +2,7 @@ package com.thunderhead.mock
 
 import com.thunderhead.api.Datum
 import com.thunderhead.api.transaction.{Counter, KvReadWriteSnapshot, KvSnapshotStore, Range, TransactionView}
-import com.thunderhead.core.Response
+import com.thunderhead.core.Task$
 import com.thunderhead.core.kv.local.{TransactionHandle, TransactionalStore, TxTracker}
 
 import scala.collection.mutable.{Map => MMap}
@@ -51,13 +51,13 @@ class KvStoreSimple extends KvSnapshotStore {
 //    override def close(): Unit = {
 //
 //    }
-    override def read(k: Datum): Response[(Datum, Range)] = ???
+    override def read(k: Datum): Task[(Datum, Range)] = ???
 
-    override def write(k: Datum, v: Datum): Response[Range] = ???
+    override def write(k: Datum, v: Datum): Task[Range] = ???
 
-    override def delete(k: Datum): Response[Range] = ???
+    override def delete(k: Datum): Task[Range] = ???
 
-    override def saveAndClose(): Response[Unit] = ???
+    override def saveAndClose(): Task[Unit] = ???
 
     override def dispose(): Unit = {}
   }
@@ -72,5 +72,5 @@ class KvStoreSimple extends KvSnapshotStore {
 //  override def getTransaction(stamp: TransactionHandle): TxTracker = ???
   override def open(): KvReadWriteSnapshot = ???
 
-  override def delete(snapshotId: Counter): Response[Unit] = ???
+  override def delete(snapshotId: Counter): Task[Unit] = ???
 }

@@ -3,10 +3,10 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <groupId>org.eightnotrump</groupId>
-  <artifactId>mono</artifactId>
+  <artifactId>thunderhead</artifactId>
   <version>0.0.1-SNAPSHOT</version>
   <name>${project.artifactId}</name>
-  <description>Thunderhead monorepo</description>
+  <description>Thunderhead</description>
   <inceptionYear>2015</inceptionYear>
   <!--
   <licenses>
@@ -21,6 +21,8 @@
   <properties>
     <maven.compiler.source>1.8</maven.compiler.source>
     <maven.compiler.target>1.8</maven.compiler.target>
+    <scala.version>2.11.8</scala.version>
+    <scala.compat.version>2.11</scala.compat.version>
     <encoding>UTF-8</encoding>
   </properties>
 

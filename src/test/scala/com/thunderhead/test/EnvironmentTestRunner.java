@@ -16,38 +16,15 @@
 
 package com.thunderhead.test;
 
+import org.junit.runners.BlockJUnit4ClassRunner;
+
 /**
  */
 public class EnvironmentTestRunner extends BlockJUnit4ClassRunner {
 
 //    private static final Log logger = LogFactory.getLog(EnvironmentTestRunner.class);
 
-    private static final Method withRulesMethod;
-
-    static {
-        Assert.state(ClassUtils.isPresent("org.junit.internal.Throwables", SpringJUnit4ClassRunner.class.getClassLoader()),
-                "SpringJUnit4ClassRunner requires JUnit 4.12 or higher.");
-
-        withRulesMethod = ReflectionUtils.findMethod(SpringJUnit4ClassRunner.class, "withRules",
-                FrameworkMethod.class, Object.class, Statement.class);
-        Assert.state(withRulesMethod != null, "SpringJUnit4ClassRunner requires JUnit 4.12 or higher.");
-        ReflectionUtils.makeAccessible(withRulesMethod);
-    }
-
-
     private final TestContextManager testContextManager;
-
-
-    private static void ensureSpringRulesAreNotPresent(Class<?> testClass) {
-        for (Field field : testClass.getFields()) {
-            Assert.state(!SpringClassRule.class.isAssignableFrom(field.getType()), () -> String.format(
-                    "Detected SpringClassRule field in test class [%s], " +
-                            "but SpringClassRule cannot be used with the SpringJUnit4ClassRunner.", testClass.getName()));
-            Assert.state(!SpringMethodRule.class.isAssignableFrom(field.getType()), () -> String.format(
-                    "Detected SpringMethodRule field in test class [%s], " +
-                            "but SpringMethodRule cannot be used with the SpringJUnit4ClassRunner.", testClass.getName()));
-        }
-    }
 
     /**
      * Construct a new {@code SpringJUnit4ClassRunner} and initialize a
@@ -56,12 +33,11 @@ public class EnvironmentTestRunner extends BlockJUnit4ClassRunner {
      * @param clazz the test class to be run
      * @see #createTestContextManager(Class)
      */
-    public SpringJUnit4ClassRunner(Class<?> clazz) throws InitializationError {
+    public EnvironmentTestRunner(Class<?> clazz) throws InitializationError {
         super(clazz);
         if (logger.isDebugEnabled()) {
             logger.debug("SpringJUnit4ClassRunner constructor called with [" + clazz + "]");
         }
-        ensureSpringRulesAreNotPresent(clazz);
         this.testContextManager = createTestContextManager(clazz);
     }
 

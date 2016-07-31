@@ -1,13 +1,13 @@
-package com.thunderhead.mock.fabric
+package com.thunderhead.core.engine.mock
 
 import java.util.concurrent.atomic.AtomicBoolean
 
-import com.thunderhead.core.ReactorManager
+import com.thunderhead.core.engine.TaskSource
 
 /**
   * Created by mike on 7/25/16.
   */
-class ReactorThread(r: ReactorManager) {
+class TaskThread(source: TaskSource) {
   val interrupted = new AtomicBoolean(false)
   val running = new AtomicBoolean(false)
 
@@ -19,16 +19,16 @@ class ReactorThread(r: ReactorManager) {
       var didATask = false
 
       // Main body of loop
-      r.nextTask() match {
-        case Some(task) =>
-          task.execute()
+      source.dequeue() match {
+        case null => Unit
+        case task =>
+          task.run()
           didATask = true
-        case None => Unit
       }
 
       // End of loop
       if (!didATask) {
-        // dont waste energy
+        // don't waste energy
         // TODO configurable sleep time
         Thread.sleep(1)
       }

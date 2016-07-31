@@ -614,5 +614,14 @@ Tree a + delta = tree b
  where delta is a DS3 tree
 \end_layout
 
+\begin_layout Standard
+So suppose the global clock 
+\begin_inset Formula $g$
+\end_inset
+
+ is propogated and we have determined some part of the cache is possibly
+ invalid...
+\end_layout
+
 \end_body
 \end_document

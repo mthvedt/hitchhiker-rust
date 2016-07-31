@@ -1,8 +1,8 @@
 package com.thunderhead.core.impl
 
 import com.thunderhead.core
-import com.thunderhead.core.{Reactor, ReactorManager, ReactorTask, TaskListener}
-import com.thunderhead.core.fabric.{Codec, Gateway, Message, NodeHandle}
+import com.thunderhead.core.{ReactorManager, ReactorTask, TaskListener}
+import com.thunderhead.core.fabric.{Codec, Gateway}
 
 import scala.collection.mutable
 

@@ -2,7 +2,7 @@ package com.thunderhead.mock.fabric
 
 import java.util.concurrent.ConcurrentLinkedQueue
 
-import com.thunderhead.core.{Reactor, TaskListener}
+import com.thunderhead.core.TaskListener
 import com.thunderhead.core.fabric._
 
 /**
@@ -14,9 +14,9 @@ class SingleThreadMockFabric(count: Int) {
   class InternalGateway(index: Int) extends Gateway {
     val q = new ConcurrentLinkedQueue[MessagePacket]()
 
-    override def send(obj: Message, id: Int, target: NodeHandle): Unit = {
+    override def send(obj: OutgoingMessage, id: Int, target: NodeHandle): Unit = {
       q.add(new MessagePacket {
-        override def message(): Message = obj
+        override def message(): OutgoingMessage = obj
         override def exists(): Boolean = true
         override def sender(): NodeHandle = new InternalNodeHandle(index)
         override def taskId(): Int = id
@@ -28,7 +28,7 @@ class SingleThreadMockFabric(count: Int) {
 
       if (r == null) {
         new MessagePacket {
-          override def message(): Message = throw IllegalStateException
+          override def message(): OutgoingMessage = throw IllegalStateException
           override def exists(): Boolean = false
           override def sender(): NodeHandle = throw IllegalStateException
           override def taskId(): Int = throw IllegalStateException

@@ -38,6 +38,7 @@
       <version>4.11</version>
       <scope>test</scope>
     </dependency>
+    <!-- TODO are these needed? -->
     <dependency>
       <groupId>org.specs2</groupId>
       <artifactId>specs2-core_${scala.compat.version}</artifactId>

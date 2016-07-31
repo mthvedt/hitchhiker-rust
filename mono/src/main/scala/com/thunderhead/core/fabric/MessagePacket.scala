@@ -5,7 +5,7 @@ package com.thunderhead.core.fabric
   */
 trait MessagePacket {
   def exists(): Boolean
-  def message(): Message
+  def message(): OutgoingMessage
   def sender(): NodeHandle
   def taskId(): Int
 }

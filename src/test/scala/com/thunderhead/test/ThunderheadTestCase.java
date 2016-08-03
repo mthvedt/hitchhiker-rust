@@ -8,7 +8,7 @@ import javax.inject.Inject;
 /**
  * Created by mike on 8/2/16.
  */
-public abstract class ThunderheadTest {
+public abstract class ThunderheadTestCase {
     private LocalEnvironment environment;
 
     @Inject

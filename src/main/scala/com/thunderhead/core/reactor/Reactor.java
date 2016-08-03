@@ -11,9 +11,9 @@ import com.thunderhead.core.fabric.OutgoingMessage;
 public interface Reactor {
     void run(Runnable r);
 
-    <T> void yield(T t, TaskListener<T> continuation);
+    <T> void forward(T t, TaskListener<T> continuation);
 
-    void yieldError(TaskError err, TaskListener<?> continuation);
+    void forwardError(TaskError err, TaskListener<?> continuation);
 
     // TODO: net interface class?
     <T> void netSend(Datum port, OutgoingMessage request, Codec<T> encoder);

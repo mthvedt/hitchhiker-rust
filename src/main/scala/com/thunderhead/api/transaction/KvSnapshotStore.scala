@@ -1,6 +1,6 @@
 package com.thunderhead.api.transaction
 
-import com.thunderhead.core.Task$
+import com.thunderhead.core.Task
 
 /**
   * Created by mike on 7/22/16.

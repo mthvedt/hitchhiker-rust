@@ -2,8 +2,7 @@ package com.thunderhead.mock.fabric
 
 import java.util.concurrent.ConcurrentLinkedQueue
 
-import com.thunderhead.core.TaskListener
-import com.thunderhead.core.conf.LocalEnvironment
+import com.thunderhead.core.conf.{LocalEnvironment, ReactorStarter}
 import com.thunderhead.core.fabric._
 
 /**
@@ -13,26 +12,26 @@ class SingleThreadMockFabric(count: Int) extends LocalEnvironment {
   class InternalNodeHandle(num: Int) extends NodeHandle
 
   class InternalGateway(index: Int) extends Gateway {
-    val q = new ConcurrentLinkedQueue[MessagePacket]()
+    val q = new ConcurrentLinkedQueue[MessagePacket[_]]()
 
     override def send(obj: OutgoingMessage[_], id: Int, target: NodeHandle): Unit = {
-      q.add(new MessagePacket {
-        override def message(): OutgoingMessage[_] = obj
+      q.add(new MessagePacket[Any] {
+        override def message(): OutgoingMessage[Any] = obj.asInstanceOf[OutgoingMessage[Any]]
         override def exists(): Boolean = true
         override def sender(): NodeHandle = new InternalNodeHandle(index)
         override def taskId(): Int = id
       })
     }
 
-    override def recv(): MessagePacket = {
+    override def recv(): MessagePacket[_] = {
       val r = q.peek()
 
       if (r == null) {
-        new MessagePacket {
-          override def message(): OutgoingMessage[_] = throw IllegalStateException
+        new MessagePacket[Any] {
+          override def message(): OutgoingMessage[Any] = throw new IllegalStateException()
           override def exists(): Boolean = false
-          override def sender(): NodeHandle = throw IllegalStateException
-          override def taskId(): Int = throw IllegalStateException
+          override def sender(): NodeHandle = throw new IllegalStateException()
+          override def taskId(): Int = throw new IllegalStateException()
         }
       } else {
         r
@@ -41,4 +40,6 @@ class SingleThreadMockFabric(count: Int) extends LocalEnvironment {
   }
 
   val map: Array[Gateway] = (for (i <- 0 until count) yield new InternalGateway(i)).toArray
+
+  override def forEachReactor(s: ReactorStarter): Unit = throw new RuntimeException()
 }

@@ -1,7 +1,5 @@
 package com.thunderhead.api.transaction;
 
-import com.sun.tools.javac.util.Context;
-
 import java.util.NavigableMap;
 
 /**

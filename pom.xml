@@ -88,13 +88,6 @@
               <goal>compile</goal>
               <goal>testCompile</goal>
             </goals>
-            <configuration>
-              <args>
-                <arg>-make:transitive</arg>
-                <arg>-dependencyfile</arg>
-                <arg>${project.build.directory}/.scala_dependencies</arg>
-              </args>
-            </configuration>
           </execution>
         </executions>
       </plugin>

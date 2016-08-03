@@ -3,9 +3,9 @@ package com.thunderhead.core.fabric
 /**
   * Created by mike on 7/25/16.
   */
-trait MessagePacket {
+trait MessagePacket[T] {
   def exists(): Boolean
-  def message(): OutgoingMessage
+  def message(): OutgoingMessage[T]
   def sender(): NodeHandle
   def taskId(): Int
 }

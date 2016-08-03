@@ -1,5 +1,9 @@
 package com.thunderhead.core
 
+import com.thunderhead.core.reactor.{Reactor, TaskError, TaskListener}
+
+import scala.reflect.ClassTag
+
 /**
   * Created by mike on 7/22/16.
   */
@@ -11,16 +15,32 @@ abstract class Task[A] {
   // 2) flatMap(apply(x), f) == f(x)
   // 3) flatMap(flatMap(a, f1), f2) == flatMap(a, \x -> flatMap(f1(x), f2))
 
+  def map[B](f: A => B): Task[B] = {
+    val thisCapture: Task[A] = this
+
+    new Task[B] {
+      override def executeWith(r: Reactor, cont: TaskListener[B]): Unit = {
+        thisCapture.executeWith(r, new TaskListener[A] {
+          override def taskFinished(a: A, r: Reactor): Unit = cont.taskFinished(f(a), r)
+
+          override def taskError(error: TaskError, r: Reactor): Unit = cont.taskError(error, r)
+        })
+      }
+    }
+  }
+
   def flatMap[B](f: A => Task[B]): Task[B] = {
     // TODO is there a better way to do this?
     val thisCapture: Task[A] = this
 
     new Task[B] {
-      override def executeWith(r: Reactor, cont: TaskListener[B]): Unit =
+      override def executeWith(r: Reactor, cont: TaskListener[B]): Unit = {
         thisCapture.executeWith(r, new TaskListener[A] {
-          override def continue(a: A, r: Reactor): Unit = f(a).executeWith(r, cont)
-          override def handleError(error: Object, r: Reactor): Unit = cont.handleError(error, r)
+          override def taskFinished(a: A, r: Reactor): Unit = f(a).executeWith(r, cont)
+
+          override def taskError(error: TaskError, r: Reactor): Unit = cont.taskError(error, r)
         })
+      }
     }
   }
 
@@ -35,34 +55,34 @@ object Task {
     // Easy to see the monad laws hold here.
     override def flatMap[B](f: (A) => Task[B]) = f(a)
 
-    override def executeWith(r: Reactor, cont: TaskListener[A]) = r.trampoline(a, cont)
+    override def executeWith(r: Reactor, cont: TaskListener[A]) = r.forward(a, cont)
   }
 
   // TODO error types
-  class TaskError[A](err: Object) extends Task[A] {
+  class ErrorTask[A](err: TaskError) extends Task[A] {
     //  def withFilter(p: A => Boolean) TODO what to put here?
     override def flatMap[B](f: (A) => Task[B]): Task[B] = this.asInstanceOf[Task[B]]
-    override def executeWith(r: Reactor, cont: TaskListener[A]): Unit = r.trampolineError(err, cont)
+    override def executeWith(r: Reactor, cont: TaskListener[A]): Unit = r.forwardError(err, cont)
   }
 
   // TODO do something with this
-  class ComboTask[T](rs: Task[T]*) extends Task[Seq[T]] {
+  class ComboTask[T](rs: Task[T]*)(implicit m: ClassTag[T]) extends Task[Seq[T]] {
     override def executeWith(reactor: Reactor, cont: TaskListener[Seq[T]]) = {
       val ts = new Array[T](rs.length)
       var countdown = rs.length
 
       for ((r, i) <- rs.zipWithIndex) {
         r.executeWith(reactor, new TaskListener[T] {
-          override def continue(t: T, r: Reactor): Unit = {
+          override def taskFinished(t: T, r: Reactor): Unit = {
             countdown -= 1
             ts(i) = t
             if (countdown == 0) {
-              cont.continue(ts, r)
+              cont.taskFinished(ts, r)
             }
           }
 
-          // TODO trampoline error instead
-          override def handleError(err: Object, r: Reactor): Unit = r.trampolineError(err, cont)
+          // TODO trampoline error instead?
+          override def taskError(err: TaskError, r: Reactor): Unit = r.forwardError(err, cont)
         })
       }
     }

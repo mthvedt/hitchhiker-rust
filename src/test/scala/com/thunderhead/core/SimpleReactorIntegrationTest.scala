@@ -13,5 +13,11 @@ import org.springframework.test.context.ContextConfiguration
 class SimpleReactorIntegrationTest extends ThunderheadTestCase {
 
   @Test
-  def testNothing(): Unit = {}
+  def messagePassingTest(): Unit = {
+    getLocalEnvironment().getClass()
+    // For each reactor, pass a message 1000 times.
+//    getLocalEnvironment().forEachReactor(new ReactorStarter {
+//
+//    })
+  }
 }

@@ -1,0 +1,7 @@
+[package]
+name = "thunderhead"
+version = "0.1.0"
+authors = ["Mike Thvedt <mike.thvedt@gmail.com>"]
+
+[dependencies]
+futures = { git = "https://github.com/alexcrichton/futures-rs" }

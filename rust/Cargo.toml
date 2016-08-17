@@ -4,7 +4,8 @@ version = "0.1.0"
 authors = ["Mike Thvedt <mike.thvedt@gmail.com>"]
 
 [dependencies]
-rocksdb-internal = { path = "extern/rocksdb" }
+thunderhead-store = { path = "lib/store" }
+thunderhead-rocksdb = { path = "extern/thunderhead/rocksdb" }
 
 env_logger = "0.3"
 futures = { git = "https://github.com/alexcrichton/futures-rs" }
@@ -14,6 +15,3 @@ openssl = "0.8"
 time = "0.1"
 
 [workspace]
-members = [
-  "extern/rocksdb"
-]

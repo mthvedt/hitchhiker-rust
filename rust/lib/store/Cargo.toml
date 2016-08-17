@@ -1,10 +1,6 @@
 [package]
-name = "rocksdb-internal"
+name = "thunderhead-store"
 version = "0.1.0"
 authors = ["Mike Thvedt <mike.thvedt@gmail.com>"]
-
-build = "build.rs"
-include = ["remote/**/*"]
-workspace = "../../"
 
 [dependencies]

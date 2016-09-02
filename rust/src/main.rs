@@ -1,6 +1,7 @@
 extern crate env_logger;
 extern crate futures;
 extern crate futures_minihttp;
+extern crate rustc_serialize;
 extern crate time;
 extern crate url;
 
@@ -11,6 +12,10 @@ use std::env;
 use futures::*;
 use futures_minihttp::{Server, Response, Request};
 use url::*;
+
+extern crate thunderhead_store;
+
+use thunderhead_store::*;
 
 fn main() {
     env_logger::init().unwrap();

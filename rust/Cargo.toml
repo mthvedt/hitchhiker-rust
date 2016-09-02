@@ -11,8 +11,9 @@ env_logger = "0.3"
 futures = { git = "https://github.com/alexcrichton/futures-rs" }
 futures-minihttp = { git = "https://github.com/alexcrichton/futures-rs" }
 futures-tls = { git = "https://github.com/alexcrichton/futures-rs", features = ["force-openssl"] }
-url = { git = "https://github.com/servo/rust-url" }
+rustc-serialize = "0.3"
 openssl = "0.8"
+url = { git = "https://github.com/servo/rust-url" }
 time = "0.1"
 
 [workspace]

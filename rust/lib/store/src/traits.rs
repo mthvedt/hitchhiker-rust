@@ -1,8 +1,8 @@
 // TODO rename this file
 
 trait Datum {
-    fn to_slice(&self) -> &[i8]
-    fn to_slice(&mut self) -> &mut [i8]
+    fn to_slice(&self) -> &[i8];
+    fn to_slice_mut(&mut self) -> &mut [i8];
 }
 
 enum KvResult<T> {
@@ -13,24 +13,24 @@ enum KvResult<T> {
 
 // TODO all these should be generic
 trait KvDoc {
-    fn write(&self, &r: KvSink) -> KvResult<()>
+    fn write(&self, r: &KvSink) -> KvResult<()>;
 }
 
 trait KvSink {
-    fn write(&self, &k: Datum, &v: Datum) -> KvResult<()>
+    fn write(&self, k: &Datum, v: &Datum) -> KvResult<()>;
 }
 
 trait KvSource {
-    fn read(&self, &k: Datum) -> KvResult<Datum>
+    fn read(&self, k: &Datum) -> KvResult<&Datum>;
 }
 
 trait KvCursor {
-    fn get(&self) -> KvResult<Datum>
-    fn next(self) -> self
+    fn get(&self) -> KvResult<&Datum>;
+    fn next(self) -> KvCursor;
 }
 
 trait KvStream {
-    fn cursor(&self) -> KvCursor
+    fn cursor(&self) -> KvCursor;
 }
 
 trait SnapshotStamp {
@@ -48,10 +48,11 @@ trait SnapshotStore {
 
     // TODO: instead, use rust safety to eliminate use-after-free
     // for snapshots...?
-    fn open(&mut self) -> SnapshotStamp
-    fn close(&mut self, &stamp: SnapshotStamp)
-    //fn diff(&self, &prev: SnapshotStamp) -> KvStream
-    fn snap(&self, &stamp: SnapshotStamp) -> Optional<KvSource>
+    type Source : KvSource + Sized;
+    fn open(&mut self) -> SnapshotStamp;
+    fn close(&mut self, stamp: &SnapshotStamp);
+    //fn diff(&self, &prev: SnapshotStamp) -> KvStream;
+    fn snap(&self, stamp: &SnapshotStamp) -> Option<Self::Source>;
 }
 
 // TODO: Ephemeral kv sink. Good perf for event model POC.

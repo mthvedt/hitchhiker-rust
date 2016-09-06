@@ -1,44 +1,81 @@
 // TODO rename this file
 
-trait Datum {
-    fn to_slice(&self) -> &[i8];
-    fn to_slice_mut(&mut self) -> &mut [i8];
+use std::io::Error;
+use std::io::ErrorKind;
+use std::io::Write;
+use std::io;
+
+pub trait Datum {
+    /*
+      A datum has a max size of 64kbytes. Thunderhead is not designed
+      for very large values; they should be split into multiple values
+      instead.
+      */
+    fn len(&self) -> u16;
+    fn write_bytes(&self, w: &mut DataWrite) -> KvResult<()>;
 }
 
-enum KvResult<T> {
+pub enum KvResult<T> {
     Success(T),
     // TODO: can we make this StringLike for perf?
-    Failure(String)
+    Failure(String),
+}
+
+// TODO make this async
+// TODO impl return types everywhere
+pub trait DataWrite {
+    fn write(&mut self, buf: &[u8]) -> KvResult<()>;
+}
+
+struct DataWriteWrite<'a, W: 'a + DataWrite + ?Sized> {
+    underlying: &'a mut W
+}
+
+impl<'a, W: 'a + DataWrite + ?Sized> Write for DataWriteWrite<'a, W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        match self.underlying.write(buf) {
+            KvResult::Success(_) => Ok(buf.len()),
+            KvResult::Failure(s) => Err(Error::new(ErrorKind::Other, s)),
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> { Ok(()) }
+}
+
+// TODO: need a trait to 'async flush' the data write.
+pub fn datawrite_write<'a>(w: &'a mut DataWrite) -> impl Write + 'a {
+    DataWriteWrite { underlying: w }
 }
 
 // TODO all these should be generic
-trait KvDoc {
+pub trait KvDoc {
     fn write(&self, r: &KvSink) -> KvResult<()>;
 }
 
-trait KvSink {
+pub trait KvSink {
     fn write(&self, k: &Datum, v: &Datum) -> KvResult<()>;
 }
 
-trait KvSource {
-    fn read(&self, k: &Datum) -> KvResult<&Datum>;
+pub trait KvSource {
+    type D: Datum;
+    fn read(&self, k: &Datum) -> KvResult<Self::D>;
 }
 
-trait KvCursor {
+pub trait KvCursor {
     fn get(&self) -> KvResult<&Datum>;
     fn next(self) -> KvCursor;
 }
 
-trait KvStream {
+pub trait KvStream {
     fn cursor(&self) -> KvCursor;
 }
 
-trait SnapshotStamp {
+pub trait SnapshotStamp {
     // TODO extend datum. This is just an impl of Datum
     // that's type-safed. Might be better as a struct.
 }
 
-trait SnapshotStore {
+pub trait SnapshotStore<'a> {
     // TODO: persistent snapshot cursors.
     // TODO: what is the correct use of &mut self?
 
@@ -48,11 +85,13 @@ trait SnapshotStore {
 
     // TODO: instead, use rust safety to eliminate use-after-free
     // for snapshots...?
-    type Source : KvSource + Sized;
-    fn open(&mut self) -> SnapshotStamp;
-    fn close(&mut self, stamp: &SnapshotStamp);
+    type S: KvSource;
+    type Stamp: SnapshotStamp;
+    fn open(&mut self) -> Self::Stamp;
+    fn close(&mut self, stamp: &Self::Stamp);
     //fn diff(&self, &prev: SnapshotStamp) -> KvStream;
-    fn snap(&self, stamp: &SnapshotStamp) -> Option<Self::Source>;
+    // TODO make this safer? what is the semantics of a removed snapshot?
+    fn snap(&'a self, stamp: &'a Self::Stamp) -> Option<Self::S>;
 }
 
 // TODO: Ephemeral kv sink. Good perf for event model POC.

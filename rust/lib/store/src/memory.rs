@@ -1,5 +1,11 @@
-use std::collections::HashMap::hash_map
+use std::collections::HashMap;
+use std::marker::PhantomData;
+use std::sync::Arc;
 
+use data::*;
+use traits::*;
+
+#[allow(dead_code)]
 struct TreeValue {
     val: Vec<i8>
 }
@@ -7,63 +13,104 @@ struct TreeValue {
 impl TreeValue {
 }
 
+#[allow(dead_code)]
 struct TreeValuePtr {
-    target: Optional<TreeValue>
+    target: Option<TreeValue>
 }
 
+#[allow(dead_code)]
 struct TreeNode {
-    // TODO define tree size
-    vals: [TreeValuePtr; 16]
-    children: [TreeNodePtr; 16]
-    refcount: i32
+    vals: [TreeValuePtr; 16],
+    children: [TreeNodePtr; 16],
+    refcount: i32,
 }
 
 impl TreeNode {
 }
 
+#[derive(Clone)]
 struct TreeNodePtr {
-    target: Optional<Arc<TreeNode>>
+    // TODO: instead Rc?
+    target: Option<Arc<TreeNode>>,
 }
 
 impl TreeNodePtr {
-}
-
-struct SnapshotImpl {
-    // TODO lifetime this
-    head: TreeNodePtr
-}
-
-impl KvSource for SnapshotImpl {
-    read(&self, &k: Datum) -> KvResult<Datum> {
+    fn unwrap<'a>(&'a self) -> Option<&'a TreeNode> {
+        match self.target {
+            Some(ref r) => Some(&(*r)),
+            None => None,
+        }
     }
 }
 
-struct SnapshotStoreImpl {
-    // TODO deterministic hasher
-    kvs: HashMap<SnapshotStampByteString, TreeNodePtr>
-    head: TreeNodePtr
-    ticker: i32
+#[allow(dead_code)]
+struct SnapshotImpl<'a> {
+    // TODO lifetime this
+    head: Option<&'a TreeNode>,
 }
 
-impl SnapshotStore for SnapshotStoreImpl {
-    fn open(&mut self) -> SnapshotStamp {
+impl<'a> KvSource for SnapshotImpl<'a> {
+    type D = SliceDatum<'a>;
+
+    #[allow(unused_variables)]
+    fn read(&self, k: &Datum) -> KvResult<Self::D> {
+        KvResult::Failure(String::from("not yet implemented"))
+    }
+}
+
+#[allow(dead_code)]
+struct SnapshotStoreImpl<'a> {
+    // TODO deterministic hasher
+    kvs: HashMap<SnapshotStampImpl, TreeNodePtr>,
+    head: TreeNodePtr,
+    ticker: CounterDatum64,
+    phantom: PhantomData<&'a ()>
+}
+
+#[derive(PartialEq, Eq, Hash, Clone)]
+struct SnapshotStampImpl {
+    datum: CounterDatum64
+}
+
+impl SnapshotStamp for SnapshotStampImpl {
+}
+
+impl<'a> SnapshotStore<'a> for SnapshotStoreImpl<'a> {
+    type S = SnapshotImpl<'a>;
+    type Stamp = SnapshotStampImpl;
+
+    fn open(&mut self) -> SnapshotStampImpl {
         // TODO safety check
         // TODO ephemeral snapshots also
-        let stamp = SnapshotStampByteString(ticker)
-        kvs.insert(stamp, head.clone())
-        ticker += 1
+        let stamp = SnapshotStampImpl {
+            datum: self.ticker.clone(),
+        };
+        self.kvs.insert(stamp.clone(), self.head.clone());
+        self.ticker = self.ticker.inc();
         stamp
     }
 
-    fn close(&mut self, &stamp: SnapshotStamp) {
-        kvs.remove(stamp)
+    fn close(&mut self, stamp: &SnapshotStampImpl) {
+        self.kvs.remove(stamp);
+        ()
     }
 
     //fn diff(&self, &prev: SnapshotStamp) -> KvStream
 
-    fn snap(&self, &stamp: SnapshotStamp) -> Optional<KvSource> {
-        let snaphead = kvs.get(stamp)
-        SnapshotImpl(snaphead)
+    fn snap(&'a self, stamp: &'a SnapshotStampImpl) -> Option<Self::S> {
+        match self.kvs.get(stamp) {
+            Some(snaphead) => Some(SnapshotImpl { head: snaphead.unwrap() }),
+            None => None,
+        }
+    }
+}
+
+pub fn ephemeral_store<'a>() -> impl SnapshotStore<'a> {
+    SnapshotStoreImpl {
+        kvs: HashMap::new(),
+        head: TreeNodePtr { target: None },
+        ticker: CounterDatum64::new(0),
+        phantom: PhantomData,
     }
 }
 

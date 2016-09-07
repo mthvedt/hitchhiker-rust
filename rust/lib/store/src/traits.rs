@@ -22,7 +22,6 @@ pub enum KvResult<T> {
 }
 
 // TODO make this async
-// TODO impl return types everywhere
 pub trait DataWrite {
     fn write(&mut self, buf: &[u8]) -> KvResult<()>;
 }
@@ -47,7 +46,6 @@ pub fn datawrite_write<'a>(w: &'a mut DataWrite) -> impl Write + 'a {
     DataWriteWrite { underlying: w }
 }
 
-// TODO all these should be generic
 pub trait KvDoc {
     fn write(&self, r: &KvSink) -> KvResult<()>;
 }
@@ -93,8 +91,4 @@ pub trait SnapshotStore<'a> {
     // TODO make this safer? what is the semantics of a removed snapshot?
     fn snap(&'a self, stamp: &'a Self::Stamp) -> Option<Self::S>;
 }
-
-// TODO: Ephemeral kv sink. Good perf for event model POC.
-// TODO: permanent kv sink, for obvious reasons. Can we mmap the ephem
-// into the permanent?
 

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::marker::PhantomData;
-use std::sync::Arc;
+use std::rc::Rc;
 
 use data::*;
 use traits::*;
@@ -31,7 +31,7 @@ impl TreeNode {
 #[derive(Clone)]
 struct TreeNodePtr {
     // TODO: instead Rc?
-    target: Option<Arc<TreeNode>>,
+    target: Option<Rc<TreeNode>>,
 }
 
 impl TreeNodePtr {
@@ -45,7 +45,6 @@ impl TreeNodePtr {
 
 #[allow(dead_code)]
 struct SnapshotImpl<'a> {
-    // TODO lifetime this
     head: Option<&'a TreeNode>,
 }
 
@@ -63,13 +62,13 @@ struct SnapshotStoreImpl<'a> {
     // TODO deterministic hasher
     kvs: HashMap<SnapshotStampImpl, TreeNodePtr>,
     head: TreeNodePtr,
-    ticker: CounterDatum64,
+    ticker: Counter,
     phantom: PhantomData<&'a ()>
 }
 
 #[derive(PartialEq, Eq, Hash, Clone)]
 struct SnapshotStampImpl {
-    datum: CounterDatum64
+    datum: Counter
 }
 
 impl SnapshotStamp for SnapshotStampImpl {
@@ -109,7 +108,7 @@ pub fn ephemeral_store<'a>() -> impl SnapshotStore<'a> {
     SnapshotStoreImpl {
         kvs: HashMap::new(),
         head: TreeNodePtr { target: None },
-        ticker: CounterDatum64::new(0),
+        ticker: Counter::new(0),
         phantom: PhantomData,
     }
 }

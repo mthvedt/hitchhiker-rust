@@ -1,79 +1,129 @@
-// TODO rename this file
-
-use std::io::Error;
-use std::io::ErrorKind;
-use std::io::Write;
 use std::io;
 
-pub trait Datum {
+use byteorder::{ByteOrder, LittleEndian};
+use futures;
+
+pub enum ErrorType {
+    Other,
+}
+
+pub struct Error {
+    t: ErrorType,
+    // TODO: can we make this StringLike for perf? to what extent does
+    // perf matter?
+    message: String,
+}
+
+impl Error {
+    pub fn other(s: &str) -> Error {
+        Error { t: ErrorType::Other, message: String::from(s) }
+    }
+}
+
+// TODO: might not need static
+pub trait Future<T: Send + 'static> : futures::Future<Item = T, Error = Error> {}
+// TODO why doesn't this work?
+//impl<T> Future<T> for futures::Future<Item = T, Error = Error> 
+//where T: Send + 'static {}
+impl<F, T> Future<T> for F where
+T: Send + 'static,
+F: futures::Future<Item = T, Error = Error> {}
+
+pub trait DataWrite {
+    type R: Future<()>;
+    fn write(&mut self, buf: &[u8]) -> Self::R;
+}
+
+pub trait Datum: Send {
     /*
       A datum has a max size of 64kbytes. Thunderhead is not designed
       for very large values; they should be split into multiple values
       instead.
       */
     fn len(&self) -> u16;
-    fn write_bytes(&self, w: &mut DataWrite) -> KvResult<()>;
-}
+    // TODO: this is inelegant. Instead Datum should require Sized
+    fn write_bytes<W: DataWrite>(&self, w: &mut W) -> W::R where Self:Sized;
 
-pub enum KvResult<T> {
-    Success(T),
-    // TODO: can we make this StringLike for perf?
-    Failure(String),
-}
-
-// TODO make this async
-pub trait DataWrite {
-    fn write(&mut self, buf: &[u8]) -> KvResult<()>;
-}
-
-struct DataWriteWrite<'a, W: 'a + DataWrite + ?Sized> {
-    underlying: &'a mut W
-}
-
-impl<'a, W: 'a + DataWrite + ?Sized> Write for DataWriteWrite<'a, W> {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        match self.underlying.write(buf) {
-            KvResult::Success(_) => Ok(buf.len()),
-            KvResult::Failure(s) => Err(Error::new(ErrorKind::Other, s)),
-        }
-    }
-
-    fn flush(&mut self) -> io::Result<()> { Ok(()) }
-}
-
-// TODO: need a trait to 'async flush' the data write.
-pub fn datawrite_write<'a>(w: &'a mut DataWrite) -> impl Write + 'a {
-    DataWriteWrite { underlying: w }
-}
-
-pub trait KvDoc {
-    fn write(&self, r: &KvSink) -> KvResult<()>;
+    // TODO: a way to get the raw slice in a way that's possiby zero-copy
 }
 
 pub trait KvSink {
-    fn write(&self, k: &Datum, v: &Datum) -> KvResult<()>;
+    type R: Future<()>;
+    fn write(&self, k: &Datum, v: &Datum) -> Self::R;
+}
+
+pub trait KvDoc {
+    fn write<S: KvSink>(&self, r: &S) -> S::R;
 }
 
 pub trait KvSource {
-    type D: Datum;
-    fn read(&self, k: &Datum) -> KvResult<Self::D>;
+    type D: Datum + 'static;
+    type R: Future<Self::D>;
+    fn read(&self, k: &Datum) -> Self::R;
 }
 
 pub trait KvCursor {
-    fn get(&self) -> KvResult<&Datum>;
-    fn next(self) -> KvCursor;
+    type D: Datum + 'static;
+    type R: Future<Self::D>;
+    fn get(&self) -> Self::R;
+    fn next(self) -> KvCursor<D = Self::D, R = Self::R>;
 }
 
 pub trait KvStream {
-    fn cursor(&self) -> KvCursor;
+    type D: Datum + 'static;
+    type R: Future<Self::D>;
+    fn cursor(&self) -> KvCursor<D = Self::D, R = Self::R>;
 }
 
-pub trait SnapshotStamp {
-    // TODO extend datum. This is just an impl of Datum
-    // that's type-safed. Might be better as a struct.
+// TODO: consider perf consequences of making this variable-sized
+// TODO: if the above, make this u128
+#[derive(PartialEq, Eq, Hash, Clone)]
+pub struct Counter {
+    // little-endian
+    data: u64,
 }
 
-pub trait SnapshotStore<'a> {
+impl Counter {
+    pub fn new(x: u64) -> Counter {
+        Counter { data: x }
+    }
+
+    pub fn inc(&self) -> Counter {
+        Counter { data: self.data + 1 }
+    }
+}
+
+impl Datum for Counter {
+    fn len(&self) -> u16 {
+        8
+    }
+
+    fn write_bytes<W: DataWrite>(&self, w: &mut W) -> W::R {
+        let mut tmp = [0 as u8; 8];
+        LittleEndian::write_u64(&mut tmp, self.data);
+        w.write(&tmp)
+    }
+}
+
+// TODO: ???
+// We want ephemeral snapshots to be addressable by pointer, for speed.
+// We also need coordinated ephemeral snapshots... addressable by single indirect...
+//
+// In general, the futures lib cannot be relied upon to be non-static.
+// Everything that comes out of here *must* be compatible with static lifetimes.
+// This probably requires unsafety? Core handles/pointers can't have static references,
+// so we need to use pointers instead.
+// (There's also the question of how to invalidate the pointers upon closing the undelrying
+// datastore...)
+/// SnapshotStore is not lifetimed. In an ideal world, it would be lifetimed
+/// such that no use-after-free operations are permitted. There are three issues with this:
+/// 1) The futures-rs library, which we use heavily, does not play nicely with finite lifetimes.
+/// 2) Sub-lifetimes on associated types are difficult in Rust unitl higher-kinded lifetimes
+/// are implemented (if they ever will be). Workarounds exist in the form of 'reference traits'
+/// like IntoIterator, but these are clumsy in our use case.
+/// 3) Errors may cause production SnapshotStores to abruptly close so we have to handle
+/// that case anyway.
+pub trait SnapshotStore {
     // TODO: persistent snapshot cursors.
     // TODO: what is the correct use of &mut self?
 
@@ -83,12 +133,11 @@ pub trait SnapshotStore<'a> {
 
     // TODO: instead, use rust safety to eliminate use-after-free
     // for snapshots...?
-    type S: KvSource;
-    type Stamp: SnapshotStamp;
-    fn open(&mut self) -> Self::Stamp;
-    fn close(&mut self, stamp: &Self::Stamp);
+    type Snap: KvSource;
+    fn open(&mut self) -> Counter;
+    fn close(&mut self, stamp: &Counter);
     //fn diff(&self, &prev: SnapshotStamp) -> KvStream;
     // TODO make this safer? what is the semantics of a removed snapshot?
-    fn snap(&'a self, stamp: &'a Self::Stamp) -> Option<Self::S>;
+    fn snap(&self, stamp: &Counter) -> Option<Self::Snap>;
 }
 

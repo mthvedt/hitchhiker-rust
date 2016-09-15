@@ -1,10 +1,12 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::mem;
+use std::ops::{Deref, DerefMut};
 use std::ptr;
-use std::rc::Rc;
+// use std::rc::Rc;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use futures;
+use futures::{done};
 
 use traits::*;
 
@@ -37,6 +39,8 @@ struct TreeNode {
     refcount: i32,
 }
 
+// TODO move to private util rs
+/// Make an array, populating each element according to a lambda of one int.
 macro_rules! make_array {
     ($constructor: expr, $n: expr) => {
         {
@@ -64,7 +68,7 @@ impl TreeNode {
 
 #[derive(Clone)]
 struct TreeNodePtr {
-    target: Option<Rc<TreeNode>>,
+    target: Option<Arc<TreeNode>>,
 }
 
 impl TreeNodePtr {
@@ -104,23 +108,114 @@ impl EphemeralStoreHead {
     fn new() -> EphemeralStoreHead {
         EphemeralStoreHead {
             kvs: HashMap::new(),
-            head: TreeNodePtr::empty(), 
+            head: TreeNodePtr::empty(),
             ticker: Counter::new(0),
             open: true,
         }
     }
 }
 
+#[derive(Clone)]
+struct EphemeralStoreHandle {
+    target: Arc<Mutex<EphemeralStoreHead>>,
+}
+
+impl EphemeralStoreHandle {
+    fn new(h: EphemeralStoreHead) -> EphemeralStoreHandle {
+        EphemeralStoreHandle { target: Arc::new(Mutex::new(h)) }
+    }
+
+    // fn apply<T>(f: EphemeralStoreHead -> T) -> T {
+    //     let head = (*target).lock().unwrap()
+    //     f(head)
+    // }
+
+    fn lock<'a>(&'a self) -> EphemeralStoreHandleLock<'a> {
+        EphemeralStoreHandleLock {
+            ref_guard: &self,
+            // TODO this panics
+            target: self.target.deref().lock().unwrap(),
+        }
+    }
+}
+
+struct EphemeralStoreHandleLock<'a> {
+    // Safety check. EphemeralStoreHandleLocks should be short-lived on the stack,
+    // so that this reference optimizes away.
+    ref_guard: &'a EphemeralStoreHandle,
+    target: MutexGuard<'a, EphemeralStoreHead>,
+}
+
+impl<'a> Deref for EphemeralStoreHandleLock<'a> {
+    type Target = EphemeralStoreHead;
+
+    fn deref(&self) -> &Self::Target {
+        self.target.deref()
+    }
+}
+
+impl<'a> DerefMut for EphemeralStoreHandleLock<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.target.deref_mut()
+    }
+}
+
 #[allow(dead_code)]
 struct SnapshotImpl {
     head: SnapshotPtr,
-    parent_handle: Rc<RefCell<EphemeralStoreHead>>,
+    parent_handle: EphemeralStoreHandle,
 }
 
-fn snapshot_impl(p: &SnapshotPtr, h: &Rc<RefCell<EphemeralStoreHead>>) -> SnapshotImpl {
-    SnapshotImpl {
-        head: p.clone(),
-        parent_handle: h.clone(),
+impl SnapshotImpl {
+    fn new(p: &SnapshotPtr, h: &EphemeralStoreHandle) -> SnapshotImpl {
+        SnapshotImpl {
+            head: p.clone(),
+            parent_handle: h.clone(),
+        }
+    }
+}
+
+impl KvSource for SnapshotImpl {
+    type D = SnapshotDatumPointer;
+    type R = Done<Self::D>;
+
+    #[allow(unused_variables)]
+    fn read(&self, k: &Datum) -> Self::R {
+        err(Error::other("not yet implemented"))
+    }
+}
+
+struct SnapshotImplMut {
+    parent_handle: EphemeralStoreHandle,
+    // TODO: consistent naming--ticker or counter
+    ticker: Counter,
+}
+
+impl SnapshotImplMut {
+    fn new(h: &EphemeralStoreHandle, c: Counter) -> SnapshotImplMut {
+        SnapshotImplMut {
+            parent_handle: h.clone(),
+            ticker: c,
+        }
+    }
+}
+
+impl KvSource for SnapshotImplMut {
+    type D = SnapshotDatumPointer;
+    type R = Done<Self::D>;
+
+    #[allow(unused_variables)]
+    fn read(&self, k: &Datum) -> Self::R {
+        futures::done(Err(Error::other("not yet implemented")))
+    }
+}
+
+impl KvSink for SnapshotImplMut {
+    type R = Done<()>;
+
+    #[allow(unused_variables)]
+    fn write(&mut self, k: &Datum, v: &Datum) -> Self::R {
+        futures::done(Err(Error::other("not yet implemented")))
     }
 }
 
@@ -139,59 +234,66 @@ impl Datum for SnapshotDatumPointer {
     }
 }
 
-impl KvSource for SnapshotImpl {
-    type D = SnapshotDatumPointer;
-    type R = futures::Done<Self::D, Error>;
-
-    #[allow(unused_variables)]
-    fn read(&self, k: &Datum) -> Self::R {
-        futures::done(Err(Error::other("not yet implemented")))
-    }
-}
-struct SnapshotStorePointer {
-    // TODO: unsafe cell in non-debug
-    target: Rc<RefCell<EphemeralStoreHead>>,
-}
-
 struct SnapshotStoreImpl {
-    // This is the same head used in SnapshotStorePointer.
-    target: Rc<RefCell<EphemeralStoreHead>>,
+    target: EphemeralStoreHandle,
 }
 
 impl SnapshotStore for SnapshotStoreImpl {
     type Snap = SnapshotImpl;
+    type SnapTmp = SnapshotImpl; // TODO a different type
+    type SnapMut = SnapshotImplMut;
 
-    fn open(&mut self) -> Counter {
-        // TODO safety check
-        // TODO ephemeral snapshots also
-        let mut head = (*self.target).borrow_mut();
-        let ticker = head.ticker.clone();
-        let headptr = head.head.clone(); // Early clone to evade borrow rules
-        head.kvs.insert(ticker.clone(), SnapshotPtr::new(&headptr));
-        head.ticker = ticker.inc();
-        ticker
+    type SnapF = Done<Self::Snap>;
+    fn snap(&self, stamp: &Counter) -> Self::SnapF {
+        let ref head = *self.target.lock();
+        match head.kvs.get(stamp) {
+            Some(snaphead) => ok(SnapshotImpl::new(&snaphead, &self.target)),
+            None => err(Error::other("snapshot does not exist")), // TODO notfound
+        }
     }
 
-    fn close(&mut self, stamp: &Counter) {
-        let mut head = (*self.target).borrow_mut();
+    // TODO: RO snapshots shouldn't increment the counter.
+    // We're confusing snapshot fxnality with cursor fxnality here.
+    type SnapNewF = Done<Self::Snap>;
+    fn snap_new(&mut self) -> Self::SnapNewF {
+        let ref mut head = *self.target.lock();
+        let newsnap = SnapshotPtr::new(&head.head.clone());
+        head.kvs.insert(head.ticker, newsnap.clone());
+        ok(SnapshotImpl::new(&newsnap, &self.target))
+    }
+
+    type SnapTmpF = Done<Self::SnapTmp>;
+    fn snap_tmp(&mut self) -> Self::SnapTmp {
+        panic!("Not yet implemented")
+    }
+
+    type SnapMutF = Done<Self::SnapMut>;
+    fn snap_mut(&mut self) -> Self::SnapMutF {
+        let ref head = *self.target.lock();
+        let newsnap = SnapshotImplMut::new(&self.target, head.ticker);
+        ok(newsnap)
+    }
+
+    type SnapCloseF = Done<()>;
+    fn snap_close(&mut self, stamp: &Counter) -> Self::SnapCloseF {
+        let ref mut head = *self.target.lock();
         head.kvs.remove(stamp);
-        ()
+        // TODO close the snapshot
+        ok(())
+    }
+
+    type CloseF = Done<()>;
+    fn close(&mut self) -> Self::CloseF {
+        let ref mut head = *self.target.lock();
+        head.open = false;
+        ok(())
     }
 
     //fn diff(&self, &prev: SnapshotStamp) -> KvStream
-
-    fn snap(&self, stamp: &Counter) -> Option<Self::Snap> {
-        let head = (*self.target).borrow();
-        match head.kvs.get(stamp) {
-            Some(snaphead) => Some(snapshot_impl(&snaphead, &self.target)),
-            None => None,
-        }
-    }
 }
 
 pub fn ephemeral_store() -> impl SnapshotStore {
     SnapshotStoreImpl {
-        target: Rc::new(RefCell::new(EphemeralStoreHead::new()))
+        target: EphemeralStoreHandle::new(EphemeralStoreHead::new())
     }
 }
-

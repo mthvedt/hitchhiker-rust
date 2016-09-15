@@ -4,6 +4,7 @@ use byteorder::{ByteOrder, LittleEndian};
 use futures;
 
 pub enum ErrorType {
+    NotFound,
     Other,
 }
 
@@ -23,11 +24,22 @@ impl Error {
 // TODO: might not need static
 pub trait Future<T: Send + 'static> : futures::Future<Item = T, Error = Error> {}
 // TODO why doesn't this work?
-//impl<T> Future<T> for futures::Future<Item = T, Error = Error> 
+//impl<T> Future<T> for futures::Future<Item = T, Error = Error>
 //where T: Send + 'static {}
 impl<F, T> Future<T> for F where
 T: Send + 'static,
 F: futures::Future<Item = T, Error = Error> {}
+
+pub type Done<T> = futures::Done<T, Error>;
+
+// TODO: should this be exposed?
+pub fn ok<T>(t: T) -> Done<T> {
+    futures::done(Ok(t))
+}
+
+pub fn err<T>(e: Error) -> Done<T> {
+    futures::done(Err(e))
+}
 
 pub trait DataWrite {
     type R: Future<()>;
@@ -47,21 +59,25 @@ pub trait Datum: Send {
     // TODO: a way to get the raw slice in a way that's possiby zero-copy
 }
 
-pub trait KvSink {
-    type R: Future<()>;
-    fn write(&self, k: &Datum, v: &Datum) -> Self::R;
-}
-
+/*
 pub trait KvDoc {
     fn write<S: KvSink>(&self, r: &S) -> S::R;
 }
+*/
 
 pub trait KvSource {
+    // TODO: should this require static? what if the future doesn't?
     type D: Datum + 'static;
     type R: Future<Self::D>;
     fn read(&self, k: &Datum) -> Self::R;
 }
 
+pub trait KvSink {
+    type R: Future<()>;
+    fn write(&mut self, k: &Datum, v: &Datum) -> Self::R;
+}
+
+/*
 pub trait KvCursor {
     type D: Datum + 'static;
     type R: Future<Self::D>;
@@ -74,10 +90,12 @@ pub trait KvStream {
     type R: Future<Self::D>;
     fn cursor(&self) -> KvCursor<D = Self::D, R = Self::R>;
 }
+*/
 
 // TODO: consider perf consequences of making this variable-sized
+// TODO: move to data.rs
 // TODO: if the above, make this u128
-#[derive(PartialEq, Eq, Hash, Clone)]
+#[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub struct Counter {
     // little-endian
     data: u64,
@@ -133,11 +151,46 @@ pub trait SnapshotStore {
 
     // TODO: instead, use rust safety to eliminate use-after-free
     // for snapshots...?
-    type Snap: KvSource;
-    fn open(&mut self) -> Counter;
-    fn close(&mut self, stamp: &Counter);
-    //fn diff(&self, &prev: SnapshotStamp) -> KvStream;
-    // TODO make this safer? what is the semantics of a removed snapshot?
-    fn snap(&self, stamp: &Counter) -> Option<Self::Snap>;
+    //
+    // TODO: cursors are a core feature also
+    type Snap: KvSource + Send + 'static;
+    // TODO different types for each
+    type SnapTmp: KvSource + Send + 'static;
+    // TODO different types for each
+    type SnapMut: KvSource + KvSink + Send + 'static;
+
+    /// Recover a permanent snapshot given that snapshot's counter.
+    type SnapF: Future<Self::Snap>;
+    fn snap(&self, stamp: &Counter) -> Self::SnapF;
+
+    /// Open a permanent snapshot for read-only transactions.
+    /// The snapshot is guaranteed to be durable until closed.
+    type SnapNewF: Future<Self::Snap>;
+    fn snap_new(&mut self) -> Self::SnapNewF;
+
+    type SnapTmpF: Future<Self::SnapTmp>;
+    fn snap_tmp(&mut self) -> Self::SnapTmp;
+
+    // TODO: we need cursors also.
+
+    // TODO: this isn't necessary for POC, but it (or something like it) should be implemented
+    // eventually. Remember to think about the distributed case when implementing.
+    // Open an ephemeral snapshot. These snapshots don't bookkeep reads and writes,
+    // and vanish when the database closes.
+    //type SnapEphemF: Future<Self::SnapEphem>;
+    //fn snap_ephem(&self) -> Self:SnapEphemF;
+
+    /// Open an ephemeral, mutable snapshot, used for read-write transactions.
+    ///
+    /// Implementations should probably have some safety check, where calling Drop
+    /// on an unclosed or undiscarded snapshot is an error.
+    type SnapMutF: Future<Self::SnapMut>;
+    fn snap_mut(&mut self) -> Self::SnapMutF;
+
+    type SnapCloseF: Future<()>;
+    fn snap_close(&mut self, stamp: &Counter) -> Self::SnapCloseF;
+
+    type CloseF: Future<()>;
+    fn close(&mut self) -> Self::CloseF;
 }
 

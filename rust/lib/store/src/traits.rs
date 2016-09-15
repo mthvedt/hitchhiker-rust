@@ -1,5 +1,3 @@
-use std::io;
-
 use byteorder::{ByteOrder, LittleEndian};
 use futures;
 
@@ -8,6 +6,7 @@ pub enum ErrorType {
     Other,
 }
 
+#[allow(dead_code)]
 pub struct Error {
     t: ErrorType,
     // TODO: can we make this StringLike for perf? to what extent does

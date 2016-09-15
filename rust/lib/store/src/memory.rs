@@ -1,12 +1,9 @@
 use std::collections::HashMap;
 use std::mem;
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 use std::ptr;
 // use std::rc::Rc;
 use std::sync::{Arc, Mutex, MutexGuard};
-
-use futures;
-use futures::{done};
 
 use traits::*;
 
@@ -23,6 +20,7 @@ struct TreeValuePtr {
     target: Option<TreeValue>
 }
 
+#[allow(dead_code)]
 impl TreeValuePtr {
     fn empty() -> TreeValuePtr {
         TreeValuePtr {
@@ -53,6 +51,7 @@ macro_rules! make_array {
     }
 }
 
+#[allow(dead_code)]
 impl TreeNode {
     fn empty() -> TreeNode {
         unsafe {
@@ -130,33 +129,9 @@ impl EphemeralStoreHandle {
     //     f(head)
     // }
 
-    fn lock<'a>(&'a self) -> EphemeralStoreHandleLock<'a> {
-        EphemeralStoreHandleLock {
-            ref_guard: &self,
-            // TODO this panics
-            target: self.target.deref().lock().unwrap(),
-        }
-    }
-}
-
-struct EphemeralStoreHandleLock<'a> {
-    // Safety check. EphemeralStoreHandleLocks should be short-lived on the stack,
-    // so that this reference optimizes away.
-    ref_guard: &'a EphemeralStoreHandle,
-    target: MutexGuard<'a, EphemeralStoreHead>,
-}
-
-impl<'a> Deref for EphemeralStoreHandleLock<'a> {
-    type Target = EphemeralStoreHead;
-
-    fn deref(&self) -> &Self::Target {
-        self.target.deref()
-    }
-}
-
-impl<'a> DerefMut for EphemeralStoreHandleLock<'a> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.target.deref_mut()
+    fn lock<'a>(&'a self) -> MutexGuard<'a, EphemeralStoreHead> {
+        // TODO: handle panic here
+        self.target.deref().lock().unwrap()
     }
 }
 
@@ -185,6 +160,7 @@ impl KvSource for SnapshotImpl {
     }
 }
 
+#[allow(dead_code)]
 struct SnapshotImplMut {
     parent_handle: EphemeralStoreHandle,
     // TODO: consistent naming--ticker or counter
@@ -206,7 +182,7 @@ impl KvSource for SnapshotImplMut {
 
     #[allow(unused_variables)]
     fn read(&self, k: &Datum) -> Self::R {
-        futures::done(Err(Error::other("not yet implemented")))
+        err(Error::other("not yet implemented"))
     }
 }
 
@@ -215,7 +191,7 @@ impl KvSink for SnapshotImplMut {
 
     #[allow(unused_variables)]
     fn write(&mut self, k: &Datum, v: &Datum) -> Self::R {
-        futures::done(Err(Error::other("not yet implemented")))
+        err(Error::other("not yet implemented"))
     }
 }
 
@@ -224,6 +200,7 @@ struct SnapshotDatumPointer {
     //val: *TreeValue,
 }
 
+#[allow(dead_code, unused_variables)]
 impl Datum for SnapshotDatumPointer {
     fn len(&self) -> u16 {
         panic!("Not implemented")

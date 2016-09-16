@@ -5,7 +5,54 @@ use std::ptr;
 // use std::rc::Rc;
 use std::sync::{Arc, Mutex, MutexGuard};
 
+use data::*;
 use traits::*;
+
+/*
+Design of MVP kvs
+
+We need two things here:
+* ACID transactions (real ones),
+* persistent snapshots and cursors.
+
+---
+
+ACID
+
+The best kv backends do not seem to handle ACID
+(LightningDB says they do, but they're lying) so we need
+to do it ourselves. Here's the plan:
+
+Each key should be associated with an ephemeral intent.
+It has a transaction counter and an RW value. Once distributed
+transactions exist, we will need durable write intents; that comes
+later.
+
+We can also associate ranges with ephemeral intents; needed
+for indexing. This suggests the intent map should be a tree.
+
+The intents help us figure out our transactions.
+
+---
+
+PERSISTENT SNAPSHOTS
+
+Ok, this is hard. The following DBs do NOT do persistent snapshots:
+* WiredTiger
+* LevelDB
+* RocksDB
+* Berkeley
+* Bitcask
+* {To, kyo} cabinet
+
+We might just have to implement our own data structure :(
+
+Basically, hitch hiker trees.
+
+But we should def make a test datastructure. How about:
+* Tree: a dumb kv store with buckets...
+actually see hitchhiker tree redis backend
+*/
 
 #[allow(dead_code)]
 struct TreeValue {
@@ -155,7 +202,7 @@ impl KvSource for SnapshotImpl {
     type R = Done<Self::D>;
 
     #[allow(unused_variables)]
-    fn read(&self, k: &Datum) -> Self::R {
+    fn read<DR: Datum>(&self, k: &DR) -> Self::R {
         err(Error::other("not yet implemented"))
     }
 }
@@ -181,7 +228,7 @@ impl KvSource for SnapshotImplMut {
     type R = Done<Self::D>;
 
     #[allow(unused_variables)]
-    fn read(&self, k: &Datum) -> Self::R {
+    fn read<DR: Datum>(&self, k: &DR) -> Self::R {
         err(Error::other("not yet implemented"))
     }
 }
@@ -190,7 +237,7 @@ impl KvSink for SnapshotImplMut {
     type R = Done<()>;
 
     #[allow(unused_variables)]
-    fn write(&mut self, k: &Datum, v: &Datum) -> Self::R {
+    fn write<D1: Datum, D2: Datum>(&mut self, k: &D1, v: &D2) -> Self::R {
         err(Error::other("not yet implemented"))
     }
 }
@@ -206,7 +253,7 @@ impl Datum for SnapshotDatumPointer {
         panic!("Not implemented")
     }
 
-    fn write_bytes<W: DataWrite>(&self, w: &mut W) -> W::R where Self: Sized {
+    fn write_bytes<W: DataWrite>(&self, w: W) -> W::Result where Self: Sized {
         panic!("Not implemented")
     }
 }

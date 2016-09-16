@@ -1,5 +1,8 @@
+// TODO might not need byteorder.
 use byteorder::{ByteOrder, LittleEndian};
 use futures;
+
+use data::*;
 
 pub enum ErrorType {
     NotFound,
@@ -40,24 +43,6 @@ pub fn err<T>(e: Error) -> Done<T> {
     futures::done(Err(e))
 }
 
-pub trait DataWrite {
-    type R: Future<()>;
-    fn write(&mut self, buf: &[u8]) -> Self::R;
-}
-
-pub trait Datum: Send {
-    /*
-      A datum has a max size of 64kbytes. Thunderhead is not designed
-      for very large values; they should be split into multiple values
-      instead.
-      */
-    fn len(&self) -> u16;
-    // TODO: this is inelegant. Instead Datum should require Sized
-    fn write_bytes<W: DataWrite>(&self, w: &mut W) -> W::R where Self:Sized;
-
-    // TODO: a way to get the raw slice in a way that's possiby zero-copy
-}
-
 /*
 pub trait KvDoc {
     fn write<S: KvSink>(&self, r: &S) -> S::R;
@@ -66,14 +51,14 @@ pub trait KvDoc {
 
 pub trait KvSource {
     // TODO: should this require static? what if the future doesn't?
-    type D: Datum + 'static;
+    type D: Datum + Send + 'static;
     type R: Future<Self::D>;
-    fn read(&self, k: &Datum) -> Self::R;
+    fn read<DR: Datum>(&self, k: &DR) -> Self::R;
 }
 
 pub trait KvSink {
     type R: Future<()>;
-    fn write(&mut self, k: &Datum, v: &Datum) -> Self::R;
+    fn write<D1: Datum, D2: Datum>(&mut self, k: &D1, v: &D2) -> Self::R;
 }
 
 /*
@@ -115,7 +100,7 @@ impl Datum for Counter {
         8
     }
 
-    fn write_bytes<W: DataWrite>(&self, w: &mut W) -> W::R {
+    fn write_bytes<W: DataWrite>(&self, w: W) -> W::Result {
         let mut tmp = [0 as u8; 8];
         LittleEndian::write_u64(&mut tmp, self.data);
         w.write(&tmp)
@@ -192,4 +177,3 @@ pub trait SnapshotStore {
     type CloseF: Future<()>;
     fn close(&mut self) -> Self::CloseF;
 }
-

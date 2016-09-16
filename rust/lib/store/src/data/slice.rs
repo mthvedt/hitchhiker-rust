@@ -1,6 +1,6 @@
 use std::convert::TryFrom;
 
-use traits::*;
+use super::traits::*;
 
 pub struct SliceDatum<'a> {
     data: &'a [u8],
@@ -19,7 +19,8 @@ impl<'a> Datum for SliceDatum<'a> {
         u16::try_from(self.data.len()).unwrap()
     }
 
-    fn write_bytes<W: DataWrite>(&self, w: &mut W) -> W::R {
+// TODO: W or &mut W?
+    fn write_bytes<W: DataWrite>(&self, w: W) -> W::Result {
         w.write(self.data)
     }
 }
@@ -45,8 +46,7 @@ impl<'a> Datum for SliceDatumMut<'a> {
         u16::try_from(self.data.len()).unwrap()
     }
 
-    fn write_bytes<W: DataWrite>(&self, w: &mut W) -> W::R {
+    fn write_bytes<W: DataWrite>(&self, w: W) -> W::Result {
         w.write(self.data)
     }
 }
-

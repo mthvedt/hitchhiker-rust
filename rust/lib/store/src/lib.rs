@@ -1,5 +1,5 @@
 #![feature(conservative_impl_trait)]
-#![feature(try_from)] 
+#![feature(try_from)]
 
 extern crate byteorder;
 extern crate futures;
@@ -7,6 +7,7 @@ extern crate futures;
 mod data;
 mod memory;
 mod traits;
+mod tree;
 
 // TODO: cleaner separation of interfaces
 pub use data::*;

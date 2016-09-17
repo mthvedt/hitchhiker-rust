@@ -4,6 +4,8 @@
 extern crate byteorder;
 extern crate futures;
 
+// TODO consider better way to hide these macros...
+#[macro_use]
 mod data;
 mod memory;
 mod traits;

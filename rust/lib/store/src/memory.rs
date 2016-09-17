@@ -84,20 +84,6 @@ struct TreeNode {
     refcount: i32,
 }
 
-// TODO move to private util rs
-/// Make an array, populating each element according to a lambda of one int.
-macro_rules! make_array {
-    ($constructor: expr, $n: expr) => {
-        {
-            let mut items: [_; $n] = mem::uninitialized();
-            for (i, place) in items.iter_mut().enumerate() {
-                ptr::write(place, $constructor(i));
-            }
-            items
-        }
-    }
-}
-
 #[allow(dead_code)]
 impl TreeNode {
     fn empty() -> TreeNode {

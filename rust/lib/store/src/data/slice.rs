@@ -2,6 +2,7 @@ use std::convert::TryFrom;
 
 use super::traits::*;
 
+// TODO what should be public here?
 pub struct SliceDatum<'a> {
     data: &'a [u8],
 }
@@ -19,7 +20,9 @@ impl<'a> Datum for SliceDatum<'a> {
         u16::try_from(self.data.len()).unwrap()
     }
 
-// TODO: W or &mut W?
+// TODO: W or &mut W? Let's go with W--makes it easier to used sized data writes
+// TODO: consider api for fixed/variable data writes
+// TODO: consider safety checks here
     fn write_bytes<W: DataWrite>(&self, w: W) -> W::Result {
         w.write(self.data)
     }

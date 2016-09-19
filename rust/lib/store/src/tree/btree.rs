@@ -196,7 +196,6 @@ impl Node {
 		}
 	}
 
-
 	fn insert<D, B, I>(&mut self, mut k: I, v: &D) where
 	D: Datum,
 	B: Borrow<u8>,
@@ -205,6 +204,20 @@ impl Node {
 		match k.next() {
 			Some(b) => self.insert_for_hi_nibble(b.borrow().clone(), k, v),
 			None => panic!("Tried to insert with empty key"), // TODO handle
+		}
+	}
+
+	// Interface functions
+	fn delete<B, I>(&mut self, k: I) -> bool where
+	B: Borrow<u8>,
+	I: Iterator<Item = B>,
+	{
+		match self.get_ptr(k) {
+			Some(mut vptr) => {
+				vptr.v = None;
+				true
+			},
+			None => false,
 		}
 	}
 }
@@ -220,6 +233,8 @@ impl BTree {
 		}
 	}
 
+	/// Note that we don't use IntoDatum values. Similarly, we don't have an IntoKey trait.
+	/// The reason is we want conversion to be explicit.
 	pub fn insert<V, BK, BV>(&mut self, k: BK, bv: BV) -> () where
 	V: Datum,
 	BK: Borrow<[u8]>,
@@ -233,5 +248,11 @@ impl BTree {
 	BK: Borrow<[u8]>,
 	{
 		self.head.get(k.borrow().iter())
+	}
+
+	pub fn delete<BK>(&mut self, k: BK) -> bool where
+	BK: Borrow<[u8]>,
+	{
+		self.head.delete(k.borrow().iter())
 	}
 }

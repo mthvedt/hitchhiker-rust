@@ -35,7 +35,6 @@ impl Testable for BTree {
 fn smoke_test_insert() {
 	let mut t = BTree::setup();
 
-// TODO: use an IntoDatum trait instead
 	t.insert("foo".as_bytes(), "bar".to_datum());
 
 	t.teardown();
@@ -45,9 +44,28 @@ fn smoke_test_insert() {
 fn smoke_test_get() {
 	let mut t = BTree::setup();
 
-// TODO: use an IntoDatum trait instead
 	t.insert("foo".as_bytes(), "bar".to_datum());
 	assert_eq!(t.get("foo".as_bytes()).unwrap().unwrap(), "bar".as_bytes());
+	assert_eq!(t.get("fooo".as_bytes()), None);
+	assert_eq!(t.get("fop".as_bytes()), None);
+	assert_eq!(t.get("fo".as_bytes()), None);
+
+	t.teardown();
+}
+
+#[test]
+fn smoke_test_delete() {
+	let mut t = BTree::setup();
+
+	t.insert("foo".as_bytes(), "bar".to_datum());
+	t.insert("sna".as_bytes(), "foo".to_datum());
+	assert_eq!(t.get("foo".as_bytes()).unwrap().unwrap(), "bar".as_bytes());
+	assert_eq!(t.get("sna".as_bytes()).unwrap().unwrap(), "foo".as_bytes());
+	assert_eq!(t.get("fop".as_bytes()), None);
+
+	t.delete("sna".as_bytes());
+	assert_eq!(t.get("foo".as_bytes()).unwrap().unwrap(), "bar".as_bytes());
+	assert_eq!(t.get("sna".as_bytes()), None);
 	assert_eq!(t.get("fop".as_bytes()), None);
 
 	t.teardown();

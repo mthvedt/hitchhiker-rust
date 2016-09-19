@@ -23,7 +23,7 @@ pub struct SliceDatumIterator<'a> {
 
 impl<'a> SliceDatumIterator<'a> {
     fn new(data: &'a [u8]) -> SliceDatumIterator<'a> {
-        SliceDatumIterator { wrapped: data, }
+        SliceDatumIterator { wrapped: data.iter(), }
     }
 }
 
@@ -31,7 +31,7 @@ impl<'a> Iterator for SliceDatumIterator<'a> {
     type Item = u8;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.wrapped.next()
+        self.wrapped.next().map(u8::clone)
     }
 }
 
@@ -45,11 +45,6 @@ impl<'a> Datum for SliceDatum<'a> {
 // TODO: consider safety checks here
     fn write_bytes<W: DataWrite>(&self, w: W) -> W::Result {
         w.write(self.data)
-    }
-
-    type Stream = &'a Self;
-    fn as_stream(&self) -> Self::Stream {
-        SliceDatumIterator::new(self.data)
     }
 }
 
@@ -86,11 +81,6 @@ impl<'a> Datum for SliceDatumMut<'a> {
     fn write_bytes<W: DataWrite>(&self, w: W) -> W::Result {
         w.write(self.data)
     }
-
-    type Stream = &'a Self;
-    fn as_stream(&self) -> Self::Stream {
-        self
-    }
 }
 
 impl<'a> IntoIterator for &'a SliceDatumMut<'a> {
@@ -98,6 +88,6 @@ impl<'a> IntoIterator for &'a SliceDatumMut<'a> {
     type IntoIter = SliceDatumIterator<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
-        SliceDatumIterator { wrapped: self.data, }
+        SliceDatumIterator::new(self.data)
     }
 }

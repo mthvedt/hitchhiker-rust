@@ -105,29 +105,6 @@ impl Datum for Counter {
         LittleEndian::write_u64(&mut tmp, self.data);
         w.write(&tmp)
     }
-
-    type Stream = [u8; 8];
-    fn as_stream(&self) -> Self {
-        let mut tmp = [0 as u8; 8];
-        LittleEndian::write_u64(&mut tmp, self.data);
-        tmp
-    }
-}
-
-// impl IntoIterator for Counter {
-//     type Item = u8;
-//     type IntoIter = CounterIterator
-
-//     fn into_iter(self) -> slice::Iter {
-//         let mut r = CounterIterator {
-
-//         }
-//     }
-// }
-
-struct CounterIterator {
-    v: [u8; 8],
-    i: usize,
 }
 
 // TODO: ???

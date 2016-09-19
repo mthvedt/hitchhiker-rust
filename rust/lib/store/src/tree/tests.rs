@@ -1,3 +1,6 @@
+use data::*;
+use tree::btree::BTree;
+
 /*
 /// test_p for test with parameters.
 
@@ -20,7 +23,7 @@ trait Testable {
 	fn teardown(&mut self) -> ();
 }
 
-impl Testable for Tree {
+impl Testable for BTree {
 	fn setup() -> Self {
 		Self::new()
 	}
@@ -30,8 +33,8 @@ impl Testable for Tree {
 
 #[test]
 fn test_insert() {
-	let t = Tree::setup();
+	let mut t = BTree::setup();
 
 // TODO: use an IntoDatum trait instead
-	t.insert(string_to_datum("foo"), string_to_datum("bar"));
+	t.insert("foo".as_bytes(), "bar".to_datum());
 }

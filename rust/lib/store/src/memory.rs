@@ -6,7 +6,6 @@ use std::ptr;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use data::*;
-use data::slice::SliceDatumIterator;
 use traits::*;
 
 /*
@@ -241,38 +240,6 @@ impl Datum for SnapshotDatumPointer {
     }
 
     fn write_bytes<W: DataWrite>(&self, w: W) -> W::Result where Self: Sized {
-        panic!("Not implemented")
-    }
-
-    type Stream = SnapshotDatumStream;
-    fn as_stream(&self) -> SnapshotDatumStream {
-        panic!("Not implemented")
-    }
-}
-
-#[allow(dead_code)]
-struct SnapshotDatumStream {
-
-}
-
-impl IntoIterator for SnapshotDatumStream {
-    type Item = u8;
-    type IntoIter = SnapshotDatumStreamIterator;
-
-    fn into_iter(self) -> SnapshotDatumStreamIterator {
-        panic!("Not implemented")
-    }
-}
-
-#[allow(dead_code)]
-struct SnapshotDatumStreamIterator {
-
-}
-
-impl Iterator for SnapshotDatumStreamIterator {
-    type Item = u8;
-
-    fn next(&mut self) -> Option<u8> {
         panic!("Not implemented")
     }
 }

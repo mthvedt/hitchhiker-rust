@@ -9,4 +9,4 @@ futures = { git = "https://github.com/alexcrichton/futures-rs" }
 
 [dev-dependencies]
 quickcheck = "0.3"
-quickcheck_macros = "0.2"
+# quickcheck_macros = "0.2"

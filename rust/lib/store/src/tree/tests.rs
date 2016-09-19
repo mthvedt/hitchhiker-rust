@@ -20,7 +20,7 @@ macro_rules! test_p {
 
 trait Testable {
 	fn setup() -> Self;
-	fn teardown(&mut self) -> ();
+	fn teardown(mut self) -> ();
 }
 
 impl Testable for BTree {
@@ -28,13 +28,27 @@ impl Testable for BTree {
 		Self::new()
 	}
 
-	fn teardown(&mut self) -> () {}
+	fn teardown(self) -> () {}
 }
 
 #[test]
-fn test_insert() {
+fn smoke_test_insert() {
 	let mut t = BTree::setup();
 
 // TODO: use an IntoDatum trait instead
 	t.insert("foo".as_bytes(), "bar".to_datum());
+
+	t.teardown();
+}
+
+#[test]
+fn smoke_test_get() {
+	let mut t = BTree::setup();
+
+// TODO: use an IntoDatum trait instead
+	t.insert("foo".as_bytes(), "bar".to_datum());
+	assert_eq!(t.get("foo".as_bytes()).unwrap().unwrap(), "bar".as_bytes());
+	assert_eq!(t.get("fop".as_bytes()), None);
+
+	t.teardown();
 }

@@ -24,6 +24,7 @@ impl NodePtr {
 }
 
 // TODO move to common lib
+#[derive(Debug, PartialEq, Eq)]
 pub struct Value {
 	// Note that we use a Box inside the value, not on the outside. Why? Not sure, can't remember...
 	v: Box<[u8]>,
@@ -41,6 +42,10 @@ impl Value {
 
 	fn new<D: Datum>(src: &D) -> Value {
 		Self::safe_new(src).unwrap()
+	}
+
+	pub fn unwrap(&self) -> &[u8] {
+		&*self.v
 	}
 }
 
@@ -126,7 +131,7 @@ impl Node {
 		match k.next() {
 			Some(bb) => {
 				let b = bb.borrow().clone();
-				match self.get_child(b) {
+				match self.get_child(nibble) {
 					Some(child) => child.get_ptr_for_hi_nibble(b, k),
 					None => None,
 				}
@@ -178,7 +183,7 @@ impl Node {
 	}
 
 	// Interface functions
-	fn get<B, I>(&mut self, mut k: I) -> Option<&Value> where
+	fn get<B, I>(&mut self, k: I) -> Option<&Value> where
 	B: Borrow<u8>,
 	I: Iterator<Item = B>,
 	{

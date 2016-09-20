@@ -26,6 +26,7 @@ impl NodePtr {
 // TODO move to common lib
 #[derive(Debug, PartialEq, Eq)]
 pub struct Value {
+	// We box because Value (actually ValuePtr) must be sized.
 	// Note that we use a Box inside the value, not on the outside. Why? Not sure, can't remember...
 	v: Box<[u8]>,
 }
@@ -222,6 +223,22 @@ impl Node {
 	}
 }
 
+pub trait Tree {
+	/// Note that we don't use IntoDatum values. Similarly, we don't have an IntoKey trait.
+	/// The reason is we want conversion to be explicit.
+	fn insert<V, BK, BV>(&mut self, k: BK, bv: BV) -> () where
+	V: Datum,
+	BK: Borrow<[u8]>,
+	BV: Borrow<V>;
+
+	/// This is mutable because gets may introduce read conflicts, and hence mutate the underlying datastructure.
+	fn get<BK>(&mut self, k: BK) -> Option<&Value> where
+	BK: Borrow<[u8]>;
+
+	fn delete<BK>(&mut self, k: BK) -> bool where
+	BK: Borrow<[u8]>;
+}
+
 pub struct BTree {
 	head: Node,
 }
@@ -232,10 +249,10 @@ impl BTree {
 			head: Node::empty(),
 		}
 	}
+}
 
-	/// Note that we don't use IntoDatum values. Similarly, we don't have an IntoKey trait.
-	/// The reason is we want conversion to be explicit.
-	pub fn insert<V, BK, BV>(&mut self, k: BK, bv: BV) -> () where
+impl Tree for BTree {
+	fn insert<V, BK, BV>(&mut self, k: BK, bv: BV) -> () where
 	V: Datum,
 	BK: Borrow<[u8]>,
 	BV: Borrow<V>,
@@ -243,14 +260,13 @@ impl BTree {
 		self.head.insert(k.borrow().iter(), bv.borrow());
 	}
 
-	/// This is mutable because gets may introduce read conflicts, and hence mutate the underlying datastructure.
-	pub fn get<BK>(&mut self, k: BK) -> Option<&Value> where
+	fn get<BK>(&mut self, k: BK) -> Option<&Value> where
 	BK: Borrow<[u8]>,
 	{
 		self.head.get(k.borrow().iter())
 	}
 
-	pub fn delete<BK>(&mut self, k: BK) -> bool where
+	fn delete<BK>(&mut self, k: BK) -> bool where
 	BK: Borrow<[u8]>,
 	{
 		self.head.delete(k.borrow().iter())

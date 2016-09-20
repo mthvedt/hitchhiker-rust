@@ -223,7 +223,7 @@ impl Node {
 	}
 }
 
-pub trait Tree {
+pub trait ByteMap {
 	/// Note that we don't use IntoDatum values. Similarly, we don't have an IntoKey trait.
 	/// The reason is we want conversion to be explicit.
 	fn insert<V, BK, BV>(&mut self, k: BK, bv: BV) -> () where
@@ -239,6 +239,10 @@ pub trait Tree {
 	BK: Borrow<[u8]>;
 }
 
+pub trait ByteTree: ByteMap {
+
+}
+
 pub struct BTree {
 	head: Node,
 }
@@ -251,7 +255,7 @@ impl BTree {
 	}
 }
 
-impl Tree for BTree {
+impl ByteMap for BTree {
 	fn insert<V, BK, BV>(&mut self, k: BK, bv: BV) -> () where
 	V: Datum,
 	BK: Borrow<[u8]>,
@@ -271,4 +275,8 @@ impl Tree for BTree {
 	{
 		self.head.delete(k.borrow().iter())
 	}
+}
+
+impl ByteTree for BTree {
+
 }

@@ -2,8 +2,8 @@
 // #![cfg_attr(test, feature(plugin))]
 // #![cfg_attr(test, plugin(quickcheck_macros))]
 
-#[cfg(test)]
-#[macro_use]
+// #[cfg(test)]
+// #[macro_use]
 // extern crate quickcheck;
 
 mod btree;
@@ -12,3 +12,5 @@ mod btree;
 
 #[cfg(test)]
 mod tests;
+
+extern crate test;

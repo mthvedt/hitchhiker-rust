@@ -1,6 +1,9 @@
 #![feature(conservative_impl_trait)]
 #![feature(try_from)]
 
+// For benchmarks
+#![cfg_attr(test, feature(test))]
+
 extern crate byteorder;
 extern crate futures;
 

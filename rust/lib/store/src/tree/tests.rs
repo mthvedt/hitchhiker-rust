@@ -1,5 +1,14 @@
-// TODO: WTF do we need 'tree::'?
-use tree::test::Bencher;
+extern crate rand;
+extern crate test;
+extern crate time;
+
+use std;
+use std::convert::TryFrom;
+use std::vec::Vec;
+
+use self::rand::*;
+use self::time::*;
+use self::test::black_box;
 
 use data::*;
 use tree::btree::{ByteMap, ByteTree, BTree};
@@ -7,6 +16,7 @@ use tree::btree::{ByteMap, ByteTree, BTree};
 trait Testable {
 	fn setup() -> Self;
 	fn teardown(mut self) -> ();
+	fn name() -> &'static str;
 }
 
 impl Testable for BTree {
@@ -15,6 +25,40 @@ impl Testable for BTree {
 	}
 
 	fn teardown(self) {}
+
+	fn name() -> &'static str {
+		&"BTree"
+	}
+}
+
+trait VerifiableBenchmark<T> {
+	type VerifyData: Eq;
+
+	fn bench(b: Bencher, t: &mut T);
+	fn verify(t: &T) -> Vec<Self::VerifyData>;
+}
+
+enum BenchResult {
+	Ok(Duration, u64),
+	Fail(String),
+}
+
+struct Bencher {
+	result: BenchResult,
+}
+
+impl Bencher {
+	fn bench<T, F>(&mut self, count: u64, f: F) where F: FnOnce() -> T {
+		let start = PreciseTime::now();
+
+		let t = f();
+
+		let end = PreciseTime::now();
+
+		test::black_box(&t);
+
+		self.result = BenchResult::Ok(start.to(end), count);
+	}
 }
 
 fn smoke_test_insert<T: ByteMap>(t: &mut T) {
@@ -58,20 +102,41 @@ fn smoke_test_delete<T: ByteMap>(t: &mut T) {
 
 // }
 
-// fn random_byte_strings() -> Box<[[u8; 8]]> {
+fn rng(seed: usize) -> impl Rng {
+	StdRng::from_seed(&[seed])
+}
 
-// }
+fn random_byte_strings(seed: usize) -> Box<[[u8; 8]]> {
+	let mut x = rng(seed);
+	let mut v = Vec::<[u8; 8]>::new();
+
+	for i in 0..1000000 {
+		let rnum = x.next_u64();
+		let bytes: [u8; 8] = unsafe { std::mem::transmute(rnum) };
+		v.push(bytes);
+	}
+
+	v.into_boxed_slice()
+}
 
 // TODO: how does hitchhiker do benchmarks?
-fn bench_put<T: ByteMap>(t: &T, b: &mut Bencher) {
+fn bench_put<T: ByteMap>(t: &mut T, b: &mut Bencher) {
+	let ks = random_byte_strings(0);
+	let vs = random_byte_strings(1);
+
+	b.bench(u64::try_from(ks.len()).unwrap(), || {
+		for i in 0..ks.len() {
+			// TODO: should it be called as_datum?
+			t.insert(ks[i], vs[i].to_datum())
+		}
+	})
+}
+
+fn bench_get<T: ByteMap>(t: &mut T, b: &mut Bencher) {
 
 }
 
-fn bench_get<T: ByteMap>(t: &T, b: &mut Bencher) {
-
-}
-
-fn bench_del<T: ByteMap>(t: &T, b: &mut Bencher) {
+fn bench_del<T: ByteMap>(t: &mut T, b: &mut Bencher) {
 
 }
 
@@ -79,31 +144,31 @@ fn bench_del<T: ByteMap>(t: &T, b: &mut Bencher) {
 
 // }
 
-fn bench_big_keys_put<T: ByteMap>(t: &T, b: &mut Bencher) {
+fn bench_big_keys_put<T: ByteMap>(t: &mut T, b: &mut Bencher) {
 
 }
 
-fn bench_big_keys_get<T: ByteMap>(t: &T, b: &mut Bencher) {
+fn bench_big_keys_get<T: ByteMap>(t: &mut T, b: &mut Bencher) {
 
 }
 
-fn bench_big_keys_del<T: ByteMap>(t: &T, b: &mut Bencher) {
+fn bench_big_keys_del<T: ByteMap>(t: &mut T, b: &mut Bencher) {
 
 }
 
-fn bench_big_kv_put<T: ByteMap>(t: &T, b: &mut Bencher) {
+fn bench_big_kv_put<T: ByteMap>(t: &mut T, b: &mut Bencher) {
 
 }
 
-fn bench_big_kv_get<T: ByteMap>(t: &T, b: &mut Bencher) {
+fn bench_big_kv_get<T: ByteMap>(t: &mut T, b: &mut Bencher) {
 
 }
 
-fn bench_big_kv_del<T: ByteMap>(t: &T, b: &mut Bencher) {
+fn bench_big_kv_del<T: ByteMap>(t: &mut T, b: &mut Bencher) {
 
 }
 
-fn bench_stress<T: ByteMap>(t: &T, b: &mut Bencher) {
+fn bench_stress<T: ByteMap>(t: &mut T, b: &mut Bencher) {
 
 }
 
@@ -128,8 +193,8 @@ macro_rules! defbenches {
 	{ $($testable:ty: $tr:ty => { $($name:ident, $bench:path,)* }, )* } => {
         $(
         	$(
-                #[bench]
-                fn $name(b: &mut Bencher) {
+                // #[bench]
+                fn $name(b: &mut self::Bencher) {
 					let mut o = <$testable as Testable>::setup();
 					$bench(&mut o, b);
 					o.teardown();

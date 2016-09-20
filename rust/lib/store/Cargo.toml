@@ -8,5 +8,8 @@ byteorder = "0.5"
 futures = { git = "https://github.com/alexcrichton/futures-rs" }
 
 [dev-dependencies]
-quickcheck = "0.3"
+rand = "0.3"
+time = "0.1"
+
+# quickcheck = "0.3"
 # quickcheck_macros = "0.2"

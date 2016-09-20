@@ -12,5 +12,3 @@ mod btree;
 
 #[cfg(test)]
 mod tests;
-
-extern crate test;

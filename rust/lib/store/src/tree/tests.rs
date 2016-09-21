@@ -31,13 +31,6 @@ impl Testable for BTree {
 	}
 }
 
-trait VerifiableBenchmark<T> {
-	type VerifyData: Eq;
-
-	fn bench(b: Bencher, t: &mut T);
-	fn verify(t: &T) -> Vec<Self::VerifyData>;
-}
-
 enum BenchResult {
 	Ok(Duration, u64),
 	Fail(String),
@@ -59,6 +52,55 @@ impl Bencher {
 
 		self.result = BenchResult::Ok(start.to(end), count);
 	}
+}
+
+trait Verifier {
+	fn run_update<F>(f: F) where F: FnOnce();
+	fn verify<F>(message: &Fn() -> String, f: F) where F: FnOnce() -> bool;
+	fn verify_custom<F>(f: F) where F: FnOnce() -> Option<String>;
+}
+
+struct NullVerifier {}
+
+impl Verifier for NullVerifier {
+	fn run_update<F>(f: F) where F: FnOnce() {}
+	fn verify<F>(message: &Fn() -> String, f: F) where F: FnOnce() -> bool {}
+	fn verify_custom<F>(f: F) where F: FnOnce() -> Option<String> {}
+}
+
+struct RealVerifier {}
+
+impl Verifier for RealVerifier {
+	fn run_update<F>(f: F) where F: FnOnce() { f() }
+
+	fn verify<F>(message: &Fn() -> String, f: F) where F: FnOnce() -> bool {
+		if !(f()) {
+			panic!(message());
+		}
+	}
+
+	fn verify_custom<F>(f: F) where F: FnOnce() -> Option<String> {
+		match f() {
+			Some(s) => panic!(s),
+			None => (),
+		}
+	}
+}
+
+// /// What we really want is a Haskell-like typeclass, like VerifiableBenchmark<T> where T is a trait.
+// /// But in Rust, T must be a concrete type. We can put trait bounds on fns, however, so benchmarks
+// /// are of type f<t: T>() -> BenchInfo where T extends Testable. We use functions and macros to dress
+// /// it up and make it easier.
+// struct BenchInfo {
+// 	name: String,
+// 	benchmark: Box<Fn(&mut Bencher)>,
+// 	verifymark: Box<(Fn())>,
+// }
+
+/// A benchmarkable closure of some kind.
+trait Benchable {
+	fn name() -> String;
+	fn bench<V: Verifier>(&self, b: &Bencher);
 }
 
 fn smoke_test_insert<T: ByteMap>(t: &mut T) {

@@ -22,7 +22,7 @@ trait Testable {
 
 impl Testable for BTree {
 	fn name() -> String {
-		String::from("BTree");
+		String::from("BTree")
 	}
 
 	fn setup() -> Self {
@@ -64,15 +64,16 @@ impl Bencher {
 
 trait Verifier {
 	fn run_update<F>(f: F) where F: FnOnce();
-	fn verify<F>(message: &Fn() -> String, f: F) where F: FnOnce() -> bool;
+	fn verify<F, MF>(message: MF, f: F) where F: FnOnce() -> bool, MF: FnOnce() -> String;
 	fn verify_custom<F>(f: F) where F: FnOnce() -> Option<String>;
 }
 
+/// A verifier that does nothing. If
 struct NullVerifier {}
 
 impl Verifier for NullVerifier {
 	fn run_update<F>(f: F) where F: FnOnce() {}
-	fn verify<F>(message: &Fn() -> String, f: F) where F: FnOnce() -> bool {}
+	fn verify<F, MF>(message: MF, f: F) where F: FnOnce() -> bool, MF: FnOnce() -> String {}
 	fn verify_custom<F>(f: F) where F: FnOnce() -> Option<String> {}
 }
 
@@ -81,7 +82,7 @@ struct RealVerifier {}
 impl Verifier for RealVerifier {
 	fn run_update<F>(f: F) where F: FnOnce() { f() }
 
-	fn verify<F>(message: &Fn() -> String, f: F) where F: FnOnce() -> bool {
+	fn verify<F, MF>(message: MF, f: F) where F: FnOnce() -> bool, MF: FnOnce() -> String {
 		if !(f()) {
 			panic!(message());
 		}
@@ -94,16 +95,6 @@ impl Verifier for RealVerifier {
 		}
 	}
 }
-
-// /// What we really want is a Haskell-like typeclass, like VerifiableBenchmark<T> where T is a trait.
-// /// But in Rust, T must be a concrete type. We can put trait bounds on fns, however, so benchmarks
-// /// are of type f<t: T>() -> BenchInfo where T extends Testable. We use functions and macros to dress
-// /// it up and make it easier.
-// struct BenchInfo {
-// 	name: String,
-// 	benchmark: Box<Fn(&mut Bencher)>,
-// 	verifymark: Box<(Fn())>,
-// }
 
 fn smoke_test_insert<T: ByteMap>(t: &mut T) {
 	t.insert("foo".as_bytes(), "bar".to_datum());
@@ -164,9 +155,10 @@ fn random_byte_strings(seed: usize) -> Box<[[u8; 8]]> {
 }
 
 /// A benchmarkable closure of some kind, post-parameterization.
+// TODO: rename.
 trait Benchable {
 	fn name(&self) -> (String, String);
-	fn bench(&self, b: &Bencher);
+	fn bench(&self, b: &mut Bencher);
 	fn verify(&self);
 }
 
@@ -174,41 +166,42 @@ macro_rules! defbench {
 	{ $name:ident, $id1:ident: $id1trait:ident, $idbencher:ident, $idverifier:ident, $e:expr } => {
 		// Basically, we want to 'bundle' Testables into Benchables, parameterized by different kinds of Testable.
 		// This ugly macro is the easiest way to do it: we get a nice bundle of Benchable at the end, parameterizable by
-		// a statically-checked type.
+		// a statically-checked type. If we had HKTs or typeclasses like Haskell,
+		// we could imagine a more elegant way using fn composition... but we have neither of those.
 
-		fn $name<_T: $id1trait + Testable>() -> impl Benchable {
+		fn $name<_T: $id1trait + Testable + 'static>() -> Box<Benchable> {
 			// We have to have this local type to get around a limitation: rustc can't capture _T.
-			struct _voldemort_benchable<_Tcap: $id1trait + Testable> {
+			struct _voldemort_benchable<_Tcap: $id1trait + Testable + 'static> {
 				_phantom: PhantomData<_Tcap>,
 			}
 
-			impl<_Tcap: $id1trait + Testable> _voldemort_benchable<_Tcap> {
+			impl<_Tcap: $id1trait + Testable + 'static> _voldemort_benchable<_Tcap> {
 				fn _voldemort_bench<$idverifier: Verifier>(&self, $id1: &mut _Tcap, $idbencher: &mut Bencher) {
 					$e
 				}
 			}
 
-			impl<_Tcap: $id1trait + Testable> Benchable for _voldemort_benchable<_Tcap> {
+			impl<_Tcap: $id1trait + Testable + 'static> Benchable for _voldemort_benchable<_Tcap> {
 				fn name(&self) -> (String, String) { (String::from(stringify!($name)), <_Tcap as Testable>::name()) }
 
-				fn bench(&self, b: &Bencher) {
-					let t = _Tcap::setup();
-					self._voldemort_bench::<NullVerifier>(&mut t, &mut b);
+				fn bench(&self, b: &mut Bencher) {
+					let mut t = _Tcap::setup();
+					self._voldemort_bench::<NullVerifier>(&mut t, b);
 					t.teardown();
 				}
 
 				fn verify(&self) {
 					// Unused bencher
-					let t = _Tcap::setup();
-					let b = Bencher::new();
+					let mut t = _Tcap::setup();
+					let mut b = Bencher::new();
 					self._voldemort_bench::<RealVerifier>(&mut t, &mut b);
 					t.teardown();
 				}
 			}
 
-			_voldemort_benchable::<_T> {
+			Box::new(_voldemort_benchable::<_T> {
 				_phantom: PhantomData,
-			}
+			})
 		}
 	};
 }
@@ -227,18 +220,6 @@ defbench! {
 		})
 	}
 }
-
-// fn bench_put<T: ByteMap>(t: &mut T, b: &mut Bencher) {
-// 	let ks = random_byte_strings(0);
-// 	let vs = random_byte_strings(1);
-
-// 	b.bench(u64::try_from(ks.len()).unwrap(), || {
-// 		for i in 0..ks.len() {
-// 			// TODO: should it be called as_datum?
-// 			t.insert(ks[i], vs[i].to_datum())
-// 		}
-// 	})
-// }
 
 fn bench_get<T: ByteMap>(t: &mut T, b: &mut Bencher) {
 
@@ -283,6 +264,7 @@ fn bench_stress<T: ByteMap>(t: &mut T, b: &mut Bencher) {
 // Alas, this macro is verbose, but it's the best we have
 // (rust doesn't have gensym, dynamic idents, &c.)
 macro_rules! deftests {
+	// TODO: what is $tr for?
 	{ $($testable:ty: $tr:ty => { $($name:ident, $test:path,)* }, )* } => {
         $(
         	$(
@@ -297,21 +279,27 @@ macro_rules! deftests {
     };
 }
 
-macro_rules! defbenches {
-	{ $($testable:ty: $tr:ty => { $($name:ident, $bench:path,)* }, )* } => {
-        $(
-        	$(
-                // #[bench]
-                fn $name(b: &mut self::Bencher) {
-					let mut o = <$testable as Testable>::setup();
-					$bench(&mut o, b);
-					o.teardown();
-                }
-            )*
-        )*
+macro_rules! _create_benchmarks_helper {
+	{ $vec:ident, $testable:ty, [ $($benchf:ident,)* ] } => {
+		$(
+	        $vec.push($benchf::<$testable>());
+	    )*
     };
-    // TODO: compare. What should a compare test do?
-    // Run a random command set on two trees, compare the results.
+}
+
+/// Create a vec of boxed deparameterized benchmarks, to be run at one's leisure.
+macro_rules! create_benchmarks {
+	{ $([ $($testable:ty,)* ] => $benchf_list:tt,)* } => {
+		{
+			let mut _r: Vec<Box<Benchable>> = Vec::new();
+
+			$($(
+				_create_benchmarks_helper! {_r, $testable, $benchf_list}
+	        )*)*
+
+	        _r
+    	}
+    };
 }
 
 deftests! {
@@ -322,20 +310,24 @@ deftests! {
 	},
 }
 
-defbenches! {
-	BTree: Tree => {
-		btree_bench_put, bench_put,
-		btree_bench_get, bench_get,
-		btree_bench_del, bench_del,
-		btree_bench_big_keys_put, bench_big_keys_put,
-		btree_bench_big_keys_get, bench_big_keys_get,
-		btree_bench_big_keys_del, bench_big_keys_del,
-		btree_bench_big_kv_put, bench_big_kv_put,
-		btree_bench_big_kv_get, bench_big_kv_get,
-		btree_bench_big_kv_del, bench_big_kv_del,
-		btree_bench_stress, bench_stress,
-	},
+// trace_macros!(true);
+fn benchmark_suite() -> Vec<Box<Benchable>> {
+	create_benchmarks! {
+		[BTree,] => [
+			bench_put,
+			// bench_get,
+			// bench_del,
+			// bench_big_keys_put,
+			// bench_big_keys_get,
+			// bench_big_keys_del,
+			// bench_big_kv_put,
+			// bench_big_kv_get,
+			// bench_big_kv_del,
+			// bench_stress,
+		],
+	}
 }
+// trace_macros!(false)
 
 // TODO: large tests, comparison tests, edge case tests.
 

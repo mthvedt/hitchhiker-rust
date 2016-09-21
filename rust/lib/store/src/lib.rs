@@ -1,5 +1,7 @@
 #![feature(conservative_impl_trait)]
 #![feature(try_from)]
+#![feature(log_syntax)]
+#![feature(trace_macros)]
 
 // For benchmarks
 #![cfg_attr(test, feature(test))]

@@ -4,6 +4,7 @@ extern crate time;
 
 use std;
 use std::convert::TryFrom;
+use std::marker::PhantomData;
 use std::vec::Vec;
 
 use self::rand::*;
@@ -14,26 +15,27 @@ use data::*;
 use tree::btree::{ByteMap, ByteTree, BTree};
 
 trait Testable {
+	fn name() -> String;
 	fn setup() -> Self;
 	fn teardown(mut self) -> ();
-	fn name() -> &'static str;
 }
 
 impl Testable for BTree {
+	fn name() -> String {
+		String::from("BTree");
+	}
+
 	fn setup() -> Self {
 		Self::new()
 	}
 
 	fn teardown(self) {}
-
-	fn name() -> &'static str {
-		&"BTree"
-	}
 }
 
 enum BenchResult {
 	Ok(Duration, u64),
 	Fail(String),
+	None,
 }
 
 struct Bencher {
@@ -41,6 +43,12 @@ struct Bencher {
 }
 
 impl Bencher {
+	fn new() -> Bencher {
+		Bencher {
+			result: BenchResult::None,
+		}
+	}
+
 	fn bench<T, F>(&mut self, count: u64, f: F) where F: FnOnce() -> T {
 		let start = PreciseTime::now();
 
@@ -96,12 +104,6 @@ impl Verifier for RealVerifier {
 // 	benchmark: Box<Fn(&mut Bencher)>,
 // 	verifymark: Box<(Fn())>,
 // }
-
-/// A benchmarkable closure of some kind.
-trait Benchable {
-	fn name() -> String;
-	fn bench<V: Verifier>(&self, b: &Bencher);
-}
 
 fn smoke_test_insert<T: ByteMap>(t: &mut T) {
 	t.insert("foo".as_bytes(), "bar".to_datum());
@@ -161,18 +163,82 @@ fn random_byte_strings(seed: usize) -> Box<[[u8; 8]]> {
 	v.into_boxed_slice()
 }
 
-// TODO: how does hitchhiker do benchmarks?
-fn bench_put<T: ByteMap>(t: &mut T, b: &mut Bencher) {
-	let ks = random_byte_strings(0);
-	let vs = random_byte_strings(1);
-
-	b.bench(u64::try_from(ks.len()).unwrap(), || {
-		for i in 0..ks.len() {
-			// TODO: should it be called as_datum?
-			t.insert(ks[i], vs[i].to_datum())
-		}
-	})
+/// A benchmarkable closure of some kind, post-parameterization.
+trait Benchable {
+	fn name(&self) -> (String, String);
+	fn bench(&self, b: &Bencher);
+	fn verify(&self);
 }
+
+macro_rules! defbench {
+	{ $name:ident, $id1:ident: $id1trait:ident, $idbencher:ident, $idverifier:ident, $e:expr } => {
+		// Basically, we want to 'bundle' Testables into Benchables, parameterized by different kinds of Testable.
+		// This ugly macro is the easiest way to do it: we get a nice bundle of Benchable at the end, parameterizable by
+		// a statically-checked type.
+
+		fn $name<_T: $id1trait + Testable>() -> impl Benchable {
+			// We have to have this local type to get around a limitation: rustc can't capture _T.
+			struct _voldemort_benchable<_Tcap: $id1trait + Testable> {
+				_phantom: PhantomData<_Tcap>,
+			}
+
+			impl<_Tcap: $id1trait + Testable> _voldemort_benchable<_Tcap> {
+				fn _voldemort_bench<$idverifier: Verifier>(&self, $id1: &mut _Tcap, $idbencher: &mut Bencher) {
+					$e
+				}
+			}
+
+			impl<_Tcap: $id1trait + Testable> Benchable for _voldemort_benchable<_Tcap> {
+				fn name(&self) -> (String, String) { (String::from(stringify!($name)), <_Tcap as Testable>::name()) }
+
+				fn bench(&self, b: &Bencher) {
+					let t = _Tcap::setup();
+					self._voldemort_bench::<NullVerifier>(&mut t, &mut b);
+					t.teardown();
+				}
+
+				fn verify(&self) {
+					// Unused bencher
+					let t = _Tcap::setup();
+					let b = Bencher::new();
+					self._voldemort_bench::<RealVerifier>(&mut t, &mut b);
+					t.teardown();
+				}
+			}
+
+			_voldemort_benchable::<_T> {
+				_phantom: PhantomData,
+			}
+		}
+	};
+}
+
+// TODO: how does hitchhiker do benchmarks?
+defbench! {
+	bench_put, t: ByteMap, b, V, {
+		let ks = random_byte_strings(0);
+		let vs = random_byte_strings(1);
+
+		b.bench(u64::try_from(ks.len()).unwrap(), || {
+			for i in 0..ks.len() {
+				// TODO: should it be called as_datum?
+				t.insert(ks[i], vs[i].to_datum())
+			}
+		})
+	}
+}
+
+// fn bench_put<T: ByteMap>(t: &mut T, b: &mut Bencher) {
+// 	let ks = random_byte_strings(0);
+// 	let vs = random_byte_strings(1);
+
+// 	b.bench(u64::try_from(ks.len()).unwrap(), || {
+// 		for i in 0..ks.len() {
+// 			// TODO: should it be called as_datum?
+// 			t.insert(ks[i], vs[i].to_datum())
+// 		}
+// 	})
+// }
 
 fn bench_get<T: ByteMap>(t: &mut T, b: &mut Bencher) {
 

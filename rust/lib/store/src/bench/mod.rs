@@ -44,16 +44,16 @@ impl Bencher {
 
 // TODO hide details up a module. User should only know macros and Bencher
 pub trait Verifier {
-	fn run_update<F>(f: F) where F: FnOnce();
+	fn run<F, I>(f: F) where F: FnOnce() -> I;
 	fn verify<F, MF>(message: MF, f: F) where F: FnOnce() -> bool, MF: FnOnce() -> String;
 	fn verify_custom<F>(f: F) where F: FnOnce() -> Option<String>;
 }
 
-/// A verifier that does nothing. If
+/// A verifier that does nothing.
 pub struct NullVerifier {}
 
 impl Verifier for NullVerifier {
-	fn run_update<F>(f: F) where F: FnOnce() {}
+	fn run<F, I>(f: F) where F: FnOnce() -> I {}
 	fn verify<F, MF>(message: MF, f: F) where F: FnOnce() -> bool, MF: FnOnce() -> String {}
 	fn verify_custom<F>(f: F) where F: FnOnce() -> Option<String> {}
 }
@@ -61,7 +61,7 @@ impl Verifier for NullVerifier {
 pub struct RealVerifier {}
 
 impl Verifier for RealVerifier {
-	fn run_update<F>(f: F) where F: FnOnce() { f() }
+	fn run<F, I>(f: F) where F: FnOnce() -> I { f(); }
 
 	fn verify<F, MF>(message: MF, f: F) where F: FnOnce() -> bool, MF: FnOnce() -> String {
 		if !(f()) {
@@ -157,26 +157,55 @@ macro_rules! create_benchmarks {
     };
 }
 
+/// Needed becuase duration format is unstable/undocumented.
+fn format_duration(d: &Duration) -> String {
+	let c: f64;
+	let s: &str;
+	// If over 4 trillion nanoseconds, panic...
+	let ns = d.num_nanoseconds().unwrap();
+	let nsf = ns as f64;
+
+	if ns < 1000 {
+		c = nsf;
+		s = "ns";
+	} else if ns < 1000000 {
+		c = nsf / 1000.0;
+		s = "µs";
+	} else if ns < 1000000000 {
+		c = nsf / 1000000.0;
+		s = "ms";
+	} else {
+		c = nsf / 1000000000.0;
+		s = "s ";
+	}
+
+	format!("{:8} {}", c, s)
+}
+
 // TODO: catch panics
 // TODO: pretty output
 pub fn run_benchmark<W: Write>(benchmark: &Benchable, out: &mut W) {
 	let (sa, sb) = benchmark.name();
-	write!(out, "Benchmarking {} for {}...", sa, sb);
-	out.flush();
+	write!(out, "Benchmarking {:32} for {:16}...", sa, sb).unwrap();
+	out.flush().unwrap();
 
 	let mut b = Bencher::new();
 	benchmark.bench(&mut b);
 	match b.result() {
 		// TODO: a little unsafe if there's over 2 billion iterations for some reason
-		BenchResult::Ok(dur, count) => writeln!(out, " {} iterations {}", count, dur / i32::try_from(count).unwrap()),
-		BenchResult::Fail(s) => writeln!(out, "FAILED: {}", s),
+		BenchResult::Ok(dur, count) => {
+			if count <= 0 {
+				panic!("zero count");
+			}
+			write!(out, " {:10} iterations {}", count, format_duration(&(dur / i32::try_from(count).unwrap()))).unwrap();
+			write!(out, " ...").unwrap();
+			out.flush().unwrap();
+			benchmark.verify();
+			writeln!(out, " verified").unwrap();
+		},
+		BenchResult::Fail(s) => writeln!(out, "FAILED: {}", s).unwrap(),
 		BenchResult::None => panic!(),
-	}.unwrap();
-
-	write!(out, "Verifying {} for {}...", sa, sb);
-	out.flush();
-	benchmark.verify();
-	writeln!(out, " done");
+	}
 }
 
 pub fn run_benchmarks<W: Write>(benchmarks: &Vec<Box<Benchable>>, out: &mut W) {
@@ -184,7 +213,5 @@ pub fn run_benchmarks<W: Write>(benchmarks: &Vec<Box<Benchable>>, out: &mut W) {
 		run_benchmark(&**b, out);
 	}
 }
-
-// TODO: large tests, comparison tests, edge case tests.
 
 // The plan from here: implement benchmarking. Implement serialization. (See hitchhiker tree impl)

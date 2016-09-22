@@ -24,7 +24,7 @@ impl NodePtr {
 }
 
 // TODO move to common lib
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Value {
 	// We box because Value (actually ValuePtr) must be sized.
 	// Note that we use a Box inside the value, not on the outside. Why? Not sure, can't remember...
@@ -43,6 +43,10 @@ impl Value {
 
 	fn new<D: Datum>(src: &D) -> Value {
 		Self::safe_new(src).unwrap()
+	}
+
+	fn new_from<D: IntoDatum>(src: D) -> Value {
+		Self::safe_new(&src.to_datum()).unwrap()
 	}
 
 	pub fn unwrap(&self) -> &[u8] {

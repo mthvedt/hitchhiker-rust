@@ -1,4 +1,6 @@
+#![feature(associated_type_defaults)]
 #![feature(conservative_impl_trait)]
+// #![feature(duration_checked_ops)]
 #![feature(try_from)]
 #![feature(log_syntax)]
 #![feature(trace_macros)]

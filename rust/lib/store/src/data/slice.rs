@@ -4,6 +4,7 @@ use super::traits::*;
 
 // TODO what should be public here?
 // TODO: IntoDatum trait, don't publish SliceDatum
+#[derive(PartialEq, Eq, Hash)]
 pub struct SliceDatum<'a> {
     data: &'a [u8],
 }
@@ -16,6 +17,7 @@ impl<'a> SliceDatum<'a> {
     }
 }
 
+// TODO do we need these traits still?
 /// Necessary because the type of &[u8].into_iter() is &u8, not u8.
 pub struct SliceDatumIterator<'a> {
     wrapped: <&'a [u8] as IntoIterator>::IntoIter,
@@ -27,6 +29,7 @@ impl<'a> SliceDatumIterator<'a> {
     }
 }
 
+// TODO are these used?
 impl<'a> Iterator for SliceDatumIterator<'a> {
     type Item = u8;
 
@@ -57,6 +60,33 @@ impl<'a> IntoIterator for &'a SliceDatum<'a> {
     }
 }
 
+// #[derive(PartialEq, Eq, Hash)]
+// pub struct BytesDatum {
+//     data: [u8];
+// }
+
+// impl BytesDatum {
+//     pub fn new(bytes: [u8]) {
+//         ByteDatum {
+//             data: bytes,
+//         }
+//     }
+// }
+
+// impl Datum for BytesDatum {
+//     fn len(&self) -> u16 {
+//         u16::try_from(self.data.len()).unwrap()
+//     }
+
+// // TODO: W or &mut W? Let's go with W--makes it easier to used sized data writes
+// // TODO: consider api for fixed/variable data writes
+// // TODO: consider safety checks here
+//     fn write_bytes<W: DataWrite>(&self, w: W) -> W::Result {
+//         w.write(self.data)
+//     }
+// }
+
+#[derive(PartialEq, Eq, Hash)]
 pub struct SliceDatumMut<'a> {
     data: &'a mut [u8],
 }

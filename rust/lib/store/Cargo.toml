@@ -7,9 +7,13 @@ authors = ["Mike Thvedt <mike.thvedt@gmail.com>"]
 byteorder = "0.5"
 futures = { git = "https://github.com/alexcrichton/futures-rs" }
 
-[dev-dependencies]
+# TODO: these used by testlib. Need better isolation.
 rand = "0.3"
 time = "0.1"
+
+[dev-dependencies]
+
+# TODO: scrub quickcheck.
 
 # quickcheck = "0.3"
 # quickcheck_macros = "0.2"

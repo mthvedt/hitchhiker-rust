@@ -6,9 +6,12 @@
 // #[macro_use]
 // extern crate quickcheck;
 
-mod btree;
+pub mod btree;
 // TODO why don't this work?
 // pub use self::btree::*;
+
+// TODO better isolation
+pub mod testlib;
 
 #[cfg(test)]
 mod tests;

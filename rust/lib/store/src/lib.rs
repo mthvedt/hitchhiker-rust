@@ -4,17 +4,22 @@
 #![feature(trace_macros)]
 
 // For benchmarks
-#![cfg_attr(test, feature(test))]
+// #![cfg_attr(test, feature(test))]
+// TODO: isolate feature(test)
+#![feature(test)]
 
 extern crate byteorder;
 extern crate futures;
 
 // TODO consider better way to hide these macros...
 #[macro_use]
+pub mod bench;
+// TODO do we have data macros?
+#[macro_use]
 mod data;
 mod memory;
 mod traits;
-mod tree;
+pub mod tree;
 
 // TODO: cleaner separation of interfaces
 pub use data::*;

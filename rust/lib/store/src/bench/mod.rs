@@ -96,17 +96,17 @@ macro_rules! defbench {
 
 		fn $name<_T: $id1trait + Testable + 'static>() -> Box<Benchable> {
 			// We have to have this local type to get around a limitation: rustc can't capture _T.
-			struct _anon_benchable<_Tcap: $id1trait + Testable + 'static> {
+			struct _AnonBenchable<_Tcap: $id1trait + Testable + 'static> {
 				_phantom: PhantomData<_Tcap>,
 			}
 
-			impl<_Tcap: $id1trait + Testable + 'static> _anon_benchable<_Tcap> {
+			impl<_Tcap: $id1trait + Testable + 'static> _AnonBenchable<_Tcap> {
 				fn _voldemort_bench<$idverifier: Verifier>(&self, $id1: &mut _Tcap, $idbencher: &mut Bencher) {
 					$e
 				}
 			}
 
-			impl<_Tcap: $id1trait + Testable + 'static> Benchable for _anon_benchable<_Tcap> {
+			impl<_Tcap: $id1trait + Testable + 'static> Benchable for _AnonBenchable<_Tcap> {
 				fn name(&self) -> (String, String) { (String::from(stringify!($name)), <_Tcap as Testable>::name()) }
 
 				fn bench(&self, b: &mut Bencher) {
@@ -124,7 +124,7 @@ macro_rules! defbench {
 				}
 			}
 
-			Box::new(_anon_benchable::<_T> {
+			Box::new(_AnonBenchable::<_T> {
 				_phantom: PhantomData,
 			})
 		}

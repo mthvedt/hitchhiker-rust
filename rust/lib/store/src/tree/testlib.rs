@@ -49,7 +49,7 @@ macro_rules! deftests {
 /// A ByteMap impl that boxes references into a HashMap. Of course boxing references is a little slow,
 /// but it's "fair" in the sense a real DB will need to allocate and copy *something*.
 /// We also have benchmarks for raw byte string references in the bench/ binary.
-struct ByteHashMap {
+pub struct ByteHashMap {
 	wrapped: HashMap<Box<[u8]>, Value>,
 }
 

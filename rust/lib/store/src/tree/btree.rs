@@ -45,13 +45,9 @@ impl Value {
 		Self::safe_new(src).unwrap()
 	}
 
-	fn new_from<D: IntoDatum>(src: D) -> Value {
-		Self::safe_new(&src.to_datum()).unwrap()
-	}
-
-	pub fn unwrap(&self) -> &[u8] {
-		&*self.v
-	}
+	// fn new_from<D: IntoDatum>(src: D) -> Value {
+	// 	Self::safe_new(&src.to_datum()).unwrap()
+	// }
 }
 
 impl Datum for Value {
@@ -246,9 +242,9 @@ pub trait ByteMap {
 	fn delete<K: Key>(&mut self, k: K) -> bool;
 }
 
-pub trait ByteTree: ByteMap {
+// pub trait ByteTree: ByteMap {
 
-}
+// }
 
 pub struct BTree {
 	head: Node,
@@ -278,6 +274,6 @@ impl ByteMap for BTree {
 	}
 }
 
-impl ByteTree for BTree {
+// impl ByteTree for BTree {
 
-}
+// }

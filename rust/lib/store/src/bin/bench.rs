@@ -5,7 +5,6 @@
 extern crate thunderhead_store;
 extern crate test;
 
-use std::borrow::Borrow;
 use std::collections::*;
 use std::convert::TryFrom;
 use std::marker::PhantomData;
@@ -65,52 +64,52 @@ defbench! {
 	}
 }
 
-fn bench_get<T: ByteMap>(t: &mut T, b: &mut Bencher) {
+// fn bench_get<T: ByteMap>(t: &mut T, b: &mut Bencher) {
 
-}
+// }
 
-fn bench_del<T: ByteMap>(t: &mut T, b: &mut Bencher) {
+// fn bench_del<T: ByteMap>(t: &mut T, b: &mut Bencher) {
 
-}
+// }
 
 // fn random_big_byte_strings() -> Box<[[u8; 1024]]> {
 
 // }
 
-fn bench_big_keys_put<T: ByteMap>(t: &mut T, b: &mut Bencher) {
+// fn bench_big_keys_put<T: ByteMap>(t: &mut T, b: &mut Bencher) {
 
-}
+// }
 
-fn bench_big_keys_get<T: ByteMap>(t: &mut T, b: &mut Bencher) {
+// fn bench_big_keys_get<T: ByteMap>(t: &mut T, b: &mut Bencher) {
 
-}
+// }
 
-fn bench_big_keys_del<T: ByteMap>(t: &mut T, b: &mut Bencher) {
+// fn bench_big_keys_del<T: ByteMap>(t: &mut T, b: &mut Bencher) {
 
-}
+// }
 
-fn bench_big_kv_put<T: ByteMap>(t: &mut T, b: &mut Bencher) {
+// fn bench_big_kv_put<T: ByteMap>(t: &mut T, b: &mut Bencher) {
 
-}
+// }
 
-fn bench_big_kv_get<T: ByteMap>(t: &mut T, b: &mut Bencher) {
+// fn bench_big_kv_get<T: ByteMap>(t: &mut T, b: &mut Bencher) {
 
-}
+// }
 
-fn bench_big_kv_del<T: ByteMap>(t: &mut T, b: &mut Bencher) {
+// fn bench_big_kv_del<T: ByteMap>(t: &mut T, b: &mut Bencher) {
 
-}
+// }
 
-fn bench_stress<T: ByteMap>(t: &mut T, b: &mut Bencher) {
+// fn bench_stress<T: ByteMap>(t: &mut T, b: &mut Bencher) {
 
-}
+// }
 
 fn main() {
 	// TODO: use cargo to default to release, but enable both modes
 	debug_assert!(false, "This target should be run in release mode");
 
 	let benchmarks = create_benchmarks! {
-		[BTree,] => [
+		[BTree, ByteHashMap,] => [
 			bench_put_no_verify,
 			bench_put,
 			// bench_get,

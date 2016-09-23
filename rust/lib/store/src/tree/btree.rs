@@ -23,7 +23,7 @@ impl NodePtr {
 	}
 }
 
-// TODO move to common lib
+// TODO move to common lib, use a type alias
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Value {
 	// We box because Value (actually ValuePtr) must be sized.
@@ -41,7 +41,7 @@ impl Value {
 		}
 	}
 
-	fn new<D: Datum>(src: &D) -> Value {
+	pub fn new<D: Datum>(src: &D) -> Value {
 		Self::safe_new(src).unwrap()
 	}
 
@@ -227,20 +227,23 @@ impl Node {
 	}
 }
 
+// TODO: Key and StackDatum.
+// TODO: move to module level doc the below.
+/// A key is anything that can be (quickly, efficiently) converted to a byte iterator.
+/// It is the same as, but more broadly implemented than, IntoIterator<[u8]>. Though it is passed
+/// by value, most impls will be references.
+/// A value is a Datum, a set of bytes that can be streamed. It should be passed by reference.
 pub trait ByteMap {
-	/// Note that we don't use IntoDatum values. Similarly, we don't have an IntoKey trait.
-	/// The reason is we want conversion to be explicit.
-	fn insert<V, BK, BV>(&mut self, k: BK, bv: BV) -> () where
-	V: Datum,
-	BK: Borrow<[u8]>,
-	BV: Borrow<V>;
+	type D: Datum;
+
+	/// Note that we only accept references that can be quickly converted to keys and values,
+	/// for performance reasons.
+	fn insert<K: Key, V: Datum>(&mut self, k: K, v: &V) -> ();
 
 	/// This is mutable because gets may introduce read conflicts, and hence mutate the underlying datastructure.
-	fn get<BK>(&mut self, k: BK) -> Option<&Value> where
-	BK: Borrow<[u8]>;
+	fn get<K: Key>(&mut self, k: K) -> Option<&Self::D>;
 
-	fn delete<BK>(&mut self, k: BK) -> bool where
-	BK: Borrow<[u8]>;
+	fn delete<K: Key>(&mut self, k: K) -> bool;
 }
 
 pub trait ByteTree: ByteMap {
@@ -260,24 +263,18 @@ impl BTree {
 }
 
 impl ByteMap for BTree {
-	fn insert<V, BK, BV>(&mut self, k: BK, bv: BV) -> () where
-	V: Datum,
-	BK: Borrow<[u8]>,
-	BV: Borrow<V>,
-	{
-		self.head.insert(k.borrow().iter(), bv.borrow());
+	type D = Value;
+
+	fn insert<K: Key, V: Datum>(&mut self, k: K, v: &V) -> () {
+		self.head.insert(k.into_iter(), v);
 	}
 
-	fn get<BK>(&mut self, k: BK) -> Option<&Value> where
-	BK: Borrow<[u8]>,
-	{
-		self.head.get(k.borrow().iter())
+	fn get<K: Key>(&mut self, k: K) -> Option<&Self::D> {
+		self.head.get(k.into_iter())
 	}
 
-	fn delete<BK>(&mut self, k: BK) -> bool where
-	BK: Borrow<[u8]>,
-	{
-		self.head.delete(k.borrow().iter())
+	fn delete<K: Key>(&mut self, k: K) -> bool {
+		self.head.delete(k.into_iter())
 	}
 }
 

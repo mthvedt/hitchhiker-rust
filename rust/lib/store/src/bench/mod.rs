@@ -45,17 +45,18 @@ impl Bencher {
 // TODO hide details up a module. User should only know macros and Bencher
 pub trait Verifier {
 	fn run<F, I>(f: F) where F: FnOnce() -> I;
-	fn verify<F, MF>(message: MF, f: F) where F: FnOnce() -> bool, MF: FnOnce() -> String;
-	fn verify_custom<F>(f: F) where F: FnOnce() -> Option<String>;
+	fn verify<F, MF, S>(message: MF, f: F) where F: FnOnce() -> bool, MF: FnOnce() -> S, S: ToString;
+	fn verify_custom<F, S>(f: F) where F: FnOnce() -> Option<S>, S: ToString;
 }
 
 /// A verifier that does nothing.
 pub struct NullVerifier {}
 
+#[allow(unused_variables)]
 impl Verifier for NullVerifier {
 	fn run<F, I>(f: F) where F: FnOnce() -> I {}
-	fn verify<F, MF>(message: MF, f: F) where F: FnOnce() -> bool, MF: FnOnce() -> String {}
-	fn verify_custom<F>(f: F) where F: FnOnce() -> Option<String> {}
+	fn verify<F, MF, S>(message: MF, f: F) where F: FnOnce() -> bool, MF: FnOnce() -> S, S: ToString {}
+	fn verify_custom<F, S>(f: F) where F: FnOnce() -> Option<S>, S: ToString {}
 }
 
 pub struct RealVerifier {}
@@ -63,15 +64,15 @@ pub struct RealVerifier {}
 impl Verifier for RealVerifier {
 	fn run<F, I>(f: F) where F: FnOnce() -> I { f(); }
 
-	fn verify<F, MF>(message: MF, f: F) where F: FnOnce() -> bool, MF: FnOnce() -> String {
+	fn verify<F, MF, S>(message: MF, f: F) where F: FnOnce() -> bool, MF: FnOnce() -> S, S: ToString {
 		if !(f()) {
-			panic!(message());
+			panic!(message().to_string());
 		}
 	}
 
-	fn verify_custom<F>(f: F) where F: FnOnce() -> Option<String> {
+	fn verify_custom<F, S>(f: F) where F: FnOnce() -> Option<S>, S: ToString {
 		match f() {
-			Some(s) => panic!(s),
+			Some(s) => panic!(s.to_string()),
 			None => (),
 		}
 	}
@@ -179,7 +180,7 @@ fn format_duration(d: &Duration) -> String {
 		s = "s ";
 	}
 
-	format!("{:8} {}", c, s)
+	format!("{:8.3} {}", c, s)
 }
 
 // TODO: catch panics
@@ -195,7 +196,7 @@ pub fn run_benchmark<W: Write>(benchmark: &Benchable, out: &mut W) {
 		// TODO: a little unsafe if there's over 2 billion iterations for some reason
 		BenchResult::Ok(dur, count) => {
 			if count <= 0 {
-				panic!("zero count");
+				panic!("zero or negative count");
 			}
 			write!(out, " {:10} iterations {}", count, format_duration(&(dur / i32::try_from(count).unwrap()))).unwrap();
 			write!(out, " ...").unwrap();
@@ -213,5 +214,3 @@ pub fn run_benchmarks<W: Write>(benchmarks: &Vec<Box<Benchable>>, out: &mut W) {
 		run_benchmark(&**b, out);
 	}
 }
-
-// The plan from here: implement benchmarking. Implement serialization. (See hitchhiker tree impl)

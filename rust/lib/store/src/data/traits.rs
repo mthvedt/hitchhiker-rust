@@ -1,6 +1,33 @@
-use std::borrow::BorrowMut;
+use std::borrow::*;
+use std::iter::FromIterator;
 
 use super::slice::*;
+
+pub trait Key {
+	type B: Borrow<u8>;
+	type I: Iterator<Item = Self::B>;
+
+	fn into_iter(self) -> Self::I;
+
+	/// Try to avoid using this in production.
+	// TODO: maybe put into testlib...
+	fn box_copy(self) -> Box<[u8]> where Self: Sized {
+		// A little less efficient than Datum.box_copy, since we don't know
+		// our length ahead of time.
+		let r = Vec::from_iter(self.into_iter().map(|x| *x.borrow()));
+		r.into_boxed_slice()
+	}
+}
+
+impl<'a, K> Key for K where K: IntoIterator<Item = &'a u8> {
+	type B = <Self as IntoIterator>::Item;
+	type I = <Self as IntoIterator>::IntoIter;
+
+	fn into_iter(self) -> Self::I {
+		// What is this voodoo? Infinite recursion on into_iter? No, it's type inference.
+		self.into_iter()
+	}
+}
 
 pub trait DataWrite {
     type Result;
@@ -13,7 +40,8 @@ pub trait Datum {
 	// An 'AndThen' future? what's the overhead?
 	fn write_bytes<W: DataWrite>(&self, w: W) -> W::Result;
 
-	// TODO do we want this given we have iter? TODO should this be a method?
+	/// Try to avoid using this in production.
+	// TODO: maybe put into testlib...
 	fn box_copy(&self) -> Box<[u8]> {
 		// Assuming the optimizer will get rid of extra instructions here, since the
 		// only heap allocation is the boxed slice itself.

@@ -4,32 +4,32 @@ use std::marker::PhantomData;
 use std::vec::Vec;
 
 use data::*;
-use testlib::*;
-use tree::btree::*;
+use super::testlib::*;
+use super::btree::*;
 
 fn smoke_test_insert<T: ByteMap>(t: &mut T) {
-	t.insert("foo".as_bytes(), "bar".to_datum());
+	t.insert("foo".as_bytes(), &"bar".to_datum());
 }
 
 fn smoke_test_get<T: ByteMap>(t: &mut T) {
-	t.insert("foo".as_bytes(), "bar".to_datum());
-	assert_eq!(t.get("foo".as_bytes()).unwrap().unwrap(), "bar".as_bytes());
-	assert_eq!(t.get("fooo".as_bytes()), None);
-	assert_eq!(t.get("fop".as_bytes()), None);
-	assert_eq!(t.get("fo".as_bytes()), None);
+	t.insert("foo".as_bytes(), &"bar".to_datum());
+	assert_eq!(&*t.get("foo".as_bytes()).unwrap().box_copy(), "bar".as_bytes());
+	assert_eq!(t.get("fooo".as_bytes()).map(Datum::box_copy), None);
+	assert_eq!(t.get("fop".as_bytes()).map(Datum::box_copy), None);
+	assert_eq!(t.get("fo".as_bytes()).map(Datum::box_copy), None);
 }
 
 fn smoke_test_delete<T: ByteMap>(t: &mut T) {
-	t.insert("foo".as_bytes(), "bar".to_datum());
-	t.insert("sna".as_bytes(), "foo".to_datum());
-	assert_eq!(t.get("foo".as_bytes()).unwrap().unwrap(), "bar".as_bytes());
-	assert_eq!(t.get("sna".as_bytes()).unwrap().unwrap(), "foo".as_bytes());
-	assert_eq!(t.get("fop".as_bytes()), None);
+	t.insert("foo".as_bytes(), &"bar".to_datum());
+	t.insert("sna".as_bytes(), &"foo".to_datum());
+	assert_eq!(&*t.get("foo".as_bytes()).unwrap().box_copy(), "bar".as_bytes());
+	assert_eq!(&*t.get("sna".as_bytes()).unwrap().box_copy(), "foo".as_bytes());
+	assert_eq!(t.get("fop".as_bytes()).map(Datum::box_copy), None);
 
 	t.delete("sna".as_bytes());
-	assert_eq!(t.get("foo".as_bytes()).unwrap().unwrap(), "bar".as_bytes());
-	assert_eq!(t.get("sna".as_bytes()), None);
-	assert_eq!(t.get("fop".as_bytes()), None);
+	assert_eq!(&*t.get("foo".as_bytes()).unwrap().box_copy(), "bar".as_bytes());
+	assert_eq!(t.get("sna".as_bytes()).map(Datum::box_copy), None);
+	assert_eq!(t.get("fop".as_bytes()).map(Datum::box_copy), None);
 }
 
 deftests! {

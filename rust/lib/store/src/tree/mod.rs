@@ -11,6 +11,7 @@ pub mod btree;
 // pub use self::btree::*;
 
 // TODO better isolation
+#[macro_use]
 pub mod testlib;
 
 #[cfg(test)]

@@ -5,6 +5,7 @@
 extern crate thunderhead_store;
 extern crate test;
 
+use std::borrow::Borrow;
 use std::collections::*;
 use std::convert::TryFrom;
 use std::marker::PhantomData;
@@ -14,6 +15,8 @@ use thunderhead_store::*;
 use thunderhead_store::bench::*;
 use thunderhead_store::tree::btree::*;
 use thunderhead_store::tree::testlib::*;
+
+// TODO ByteMap for HashMap, BTree
 
 // TODO: how does hitchhiker do benchmarks?
 defbench! {
@@ -26,7 +29,7 @@ defbench! {
 		b.bench(u64::try_from(ks.len()).unwrap(), || {
 			for i in 0..ks.len() {
 				// TODO: should it be called as_datum?
-				t.insert(ks[i], vs[i].to_datum())
+				t.insert(&ks[i], &vs[i].to_datum())
 			}
 		})
 	}
@@ -43,11 +46,20 @@ defbench! {
 		b.bench(u64::try_from(ks.len()).unwrap(), || {
 			for i in 0..ks.len() {
 				// TODO: should it be called as_datum?
-				t.insert(ks[i], vs[i].to_datum());
+				t.insert(&ks[i], &vs[i].to_datum());
 				V::run(|| m.insert(ks[i], vs[i]));
-				V::verify(|| String::from("map get mismatch"),
+				// V::verify(|| "map get mismatch",
+				// 	|| m.get(&ks[i]).map(|x| x.as_ref()).compare_bytes(
+				// 	   t.get(ks[i]).map(ToBytes::to_bytes).as_ref().map(Borrow::borrow)));
+				// V::verify(|| "map get mismatch",
+				// 	|| m.get(&rand_tests[i]).map(|x| x.as_ref())
+				// 	   == t.get(rand_tests[i]).map(Datum::box_copy).as_ref().map(Box::deref));
+				V::verify(|| "map get mismatch",
+					|| m.get(&ks[i]).map(|x| x.as_ref())
+					   == t.get(&ks[i]).map(Datum::box_copy).as_ref().map(Box::deref));
+				V::verify(|| "map get mismatch",
 					|| m.get(&rand_tests[i]).map(|x| x.as_ref())
-					   == t.get(rand_tests[i]).map(Datum::box_copy).as_ref().map(Box::deref));
+					   == t.get(&rand_tests[i]).map(Datum::box_copy).as_ref().map(Box::deref));
 			}
 		})
 	}

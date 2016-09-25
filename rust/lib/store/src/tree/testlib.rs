@@ -2,7 +2,7 @@ extern crate rand;
 
 use self::rand::*;
 
-use std;
+use std::borrow::BorrowMut;
 use std::collections::*;
 
 use data::*;
@@ -219,18 +219,78 @@ pub fn rng(seed: usize) -> impl Rng {
 	StdRng::from_seed(&[seed])
 }
 
+/// One million 8-byte strings.
 pub fn random_byte_strings(seed: usize) -> Box<[[u8; 8]]> {
 	let mut x = rng(seed);
 	let mut v = Vec::<[u8; 8]>::new();
 
 	for _ in 0..1000000 {
-		let rnum = x.next_u64();
-		let bytes: [u8; 8] = unsafe { std::mem::transmute(rnum) };
+		let mut bytes = [0 as u8; 8];
+		x.fill_bytes(bytes.borrow_mut());
 		v.push(bytes);
 	}
 
 	v.into_boxed_slice()
 }
+
+/// Returns a byte string with average size i + overflow, not exceeding max, with exponential decay distribution.
+///
+/// Overflow is a 'carry' for when the byte strings exceed max (or are less than 1)
+/// and need to have their size adjsuted. The adjustment is returned, and can be used
+/// to 'carry' over to the size of the next byte string, so that the average size remains the same.
+fn random_size_byte_string<R: Rng>(x: &mut R, i: usize, max: usize, overflow: isize) -> (Vec<u8>, isize) {
+	let mut s = ((1.0 - x.next_f64()).ln() * -1.0 * (i as f64)) as isize + overflow;
+	let mut overflow = 0;
+
+	if s < 0 { // rare case
+		s = 1;
+		overflow = -1 - s;
+	}
+	if s > max as isize {
+		overflow = s - max as isize;
+		s = max as isize;
+	}
+
+	let mut r = Vec::new();
+	r.reserve(s as usize);
+	unsafe { r.set_len(s as usize) };
+
+	x.fill_bytes(r.as_mut_slice());
+
+	(r, overflow)
+}
+
+/// 1k byte strings with average size 8000 bytes, not exceeding 64k.
+pub fn random_big_byte_strings(seed: usize) -> Vec<Vec<u8>> {
+	let mut x = rng(seed);
+	let mut v = Vec::<Vec<u8>>::new();
+	let mut overflow = 0;
+
+	for _ in 0..1000 {
+		let (x, new_overflow) = random_size_byte_string(&mut x, 8000, 65535, overflow);
+		overflow = new_overflow;
+		// println!("{} {}", x.len(), overflow as i64);
+		v.push(x);
+	}
+
+	v
+}
+
+// /// 10 byte strings with average size 800kb.
+// pub fn random_huge_byte_strings(seed: usize) -> Vec<Vec<u8>> {
+// 	let mut x = rng(seed);
+// 	let mut v = Vec::<Vec<u8>>::new();
+
+// 	for _ in 0..10 {
+// 		let mut overflow = 0;
+// 		let (x, new_overflow) = random_size_byte_string(&mut x, 800, 65535, overflow);
+// 		overflow = new_overflow;
+// 		print!("{} {}", x.len(), overflow);
+// 		v.push(x);
+// 	}
+
+// 	v
+// }
 
 // pub trait ToBytes<'a> {
 // 	type B: Borrow<[u8]>;

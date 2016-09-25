@@ -88,6 +88,7 @@ pub trait Benchable {
 
 #[macro_export]
 macro_rules! defbench {
+	// We want to have id1trait to be a ty, but that doesn't work. See https://github.com/rust-lang/rust/issues/20272
 	{ $name:ident, $id1:ident: $id1trait:ident, $idbencher:ident, $idverifier:ident, $e:expr } => {
 		// Basically, we want to 'bundle' Testables into Benchables, parameterized by different kinds of Testable.
 		// This ugly macro is the easiest way to do it: we get a nice bundle of Benchable at the end, parameterizable by

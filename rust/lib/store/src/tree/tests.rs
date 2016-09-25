@@ -7,6 +7,7 @@ use data::*;
 use super::testlib::*;
 use super::btree::*;
 
+// TODO: make these tests easier before adding more.
 fn smoke_test_insert<T: ByteMap>(t: &mut T) {
 	t.insert("foo".as_bytes(), &"bar".to_datum());
 }

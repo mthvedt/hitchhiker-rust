@@ -26,6 +26,21 @@ impl Testable for BTree {
 	fn teardown(self) {}
 }
 
+/// A Testable that does nothing. Useful for using the defbench macro for one-offs.
+pub struct DummyTestable {}
+
+impl Testable for DummyTestable {
+	fn name() -> String {
+		String::from("(n/a)")
+	}
+
+	fn setup() -> Self {
+		DummyTestable {}
+	}
+
+	fn teardown(self) {}
+}
+
 // Alas, this macro is verbose, but it's the best we have
 // (rust doesn't have gensym, dynamic idents, &c.)
 // TODO: we can make this better/less verbose. See the bench macros in bench.rs
@@ -46,16 +61,104 @@ macro_rules! deftests {
     };
 }
 
+// /// A trait for maps that can accept references to bytes. Intended to be the fastest,
+// /// most unfair benchmark (since HashMaps will win handily).
+// ///
+// /// SimpleReferenceTestMap above breaks the defbench macro since Trait<'a> is a $ty but not an $ident.
+// /// See https://github.com/rust-lang/rust/issues/20272 .
+// pub trait SimpleReferenceTestMap<'a> {
+// 	fn insert(&mut self, k: &'a [u8], v: &'a [u8]) -> ();
+
+// 	fn get(&mut self, k: &'a [u8]) -> Option<&'a [u8]>;
+
+// 	fn delete(&mut self, k: &'a [u8]) -> bool;
+// }
+
+// impl<'a, T, D1> SimpleReferenceTestMap for T where T: ByteMap<D = D1>, D1: Borrow<[u8]> + Datum + 'a {
+// 	fn insert(&'a mut self, k: &'a [u8], v: &'a [u8]) -> () {
+// 		self.insert(k.iter(), &Value::from_bytes(v))
+// 	}
+
+// 	fn get(&'a mut self, k: &'a [u8]) -> Option<&'a [u8]> {
+// 		self.get(k.iter()).map(Borrow::borrow)
+// 	}
+
+// 	fn delete(&'a mut self, k: &'a [u8]) -> bool {
+// 		self.delete(k.iter())
+// 	}
+// }
+
+// pub struct ReferenceByteHashMap<'a> {
+// 	wrapped: HashMap<&'a [u8], &'a [u8]>,
+// }
+
+// impl<'a> Testable for ReferenceByteHashMap<'a> {
+// 	fn name() -> String {
+// 		String::from("ref std hashmap")
+// 	}
+
+// 	fn setup() -> Self {
+// 		ReferenceByteHashMap { wrapped: HashMap::new() }
+// 	}
+
+// 	fn teardown(self) {}
+// }
+
+// impl<'a> SimpleReferenceTestMap<'a> for ReferenceByteHashMap<'a> {
+// 	fn insert(&mut self, k: &'a [u8], v: &'a [u8]) -> () {
+// 		self.wrapped.insert(k, v);
+// 	}
+
+// 	fn get(&mut self, k: &'a [u8]) -> Option<&'a [u8]> {
+// 		self.wrapped.get(k).map(|rrk| *rrk)
+// 	}
+
+// 	fn delete(&mut self, k: &'a [u8]) -> bool {
+// 		self.wrapped.remove(k).is_some()
+// 	}
+// }
+
+// pub struct ReferenceByteBTree<'a> {
+// 	wrapped: BTreeMap<&'a [u8], &'a [u8]>,
+// }
+
+// impl<'a> Testable for ReferenceByteBTree<'a> {
+// 	fn name() -> String {
+// 		String::from("ref std btree")
+// 	}
+
+// 	fn setup() -> Self {
+// 		ReferenceByteBTree { wrapped: BTreeMap::new() }
+// 	}
+
+// 	fn teardown(self) {}
+// }
+
+// impl<'a> SimpleReferenceTestMap<'a> for ReferenceByteBTree<'a> {
+// 	fn insert(&mut self, k: &'a [u8], v: &'a [u8]) -> () {
+// 		self.wrapped.insert(k, v);
+// 	}
+
+// 	fn get(&mut self, k: &'a [u8]) -> Option<&'a [u8]> {
+// 		self.wrapped.get(k).map(|rrk| *rrk)
+// 	}
+
+// 	fn delete(&mut self, k: &'a [u8]) -> bool {
+// 		self.wrapped.remove(k).is_some()
+// 	}
+// }
+
 /// A ByteMap impl that boxes references into a HashMap. Of course boxing references is a little slow,
 /// but it's "fair" in the sense a real DB will need to allocate and copy *something*.
 /// We also have benchmarks for raw byte string references in the bench/ binary.
+
 pub struct ByteHashMap {
 	wrapped: HashMap<Box<[u8]>, Value>,
 }
 
 impl Testable for ByteHashMap {
 	fn name() -> String {
-		String::from("byte hash map")
+		String::from("std hashmap")
 	}
 
 	fn setup() -> Self {
@@ -65,14 +168,45 @@ impl Testable for ByteHashMap {
 	fn teardown(self) {}
 }
 
-impl<'a> ByteMap for ByteHashMap {
+impl ByteMap for ByteHashMap {
 	type D = Value;
 
 	fn insert<K: Key, V: Datum>(&mut self, k: K, v: &V) {
 		self.wrapped.insert(k.box_copy(), Value::new(v));
 	}
 
-	/// This is mutable because gets may introduce read conflicts, and hence mutate the underlying datastructure.
+	fn get<K: Key>(&mut self, k: K) -> Option<&Value> {
+		self.wrapped.get(&k.box_copy())
+	}
+
+	fn delete<K: Key>(&mut self, k: K) -> bool {
+		self.wrapped.remove(&k.box_copy()).is_some()
+	}
+}
+
+pub struct ByteTreeMap {
+	wrapped: BTreeMap<Box<[u8]>, Value>,
+}
+
+impl Testable for ByteTreeMap {
+	fn name() -> String {
+		String::from("std btree")
+	}
+
+	fn setup() -> Self {
+		ByteTreeMap { wrapped: BTreeMap::new(), }
+	}
+
+	fn teardown(self) {}
+}
+
+impl ByteMap for ByteTreeMap {
+	type D = Value;
+
+	fn insert<K: Key, V: Datum>(&mut self, k: K, v: &V) {
+		self.wrapped.insert(k.box_copy(), Value::new(v));
+	}
+
 	fn get<K: Key>(&mut self, k: K) -> Option<&Value> {
 		self.wrapped.get(&k.box_copy())
 	}

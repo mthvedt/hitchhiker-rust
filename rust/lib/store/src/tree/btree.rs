@@ -4,6 +4,7 @@ use std::mem;
 use std::ptr;
 
 use data::*;
+use data::slice::*;
 
 // A brain-dead b-tree for testing/comparison.
 
@@ -45,6 +46,10 @@ impl Value {
 		Self::safe_new(src).unwrap()
 	}
 
+	pub fn from_bytes(src: &[u8]) -> Value {
+		Self::new(&SliceDatum::new(src))
+	}
+
 	// fn new_from<D: IntoDatum>(src: D) -> Value {
 	// 	Self::safe_new(&src.to_datum()).unwrap()
 	// }
@@ -58,6 +63,12 @@ impl Datum for Value {
     fn write_bytes<W: DataWrite>(&self, w: W) -> W::Result {
     	w.write(&*self.v)
     }
+}
+
+impl Borrow<[u8]> for Value {
+	fn borrow(&self) -> &[u8] {
+		self.v.borrow()
+	}
 }
 
 struct ValuePtr {

@@ -7,6 +7,7 @@ extern crate test;
 
 use std::collections::*;
 use std::convert::TryFrom;
+use std::iter::FromIterator;
 use std::marker::PhantomData;
 use std::ops::Deref;
 use test::black_box;
@@ -18,9 +19,19 @@ use thunderhead_store::bench::*;
 use thunderhead_store::tree::btree::*;
 use thunderhead_store::tree::testlib::*;
 
+fn insert_hashmap<V: Verifier>(m: &mut HashMap<Vec<u8>, Vec<u8>>, k: &[u8], v: &[u8]) {
+	V::run(|| m.insert(Vec::from_iter(k.iter().cloned()), Vec::from_iter(v.iter().cloned())));
+}
+
+fn check_hashmap<T: ByteMap, V: Verifier>(t: &mut T, m: &HashMap<Vec<u8>, Vec<u8>>, k: &[u8]) {
+	V::verify(|| "map get mismatch",
+		|| m.get(k).map(|x| x.as_ref())
+		   == t.get(k).map(Datum::box_copy).as_ref().map(Box::deref));
+}
+
 defbench! {
 	// This serves as a smoke test--it should give the same benchmarks as bench_put below.
-	bench_ref_std_map, _t: Testable, b, V, {
+	bench_ref_std_map, _t: Testable, b, T, V, {
 		// Note that the seeds are the same as bench_put. This is on purpose.
 		let ks = random_byte_strings(0xC400D969);
 		let vs = random_byte_strings(0x3FB87EE6);
@@ -40,7 +51,7 @@ defbench! {
 // TODO: how does hitchhiker do benchmarks?
 defbench! {
 	// This serves as a smoke test--it should give the same benchmarks as bench_put below.
-	bench_put_no_verify, t: ByteMap, b, V, {
+	bench_put_no_verify, t: ByteMap, b, T, V, {
 		// Note that the seeds are the same as bench_put. This is on purpose.
 		let ks = random_byte_strings(0xC400D969);
 		let vs = random_byte_strings(0x3FB87EE6);
@@ -55,7 +66,7 @@ defbench! {
 }
 
 defbench! {
-	bench_put, t: ByteMap, b, V, {
+	bench_put, t: ByteMap, b, T, V, {
 		let ks = random_byte_strings(0xC400D969);
 		let vs = random_byte_strings(0x3FB87EE6);
 		let rand_tests = random_byte_strings(0x6E7D2E0F);
@@ -66,20 +77,16 @@ defbench! {
 			for i in 0..ks.len() {
 				// TODO: should it be called as_datum?
 				t.insert(&ks[i], &vs[i].into_datum());
-				V::run(|| m.insert(ks[i], vs[i]));
-				V::verify(|| "map get mismatch",
-					|| m.get(&ks[i]).map(|x| x.as_ref())
-					   == t.get(&ks[i]).map(Datum::box_copy).as_ref().map(Box::deref));
-				V::verify(|| "map get mismatch",
-					|| m.get(&rand_tests[i]).map(|x| x.as_ref())
-					   == t.get(&rand_tests[i]).map(Datum::box_copy).as_ref().map(Box::deref));
+				insert_hashmap::<V>(&mut m, &ks[i], &vs[i]);
+				check_hashmap::<T, V>(t, &m, &ks[i]);
+				check_hashmap::<T, V>(t, &m, &rand_tests[i]);
 			}
 		})
 	}
 }
 
 defbench! {
-	bench_get, t: ByteMap, b, V, {
+	bench_get, t: ByteMap, b, T, V, {
 		let ks = random_byte_strings(0xC400D969);
 		let vs = random_byte_strings(0x3FB87EE6);
 		let rand_tests = random_byte_strings(0x6E7D2E0F);
@@ -88,19 +95,15 @@ defbench! {
 
 		for i in 0..ks.len() {
 			t.insert(&ks[i], &vs[i].into_datum());
-			V::run(|| m.insert(ks[i], vs[i]));
+			insert_hashmap::<V>(&mut m, &ks[i], &vs[i]);
 		}
 
 		b.bench(u64::try_from(ks.len()).unwrap(), || {
 			for i in 0..ks.len() {
 				// TODO: should it be called as_datum?
 				black_box(t.get(&ks[i]));
-				V::verify(|| "map get mismatch",
-					|| m.get(&ks[i]).map(|x| x.as_ref())
-					   == t.get(&ks[i]).map(Datum::box_copy).as_ref().map(Box::deref));
-				V::verify(|| "map get mismatch",
-					|| m.get(&rand_tests[i]).map(|x| x.as_ref())
-					   == t.get(&rand_tests[i]).map(Datum::box_copy).as_ref().map(Box::deref));
+				check_hashmap::<T, V>(t, &m, &ks[i]);
+				check_hashmap::<T, V>(t, &m, &rand_tests[i]);
 			}
 		})
 	}

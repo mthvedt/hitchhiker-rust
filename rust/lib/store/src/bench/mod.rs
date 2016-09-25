@@ -89,45 +89,43 @@ pub trait Benchable {
 #[macro_export]
 macro_rules! defbench {
 	// We want to have id1trait to be a ty, but that doesn't work. See https://github.com/rust-lang/rust/issues/20272
-	{ $name:ident, $id1:ident: $id1trait:ident, $idbencher:ident, $idverifier:ident, $e:expr } => {
+	{ $name:ident, $id1:ident: $id1trait:ident, $idbencher:ident, $idtype:ident, $idverifier:ident, $e:expr } => {
 		// Basically, we want to 'bundle' Testables into Benchables, parameterized by different kinds of Testable.
 		// This ugly macro is the easiest way to do it: we get a nice bundle of Benchable at the end, parameterizable by
 		// a statically-checked type. If we had HKTs or typeclasses like Haskell,
 		// we could imagine a more elegant way using fn composition... but we have neither of those.
 
 		fn $name<_T: $id1trait + Testable + 'static>() -> Box<Benchable> {
-			// We have to have this local type to get around a limitation: rustc can't capture _T.
-			struct _AnonBenchable<_Tcap: $id1trait + Testable + 'static> {
-				_phantom: PhantomData<_Tcap>,
-			}
+			// This type parameter is a workaround that you can't capture outer type parameters for some reason.
+			struct _AnonBenchable<$idtype: $id1trait + Testable + 'static> {
+                _phantom: PhantomData<$idtype>,
+            }
 
-			impl<_Tcap: $id1trait + Testable + 'static> _AnonBenchable<_Tcap> {
-				fn _voldemort_bench<$idverifier: Verifier>(&self, $id1: &mut _Tcap, $idbencher: &mut Bencher) {
+			impl<$idtype: $id1trait + Testable + 'static> _AnonBenchable<$idtype> {
+				fn _anon_bench<$idverifier: Verifier>(&self, $id1: &mut $idtype, $idbencher: &mut Bencher) {
 					$e
 				}
 			}
 
-			impl<_Tcap: $id1trait + Testable + 'static> Benchable for _AnonBenchable<_Tcap> {
-				fn name(&self) -> (String, String) { (String::from(stringify!($name)), <_Tcap as Testable>::name()) }
+			impl<$idtype: $id1trait + Testable + 'static> Benchable for _AnonBenchable<$idtype> {
+				fn name(&self) -> (String, String) { (String::from(stringify!($name)), <$idtype as Testable>::name()) }
 
 				fn bench(&self, b: &mut Bencher) {
-					let mut t = _Tcap::setup();
-					self._voldemort_bench::<NullVerifier>(&mut t, b);
+					let mut t = $idtype::setup();
+					self._anon_bench::<NullVerifier>(&mut t, b);
 					t.teardown();
 				}
 
 				fn verify(&self) {
 					// Unused bencher
-					let mut t = _Tcap::setup();
+					let mut t = $idtype::setup();
 					let mut b = Bencher::new();
-					self._voldemort_bench::<RealVerifier>(&mut t, &mut b);
+					self._anon_bench::<RealVerifier>(&mut t, &mut b);
 					t.teardown();
 				}
 			}
 
-			Box::new(_AnonBenchable::<_T> {
-				_phantom: PhantomData,
-			})
+			Box::<_AnonBenchable<_T>>::new(_AnonBenchable { _phantom: PhantomData, })
 		}
 	};
 }

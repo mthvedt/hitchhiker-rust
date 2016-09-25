@@ -48,7 +48,7 @@ defbench! {
 		b.bench(u64::try_from(ks.len()).unwrap(), || {
 			for i in 0..ks.len() {
 				// TODO: should it be called as_datum?
-				t.insert(&ks[i], &vs[i].to_datum())
+				t.insert(&ks[i], &vs[i].into_datum())
 			}
 		})
 	}
@@ -65,7 +65,7 @@ defbench! {
 		b.bench(u64::try_from(ks.len()).unwrap(), || {
 			for i in 0..ks.len() {
 				// TODO: should it be called as_datum?
-				t.insert(&ks[i], &vs[i].to_datum());
+				t.insert(&ks[i], &vs[i].into_datum());
 				V::run(|| m.insert(ks[i], vs[i]));
 				V::verify(|| "map get mismatch",
 					|| m.get(&ks[i]).map(|x| x.as_ref())
@@ -87,7 +87,7 @@ defbench! {
 		let mut m = HashMap::new();
 
 		for i in 0..ks.len() {
-			t.insert(&ks[i], &vs[i].to_datum());
+			t.insert(&ks[i], &vs[i].into_datum());
 			V::run(|| m.insert(ks[i], vs[i]));
 		}
 

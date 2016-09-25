@@ -1,36 +1,50 @@
-use std;
-use std::convert::TryFrom;
-use std::marker::PhantomData;
-use std::vec::Vec;
+use std::ops::Deref;
 
 use data::*;
 use super::testlib::*;
 use super::btree::*;
 
-// TODO: make these tests easier before adding more.
+fn test_get_str<T: ByteMap>(t: &mut T, key: &str, val: Option<&str>) {
+	assert_eq!(t.get(key.as_bytes()).map(Datum::box_copy).as_ref().map(Deref::deref), val.map(str::as_bytes));
+}
+
 fn smoke_test_insert<T: ByteMap>(t: &mut T) {
-	t.insert("foo".as_bytes(), &"bar".to_datum());
+	t.insert("foo".as_bytes(), &"bar".into_datum());
 }
 
 fn smoke_test_get<T: ByteMap>(t: &mut T) {
-	t.insert("foo".as_bytes(), &"bar".to_datum());
-	assert_eq!(&*t.get("foo".as_bytes()).unwrap().box_copy(), "bar".as_bytes());
-	assert_eq!(t.get("fooo".as_bytes()).map(Datum::box_copy), None);
-	assert_eq!(t.get("fop".as_bytes()).map(Datum::box_copy), None);
-	assert_eq!(t.get("fo".as_bytes()).map(Datum::box_copy), None);
+	t.insert("foo".as_bytes(), &"bar".into_datum());
+	test_get_str(t, "foo", Some("bar"));
+	test_get_str(t, "foooo", None);
+	test_get_str(t, "fop", None);
+	test_get_str(t, "fo", None);
+	test_get_str(t, "poo", None);
+
+	t.insert("fop".as_bytes(), &"baz".into_datum());
+	test_get_str(t, "foo", Some("bar"));
+	test_get_str(t, "foooo", None);
+	test_get_str(t, "fop", Some("baz"));
+	test_get_str(t, "fo", None);
+	test_get_str(t, "poo", None);
 }
 
 fn smoke_test_delete<T: ByteMap>(t: &mut T) {
-	t.insert("foo".as_bytes(), &"bar".to_datum());
-	t.insert("sna".as_bytes(), &"foo".to_datum());
-	assert_eq!(&*t.get("foo".as_bytes()).unwrap().box_copy(), "bar".as_bytes());
-	assert_eq!(&*t.get("sna".as_bytes()).unwrap().box_copy(), "foo".as_bytes());
-	assert_eq!(t.get("fop".as_bytes()).map(Datum::box_copy), None);
+	t.insert("foo".as_bytes(), &"bar".into_datum());
+	t.insert("sna".as_bytes(), &"foo".into_datum());
+	t.insert("fop".as_bytes(), &"baz".into_datum());
+	test_get_str(t, "foo", Some("bar"));
+	test_get_str(t, "sna", Some("foo"));
+	test_get_str(t, "fop", Some("baz"));
 
 	t.delete("sna".as_bytes());
-	assert_eq!(&*t.get("foo".as_bytes()).unwrap().box_copy(), "bar".as_bytes());
-	assert_eq!(t.get("sna".as_bytes()).map(Datum::box_copy), None);
-	assert_eq!(t.get("fop".as_bytes()).map(Datum::box_copy), None);
+	test_get_str(t, "foo", Some("bar"));
+	test_get_str(t, "sna", None);
+	test_get_str(t, "fop", Some("baz"));
+
+	t.delete("fop".as_bytes());
+	test_get_str(t, "foo", Some("bar"));
+	test_get_str(t, "sna", None);
+	test_get_str(t, "fop", None);
 }
 
 deftests! {

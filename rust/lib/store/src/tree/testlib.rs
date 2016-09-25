@@ -42,8 +42,7 @@ impl Testable for DummyTestable {
 }
 
 // Alas, this macro is verbose, but it's the best we have
-// (rust doesn't have gensym, dynamic idents, &c.)
-// TODO: we can make this better/less verbose. See the bench macros in bench.rs
+// (rust doesn't have gensym, dynamic idents, a stable testing interface, &c.)
 #[macro_export]
 macro_rules! deftests {
 	// TODO: what is $tr for?

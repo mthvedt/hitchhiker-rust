@@ -71,13 +71,13 @@ impl<'a> DataWrite for ByteDataWrite<'a> {
 pub trait IntoDatum {
 	/// The datum type. In general, this will be bounded by the IntoDatum's lifetime.
 	type D: Datum;
-	fn to_datum(self) -> Self::D;
+	fn into_datum(self) -> Self::D;
 }
 
 impl<'a> IntoDatum for &'a [u8] {
 	type D = SliceDatum<'a>;
 
-	fn to_datum(self) -> Self::D {
+	fn into_datum(self) -> Self::D {
 		SliceDatum::new(self)
 	}
 }
@@ -85,15 +85,15 @@ impl<'a> IntoDatum for &'a [u8] {
 impl<'a> IntoDatum for &'a str {
 	type D = <&'a [u8] as IntoDatum>::D;
 
-	fn to_datum(self) -> Self::D {
-		self.as_bytes().to_datum()
+	fn into_datum(self) -> Self::D {
+		self.as_bytes().into_datum()
 	}
 }
 
 impl<'a> IntoDatum for &'a String {
 	type D = <&'a [u8] as IntoDatum>::D;
 
-	fn to_datum(self) -> Self::D {
-		self.as_bytes().to_datum()
+	fn into_datum(self) -> Self::D {
+		self.as_bytes().into_datum()
 	}
 }

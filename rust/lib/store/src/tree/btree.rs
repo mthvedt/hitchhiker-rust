@@ -411,18 +411,26 @@ impl Node2 {
 		self.count_buckets == NODE_CAPACITY - 1
 	}
 
-	fn get_bucket(&mut self, idx: usize) -> &mut Bucket {
+	fn get_bucket(&self, idx: usize) -> &Bucket {
+		self.buckets[idx].v.as_ref().unwrap()
+	}
+
+	fn get_child(&self, idx: usize) -> &Node2 {
+		self.children[idx].v.as_ref().unwrap()
+	}
+
+	fn get_bucket_mut(&mut self, idx: usize) -> &mut Bucket {
 		self.buckets[idx].v.as_mut().unwrap()
 	}
 
-	fn get_child(&mut self, idx: usize) -> &mut Node2 {
+	fn get_child_mut(&mut self, idx: usize) -> &mut Node2 {
 		self.children[idx].v.as_mut().unwrap()
 	}
 
 	/// Returns the first bucket greater than or equal to the given key, or None if this key is the greatest.
 	/// Returns true if a direct match.
 	/// Precondition: Not a leaf.
-	fn find_bucket(&mut self, k: &[u8]) -> Result<usize, usize> {
+	fn find_bucket(&self, k: &[u8]) -> Result<usize, usize> {
 		// TODO: we can make this faster with a subslice.
 		self.buckets[0..(self.count_buckets as usize)].binary_search_by(|bp| bp.v.as_ref().unwrap().k.bytes().cmp(k.bytes()))
 	}
@@ -439,6 +447,7 @@ impl Node2 {
 	/// Precondition: Is a leaf, fully flushed.
 	fn insert_leaf<V: Datum>(&mut self, idx: usize, k: &[u8], v: &V) -> ()
 	{
+		debug_assert!(!self.needs_flush());
 		Self::insert_into_slice(self.buckets.as_mut(), BucketPtr::new(k, v), idx, self.count_buckets as usize);
 		// TODO: count_buckets -> bucket_count
 		self.count_buckets += 1;
@@ -514,12 +523,10 @@ impl Node2 {
 		}
 	}
 
-	/// Precondition: this node is flushed if needed.
-	/// After this executes, this node (and any modified child nodes)
-	/// may need flushing.
 	/// Preconditions: This node is fully flushed.
 	/// Postconditions: This node may need flushing at the next insert.
 	fn insert<D: Datum>(&mut self, k: &[u8], v: &D) {
+		debug_assert!(!self.needs_flush());
 		match self.find_bucket(k) {
 			Ok(idx) => {
 				panic!("Duplicate key"); // TODO
@@ -528,25 +535,25 @@ impl Node2 {
 				self.insert_leaf(idx, k, v)
 			} else {
 				// Insert in a child node.
-				match self.get_child(idx).flush() {
+				match self.get_child_mut(idx).flush() {
 					Some((new_bucket_ptr, new_node_ptr)) => {
 						// Need to insert a new bucket. May put us into a flushable state.
 						self.insert_sibling(idx, new_bucket_ptr, new_node_ptr);
-						match k.bytes().cmp(self.get_bucket(idx).k.bytes()) {
-							Ordering::Less => self.get_child(idx).insert(k, v),
+						match k.bytes().cmp(self.get_bucket_mut(idx).k.bytes()) {
+							Ordering::Less => self.get_child_mut(idx).insert(k, v),
 							Ordering::Equal => panic!("Duplicate key"), // TODO
-							Ordering::Greater => self.get_child(idx + 1).insert(k, v),
+							Ordering::Greater => self.get_child_mut(idx + 1).insert(k, v),
 						}
 					}
 					None => {
-						self.get_child(idx).insert(k, v)
+						self.get_child_mut(idx).insert(k, v)
 					}
 				}
 			},
 		}
 	}
 
-	fn get(&mut self, k: &[u8]) -> Option<&ByteBox> {
+	fn get(&self, k: &[u8]) -> Option<&ByteBox> {
 		match self.find_bucket(k) {
 			Ok(idx) => Some(&self.get_bucket(idx).v),
 			Err(idx) => {
@@ -559,9 +566,54 @@ impl Node2 {
 		}
 	}
 
+	fn check_invariants_helper(&self, parent_lower_bound: Option<&ByteBox>, parent_upper_bound: Option<&ByteBox>) {
+		// TODO: validate all leaves are at the same level
+
+		// Validate the bucket count
+		for i in 0..(NODE_CAPACITY as usize - 1) {
+			if i >= self.count_buckets as usize {
+				assert!(self.buckets[i].v.is_none());
+			} else {
+				assert!(self.buckets[i].v.is_some());
+				// Validate sorted order
+				if i > 1 {
+					assert!(self.get_bucket(i).k < self.get_bucket(i - 1).k);
+				}
+			}
+		}
+
+		// Validate bounds
+		assert!(parent_lower_bound.is_none() || &self.get_bucket(0).k > parent_lower_bound.unwrap());
+		assert!(parent_upper_bound.is_none() || &self.get_bucket(self.count_buckets as usize - 1).k < parent_upper_bound.unwrap());
+
+		// Validate the children
+		for i in 0..(NODE_CAPACITY as usize) {
+			if self.is_leaf() || i >= self.count_buckets as usize + 1 {
+				assert!(self.children[i].v.is_none());
+			} else {
+				assert!(self.children[i].v.is_some());
+
+				let lower_bound: Option<&ByteBox>;
+				if i == 0 {
+					lower_bound = None;
+				} else {
+					lower_bound = Some(&self.get_bucket(i - 1).k);
+				}
+
+				let upper_bound: Option<&ByteBox>;
+				if i == self.count_buckets as usize {
+					upper_bound = None;
+				} else {
+					upper_bound = Some(&self.get_bucket(i).k);
+				}
+
+				self.get_child(i).check_invariants_helper(lower_bound, upper_bound);
+			}
+		}
+	}
+
 	fn check_invariants(&self) {
-		panic!("todo")
-		// Not implemented since this is going away
+		self.check_invariants_helper(None, None);
 	}
 }
 

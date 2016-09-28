@@ -3,29 +3,15 @@ use std::iter::FromIterator;
 
 use super::slice::*;
 
+/// Anything that can be quickly turned into bytes. A convenience trait.
 pub trait Key {
-	type B: Borrow<u8>;
-	type I: Iterator<Item = Self::B>;
-
-	fn into_iter(self) -> Self::I;
-
-	/// Try to avoid using this in production.
-	// TODO: maybe put into testlib...
-	fn box_copy(self) -> Box<[u8]> where Self: Sized {
-		// A little less efficient than Datum.box_copy, since we don't know
-		// our length ahead of time.
-		let r = Vec::from_iter(self.into_iter().map(|x| *x.borrow()));
-		r.into_boxed_slice()
-	}
+	fn bytes(&self) -> &[u8];
 }
 
-impl<'a, K> Key for K where K: IntoIterator<Item = &'a u8> {
-	type B = <Self as IntoIterator>::Item;
-	type I = <Self as IntoIterator>::IntoIter;
-
-	fn into_iter(self) -> Self::I {
-		// What is this voodoo? Infinite recursion on into_iter? No, it's type inference.
-		self.into_iter()
+/// Note that this automatically makes any Borrow<[u8]> a Datum, too.
+impl<B: ?Sized> Key for B where B: Borrow<[u8]> {
+	fn bytes(&self) -> &[u8] {
+		self.borrow()
 	}
 }
 
@@ -34,8 +20,11 @@ pub trait DataWrite {
     fn write(self, buf: &[u8]) -> Self::Result;
 }
 
+// TODO rename Datum to Value?
+// TODO data isn't right. What we really want is to 'open a channel'
+// into the persistent store.
 pub trait Datum {
-	fn len(&self) -> u16;
+	fn len(&self) -> usize;
 	// TODO should yield future; both the in and out can be a stream.
 	// An 'AndThen' future? what's the overhead?
 	fn write_bytes<W: DataWrite>(&self, w: W) -> W::Result;
@@ -49,6 +38,16 @@ pub trait Datum {
 		unsafe { r.set_len(self.len() as usize); }
 		self.write_bytes(ByteDataWrite { v: r.borrow_mut() });
 		r.into_boxed_slice()
+	}
+}
+
+impl<K> Datum for K where K: Key {
+	fn len(&self) -> usize {
+		self.bytes().len()
+	}
+
+	fn write_bytes<W: DataWrite>(&self, w: W) -> W::Result {
+		w.write(self.bytes())
 	}
 }
 

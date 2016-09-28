@@ -349,7 +349,11 @@ fn main() {
 
 	let benchmarks = create_benchmarks! {
 		[DummyTestable,] => [bench_ref_std_map,],
-		[ByteHashMap, ByteTreeMap, BTree,] => [
+		[
+			ByteHashMap,
+			ByteTreeMap,
+			BTree,
+		] => [
 			bench_put_no_verify,
 			bench_put,
 			bench_get,
@@ -364,6 +368,9 @@ fn main() {
 			// bench_get_huge,
 			// bench_del_huge,
 			// bench_stress,
+		],
+		[PersistentBTree,] => [
+		    bench_put,
 		],
 	};
 

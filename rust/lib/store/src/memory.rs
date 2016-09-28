@@ -235,7 +235,7 @@ struct SnapshotDatumPointer {
 
 #[allow(dead_code, unused_variables)]
 impl Datum for SnapshotDatumPointer {
-    fn len(&self) -> u16 {
+    fn len(&self) -> usize {
         panic!("Not implemented")
     }
 

@@ -1,9 +1,42 @@
+use std::borrow::Borrow;
 use std::convert::TryFrom;
 
 use super::traits::*;
+// TODO rename this lib
+// TODO is value a good name for datum?
+#[derive(PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ByteBox {
+    data: Box<[u8]>,
+}
+
+impl ByteBox {
+    pub fn new<B: Borrow<[u8]>>(bytes: B) -> ByteBox {
+        ByteBox {
+            // TODO size check
+            data: SliceDatum::new(bytes.borrow()).box_copy(),
+        }
+    }
+
+    // Note that we can't make ByteBox Borrow[u8]. OR CAN WE?
+    pub fn from_key<K: Key + ?Sized>(k: &K) -> ByteBox {
+        Self::new(k.bytes())
+    }
+
+    pub fn from_value<V: Datum>(v: &V) -> ByteBox {
+        ByteBox {
+            data: v.box_copy(),
+        }
+    }
+}
+
+impl Borrow<[u8]> for ByteBox {
+    fn borrow(&self) -> &[u8] {
+        self.data.borrow()
+    }
+}
 
 // TODO what should be public here?
-// TODO: IntoDatum trait, don't publish SliceDatum
+// TODO impl Key not Datum
 #[derive(PartialEq, Eq, Hash)]
 pub struct SliceDatum<'a> {
     data: &'a [u8],
@@ -12,7 +45,7 @@ pub struct SliceDatum<'a> {
 impl<'a> SliceDatum<'a> {
     pub fn new(slice: &'a [u8]) -> SliceDatum<'a> {
         // TODO don't panic
-        u16::try_from(slice.len()).unwrap();
+        // u16::try_from(slice.len()).unwrap();
         SliceDatum { data: slice }
     }
 }
@@ -39,8 +72,8 @@ impl<'a> Iterator for SliceDatumIterator<'a> {
 }
 
 impl<'a> Datum for SliceDatum<'a> {
-    fn len(&self) -> u16 {
-        u16::try_from(self.data.len()).unwrap()
+    fn len(&self) -> usize {
+        self.data.len()
     }
 
 // TODO: W or &mut W? Let's go with W--makes it easier to used sized data writes
@@ -61,63 +94,37 @@ impl<'a> IntoIterator for &'a SliceDatum<'a> {
 }
 
 // #[derive(PartialEq, Eq, Hash)]
-// pub struct BytesDatum {
-//     data: [u8];
+// pub struct SliceDatumMut<'a> {
+//     data: &'a mut [u8],
 // }
 
-// impl BytesDatum {
-//     pub fn new(bytes: [u8]) {
-//         ByteDatum {
-//             data: bytes,
-//         }
+// impl<'a> SliceDatumMut<'a> {
+//     pub fn new(slice: &'a mut [u8]) -> SliceDatumMut<'a> {
+//         // TODO don't panic
+//         // u16::try_from(slice.len()).unwrap();
+//         SliceDatumMut { data: slice }
+//     }
+
+//     pub fn unwrap(&mut self) -> &mut [u8] {
+//         self.data
 //     }
 // }
 
-// impl Datum for BytesDatum {
-//     fn len(&self) -> u16 {
-//         u16::try_from(self.data.len()).unwrap()
+// impl<'a> Datum for SliceDatumMut<'a> {
+//     fn len(&self) -> usize {
+//         self.data.len()
 //     }
 
-// // TODO: W or &mut W? Let's go with W--makes it easier to used sized data writes
-// // TODO: consider api for fixed/variable data writes
-// // TODO: consider safety checks here
 //     fn write_bytes<W: DataWrite>(&self, w: W) -> W::Result {
 //         w.write(self.data)
 //     }
 // }
 
-#[derive(PartialEq, Eq, Hash)]
-pub struct SliceDatumMut<'a> {
-    data: &'a mut [u8],
-}
+// impl<'a> IntoIterator for &'a SliceDatumMut<'a> {
+//     type Item = u8;
+//     type IntoIter = SliceDatumIterator<'a>;
 
-impl<'a> SliceDatumMut<'a> {
-    pub fn new(slice: &'a mut [u8]) -> SliceDatumMut<'a> {
-        // TODO don't panic
-        u16::try_from(slice.len()).unwrap();
-        SliceDatumMut { data: slice }
-    }
-
-    pub fn unwrap(&mut self) -> &mut [u8] {
-        self.data
-    }
-}
-
-impl<'a> Datum for SliceDatumMut<'a> {
-    fn len(&self) -> u16 {
-        u16::try_from(self.data.len()).unwrap()
-    }
-
-    fn write_bytes<W: DataWrite>(&self, w: W) -> W::Result {
-        w.write(self.data)
-    }
-}
-
-impl<'a> IntoIterator for &'a SliceDatumMut<'a> {
-    type Item = u8;
-    type IntoIter = SliceDatumIterator<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        SliceDatumIterator::new(self.data)
-    }
-}
+//     fn into_iter(self) -> Self::IntoIter {
+//         SliceDatumIterator::new(self.data)
+//     }
+// }

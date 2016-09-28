@@ -95,8 +95,9 @@ impl Counter {
     }
 }
 
+// TODO impl Key
 impl Datum for Counter {
-    fn len(&self) -> u16 {
+    fn len(&self) -> usize {
         8
     }
 

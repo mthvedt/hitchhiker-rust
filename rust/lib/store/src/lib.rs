@@ -10,6 +10,7 @@
 // TODO: isolate feature(test)
 #![feature(test)]
 
+// TODO we don't really need this
 extern crate byteorder;
 extern crate futures;
 

@@ -208,6 +208,8 @@ pub trait ByteMap {
 	fn get<K: Key + ?Sized>(&mut self, k: &K) -> Option<&Self::D>;
 
 	fn delete<K: Key + ?Sized>(&mut self, k: &K) -> bool;
+
+	fn check_invariants(&self);
 }
 
 // pub trait ByteTree: ByteMap {
@@ -241,13 +243,17 @@ impl ByteMap for BTree {
 	fn delete<K: Key + ?Sized>(&mut self, k: &K) -> bool {
 		self.head.delete(k.bytes().iter())
 	}
+
+	fn check_invariants(&self) {
+		// Not implemented since this is going away
+	}
 }
 
 // TODO: cloning persistent map for the above
 
 struct Bucket {
-	k: Vec<u8>,
-	v: Vec<u8>,
+	k: ByteBox,
+	v: ByteBox,
 }
 
 impl Bucket {
@@ -267,6 +273,15 @@ impl BucketPtr {
 	fn set(&mut self, b: Bucket) {
 		self.v = Some(b);
 	}
+
+	fn new<V: Datum>(k: &[u8], v: &V) -> BucketPtr {
+		BucketPtr {
+			v: Some(Bucket {
+				k: ByteBox::from_key(k),
+				v: ByteBox::from_value(v),
+			}),
+		}
+	}
 }
 
 struct Node2Ptr {
@@ -274,14 +289,22 @@ struct Node2Ptr {
 }
 
 impl Node2Ptr {
-	fn new(p: Option<Box<Node2>>) -> Node2Ptr {
+	fn new(p: Node2) -> Node2Ptr {
 		Node2Ptr {
-			v: p,
+			v: Some(Box::new(p)),
+		}
+	}
+
+	fn new_from_box(p: Box<Node2>) -> Node2Ptr {
+		Node2Ptr {
+			v: Some(p),
 		}
 	}
 
 	fn empty() -> Node2Ptr {
-		Self::new(None)
+		Node2Ptr {
+			v: None,
+		}
 	}
 
 	fn set(&mut self, n: Node2) {
@@ -295,9 +318,9 @@ impl Node2Ptr {
 	fn flush_for_root(self) -> Self {
 		match self.v {
 			Some(mut bp) => match (*bp).flush() {
-				Some((new_bucket, new_node)) => Self::new(Some(Box::new(Node2::new_from_two(Self::new(Some(bp)), new_bucket, new_node)))),
+				Some((new_bucket, new_node)) => Self::new(Node2::new_from_two(Self::new_from_box(bp), new_bucket, new_node)),
 				// need to use new here because self.v is a move (it needs to be so it's mutable)
-				None => Self::new(Some(bp)),
+				None => Self::new_from_box(bp),
 			},
 			None => Self::empty(),
 		}
@@ -308,9 +331,23 @@ impl Node2Ptr {
 		let mut newself = self.flush_for_root();
 		match newself.v {
 			Some(ref mut bn) => (*bn).insert(k, v),
-			None => (),
+			None => newself = Self::new(Node2::new_from_one(k, v)),
 		}
 		newself
+	}
+
+	fn get_for_root(&mut self, k: &[u8]) -> Option<&ByteBox> {
+		match self.v {
+			Some(ref mut bn) => (*bn).get(k),
+			None => None,
+		}
+	}
+
+	fn check_invariants(&self) {
+		match self.v {
+			Some(ref bn) => (*bn).check_invariants(),
+			None => (),
+		}
 	}
 }
 
@@ -348,18 +385,26 @@ impl Node2 {
 		}
 	}
 
+	fn new_from_one<V: Datum>(k: &[u8], v: &V) -> Node2 {
+		let mut r = Self::empty();
+		r.buckets[0] = BucketPtr::new(k, v);
+		r.count_buckets = 1;
+		r
+	}
+
 	fn new_from_two(n1: Node2Ptr, b1: BucketPtr, n2: Node2Ptr) -> Node2 {
 		let mut r = Self::empty();
 
 		r.buckets[0] = b1;
 		r.children[0] = n1;
 		r.children[1] = n2;
+		r.count_buckets = 1;
 
 		r
 	}
 
 	fn is_leaf(&self) -> bool {
-		self.buckets[0].v.is_none()
+		self.children[0].v.is_none()
 	}
 
 	fn needs_flush(&self) -> bool {
@@ -379,13 +424,24 @@ impl Node2 {
 	/// Precondition: Not a leaf.
 	fn find_bucket(&mut self, k: &[u8]) -> Result<usize, usize> {
 		// TODO: we can make this faster with a subslice.
-		self.buckets[0..(self.count_buckets as usize)].binary_search_by(|bp| bp.v.as_ref().unwrap().k.as_slice().cmp(k.bytes()))
+		self.buckets[0..(self.count_buckets as usize)].binary_search_by(|bp| bp.v.as_ref().unwrap().k.bytes().cmp(k.bytes()))
+	}
+
+	/// Helper fn for inserting into an array. We assume there is room in the array, and it is ok to overwrite
+	/// the T at position arrsize.
+	fn insert_into_slice<T>(arr: &mut [T], item: T, idx: usize, arrsize: usize) {
+		for i in 0..(arrsize - idx) {
+			arr.swap(arrsize - i, arrsize - i - 1);
+		}
+		arr[idx] = item;
 	}
 
 	/// Precondition: Is a leaf, fully flushed.
-	fn insert_leaf<V: Datum>(&mut self, k: &[u8], v: &V) -> ()
+	fn insert_leaf<V: Datum>(&mut self, idx: usize, k: &[u8], v: &V) -> ()
 	{
-		panic!("not implemented")
+		Self::insert_into_slice(self.buckets.as_mut(), BucketPtr::new(k, v), idx, self.count_buckets as usize);
+		// TODO: count_buckets -> bucket_count
+		self.count_buckets += 1;
 	}
 
 	/// Requirements: b.key is between bucket[idx].key and bucket[idx + 1].key, if the latter exists,
@@ -469,7 +525,7 @@ impl Node2 {
 				panic!("Duplicate key"); // TODO
 			},
 			Err(idx) => if self.is_leaf() {
-				self.insert_leaf(k, v)
+				self.insert_leaf(idx, k, v)
 			} else {
 				// Insert in a child node.
 				match self.get_child(idx).flush() {
@@ -488,6 +544,24 @@ impl Node2 {
 				}
 			},
 		}
+	}
+
+	fn get(&mut self, k: &[u8]) -> Option<&ByteBox> {
+		match self.find_bucket(k) {
+			Ok(idx) => Some(&self.get_bucket(idx).v),
+			Err(idx) => {
+				if self.is_leaf() {
+					None
+				} else {
+					self.get_child(idx).get(k)
+				}
+			},
+		}
+	}
+
+	fn check_invariants(&self) {
+		panic!("todo")
+		// Not implemented since this is going away
 	}
 }
 
@@ -515,10 +589,14 @@ impl ByteMap for PersistentBTree {
 	}
 
 	fn get<K: Key + ?Sized>(&mut self, k: &K) -> Option<&Self::D> {
-		panic!("Not implemented")
+		self.head.get_for_root(k.bytes())
 	}
 
 	fn delete<K: Key + ?Sized>(&mut self, k: &K) -> bool {
 		panic!("Not implemented")
+	}
+
+	fn check_invariants(&self) {
+		self.head.check_invariants();
 	}
 }

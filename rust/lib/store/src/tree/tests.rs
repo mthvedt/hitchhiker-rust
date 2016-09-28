@@ -10,6 +10,7 @@ fn test_get_str<T: ByteMap>(t: &mut T, key: &str, val: Option<&str>) {
 
 fn smoke_test_insert<T: ByteMap>(t: &mut T) {
 	t.insert("foo".as_bytes(), &"bar".into_datum());
+	t.insert("fop".as_bytes(), &"baz".into_datum());
 }
 
 fn smoke_test_get<T: ByteMap>(t: &mut T) {

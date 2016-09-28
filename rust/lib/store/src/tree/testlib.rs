@@ -106,6 +106,10 @@ impl ByteMap for ByteHashMap {
 	fn delete<K: Key + ?Sized>(&mut self, k: &K) -> bool {
 		self.wrapped.remove(&ByteBox::from_key(k)).is_some()
 	}
+
+	fn check_invariants(&self) {
+		// Do nothing, assume impl is correct
+	}
 }
 
 pub struct ByteTreeMap {
@@ -137,6 +141,10 @@ impl ByteMap for ByteTreeMap {
 
 	fn delete<K: Key + ?Sized>(&mut self, k: &K) -> bool {
 		self.wrapped.remove(&ByteBox::from_key(k)).is_some()
+	}
+
+	fn check_invariants(&self) {
+		// Do nothing, assume impl is correct
 	}
 }
 

@@ -1,6 +1,5 @@
 use std::borrow::Borrow;
 use std::cmp::{Ord, Ordering};
-use std::convert::TryFrom;
 use std::mem;
 use std::ptr;
 
@@ -270,10 +269,6 @@ impl BucketPtr {
 		}
 	}
 
-	fn set(&mut self, b: Bucket) {
-		self.v = Some(b);
-	}
-
 	fn new<V: Datum>(k: &[u8], v: &V) -> BucketPtr {
 		BucketPtr {
 			v: Some(Bucket {
@@ -427,16 +422,18 @@ impl Node2 {
 		self.children[idx].v.as_mut().unwrap()
 	}
 
-	/// Returns the first bucket greater than or equal to the given key, or None if this key is the greatest.
-	/// Returns true if a direct match.
-	/// Precondition: Not a leaf.
+	/// Returns Ok(i) if bucket[i]'s key is equal to the given key.
+	/// Returns Err(i) where bucket[i] has the first key greater than the given key.
+	/// If buckets are empty (which probably shouldn't happen), returns Err(0).
 	fn find_bucket(&self, k: &[u8]) -> Result<usize, usize> {
 		// TODO: we can make this faster with a subslice.
-		self.buckets[0..(self.count_buckets as usize)].binary_search_by(|bp| bp.v.as_ref().unwrap().k.bytes().cmp(k.bytes()))
+		self.buckets[0..(self.count_buckets as usize)].binary_search_by(
+			|bp| bp.v.as_ref().unwrap().k.bytes().cmp(k.bytes()))
 	}
 
 	/// Helper fn for inserting into an array. We assume there is room in the array, and it is ok to overwrite
 	/// the T at position arrsize.
+	// TODO: should be utility function.
 	fn insert_into_slice<T>(arr: &mut [T], item: T, idx: usize, arrsize: usize) {
 		for i in 0..(arrsize - idx) {
 			arr.swap(arrsize - i, arrsize - i - 1);
@@ -448,6 +445,11 @@ impl Node2 {
 	fn insert_leaf<V: Datum>(&mut self, idx: usize, k: &[u8], v: &V) -> ()
 	{
 		debug_assert!(!self.needs_flush());
+		debug_assert!(self.is_leaf());
+
+		// println!("idx {}", idx);
+		// println!("buckets {}", self.count_buckets);
+
 		Self::insert_into_slice(self.buckets.as_mut(), BucketPtr::new(k, v), idx, self.count_buckets as usize);
 		// TODO: count_buckets -> bucket_count
 		self.count_buckets += 1;
@@ -456,65 +458,55 @@ impl Node2 {
 	/// Requirements: b.key is between bucket[idx].key and bucket[idx + 1].key, if the latter exists,
 	/// or merely greater than bucket[idx].key if not.
 	/// The values descended from n are *greater* than b.key, and less than bucket[idx + 1].key.
-	/// Precondition: Not a leaf.
+	/// Precondition: Not a leaf, fully flushed.
 	fn insert_sibling(&mut self, idx: usize, b: BucketPtr, n: Node2Ptr) {
-		panic!("this is wrong");
-		unsafe {
-			// We don't do this because this is a test tree.
-			// ptr::copy(self.buckets[idx], self.buckets[idx + 1], count_values - idx);
-			// ptr::write(self.buckets[idx], b);
-			// ptr::copy(self.children[idx], self.children[idx + 1], count_values - idx);
-			// ptr::write(self.children[idx], n);
+		debug_assert!(!self.needs_flush());
+		debug_assert!(!self.is_leaf());
 
-			// Move each child and bucket over, starting with the last one.
-			for i in 0..((self.count_buckets as usize) + 1 - idx) {
-				let from_idx = self.count_buckets as usize + 1 - i;
-				let to_idx = from_idx + 1;
-
-				self.children.swap(from_idx, to_idx);
-				if i != 0 {
-					// Recall there's count_buckets buckets and count_buckets + 1children.
-					self.buckets.swap(from_idx, to_idx);
-				}
-			}
-
-			self.buckets[idx] = b;
-			self.children[idx] = n;
-
-			self.count_buckets += 1;
-		}
+		Self::insert_into_slice(self.buckets.as_mut(), b, idx, self.count_buckets as usize);
+		Self::insert_into_slice(self.children.as_mut(), n, idx + 1, self.count_buckets as usize + 1);
+		self.count_buckets += 1;
 	}
 
 	/// Fully flushes this node, making it ready for insertion. May cause the node to split. Does not modify children.
 	/// Flushing is the only operation allowed to create new nodes. In addition, this particular flush
 	/// may not change the level of any node of the tree, so a fully balanced tree remains so.
 	/// Preconditions: None.
-	/// Postconditions: This node is fully flushed.
+	/// Result: This node is fully flushed.
 	/// Returns: If this node was split, the bucket and node pointer that should be inserted into a parent node.
 	/// Note that the bucket should be this node's new parent bucket, and the new node should inherit the old bucket.
 	fn flush(&mut self) -> Option<(BucketPtr, Node2Ptr)> {
 		if self.needs_flush() {
-			// Split down the middle. If we have (2n + 1) buckets, this picks bucket n + 1, exactly in the middle.
-			// If we have 2n buckets the nodes will be uneven so we pick n + 1, saving us one bucket copy.
 			let count_buckets = self.count_buckets as usize;
-			let split_idx = count_buckets / 2 + 1;
+			// Split down the middle. If we have (2n + 1) buckets, this picks bucket n (0-indexed), exactly in the middle.
+			// If we have 2n buckets the nodes will be uneven so we pick n, saving us one bucket copy.
+			let split_idx = count_buckets / 2;
 			let mut n2 = Self::empty();
 
 			for i in (split_idx + 1)..count_buckets {
 				let dst_idx = i - split_idx - 1; // start from 0 in dst
 				mem::swap(&mut self.buckets[i], &mut n2.buckets[dst_idx]);
-				// Note that this is safe even if we are a leaf. For now.
+				// Note that this is safe even if we are a leaf, because if so, all children are empty.
 				mem::swap(&mut self.children[i], &mut n2.children[dst_idx]);
 			}
 			// Don't forget the last child
-			// Note that this is safe even if we are a leaf. For now.
 			mem::swap(&mut self.children[count_buckets], &mut n2.children[count_buckets - split_idx - 1]);
+
+			n2.count_buckets = self.count_buckets - split_idx  as u16 - 1;
+			self.count_buckets = split_idx as u16;
 
 			// Now our children are divided among two nodes. This leaves an extra bucket, which we return
 			// so the parent node can do something with it.
 			let mut bp = BucketPtr::empty();
-			let mut n2p = Node2Ptr::empty();
 			mem::swap(&mut bp, &mut self.buckets[split_idx]);
+
+			// We are done, time to return.
+			// println!("split {} {} -> {} {}", count_buckets, split_idx, self.count_buckets, n2.count_buckets);
+
+			// self.check_invariants_helper(None, None, false);
+			// n2.check_invariants_helper(None, None, false);
+
+			let mut n2p = Node2Ptr::empty();
 			n2p.set(n2);
 
 			Some((bp, n2p))
@@ -528,7 +520,7 @@ impl Node2 {
 	fn insert<D: Datum>(&mut self, k: &[u8], v: &D) {
 		debug_assert!(!self.needs_flush());
 		match self.find_bucket(k) {
-			Ok(idx) => {
+			Ok(_) => {
 				panic!("Duplicate key"); // TODO
 			},
 			Err(idx) => if self.is_leaf() {
@@ -541,8 +533,8 @@ impl Node2 {
 						self.insert_sibling(idx, new_bucket_ptr, new_node_ptr);
 						match k.bytes().cmp(self.get_bucket_mut(idx).k.bytes()) {
 							Ordering::Less => self.get_child_mut(idx).insert(k, v),
-							Ordering::Equal => panic!("Duplicate key"), // TODO
 							Ordering::Greater => self.get_child_mut(idx + 1).insert(k, v),
+							Ordering::Equal => panic!("Duplicate key"), // TODO
 						}
 					}
 					None => {
@@ -566,7 +558,7 @@ impl Node2 {
 		}
 	}
 
-	fn check_invariants_helper(&self, parent_lower_bound: Option<&ByteBox>, parent_upper_bound: Option<&ByteBox>) {
+	fn check_invariants_helper(&self, parent_lower_bound: Option<&ByteBox>, parent_upper_bound: Option<&ByteBox>, recurse: bool) {
 		// TODO: validate all leaves are at the same level
 
 		// Validate the bucket count
@@ -577,7 +569,7 @@ impl Node2 {
 				assert!(self.buckets[i].v.is_some());
 				// Validate sorted order
 				if i > 1 {
-					assert!(self.get_bucket(i).k < self.get_bucket(i - 1).k);
+					assert!(self.get_bucket(i).k > self.get_bucket(i - 1).k);
 				}
 			}
 		}
@@ -593,31 +585,33 @@ impl Node2 {
 			} else {
 				assert!(self.children[i].v.is_some());
 
-				let lower_bound: Option<&ByteBox>;
-				if i == 0 {
-					lower_bound = None;
-				} else {
-					lower_bound = Some(&self.get_bucket(i - 1).k);
-				}
+				if recurse {
+					let lower_bound: Option<&ByteBox>;
+					if i == 0 {
+						lower_bound = None;
+					} else {
+						lower_bound = Some(&self.get_bucket(i - 1).k);
+					}
 
-				let upper_bound: Option<&ByteBox>;
-				if i == self.count_buckets as usize {
-					upper_bound = None;
-				} else {
-					upper_bound = Some(&self.get_bucket(i).k);
-				}
+					let upper_bound: Option<&ByteBox>;
+					if i == self.count_buckets as usize {
+						upper_bound = None;
+					} else {
+						upper_bound = Some(&self.get_bucket(i).k);
+					}
 
-				self.get_child(i).check_invariants_helper(lower_bound, upper_bound);
+					self.get_child(i).check_invariants_helper(lower_bound, upper_bound, recurse);
+				}
 			}
 		}
 	}
 
 	fn check_invariants(&self) {
-		self.check_invariants_helper(None, None);
+		self.check_invariants_helper(None, None, true);
 	}
 }
 
-// The data structure that will be used for our integrity tests.
+// A simple in-memory persistent b-tree.
 pub struct PersistentBTree {
 	head: Node2Ptr,
 }

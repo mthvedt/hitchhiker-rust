@@ -348,30 +348,38 @@ fn main() {
 	// debug_assert!(false, "This target should be run in release mode");
 
 	let benchmarks = create_benchmarks! {
-		[DummyTestable,] => [bench_ref_std_map,],
-		[PersistentBTree,] => [
-		    bench_put,
-		],
+		// [DummyTestable,] => [bench_ref_std_map,],
 		[
-			ByteHashMap,
 			ByteTreeMap,
-			BTree,
+			PersistentBTree,
 		] => [
-			bench_put_no_verify,
-			bench_put,
-			bench_get,
-			bench_del,
+		    bench_put,
+		    bench_get,
+		// 	bench_del,
 			bench_put_big,
 			bench_get_big,
-			bench_del_big,
-			// bench_put_huge_values,
-			// bench_get_huge_values,
-			// bench_del_huge_values,
-			// bench_put_huge,
-			// bench_get_huge,
-			// bench_del_huge,
-			// bench_stress,
+		// 	bench_del_big,
 		],
+		// [
+		// 	ByteHashMap,
+		// 	ByteTreeMap,
+		// 	BTree,
+		// ] => [
+		// 	bench_put_no_verify,
+		// 	bench_put,
+		// 	bench_get,
+		// 	bench_del,
+		// 	bench_put_big,
+		// 	bench_get_big,
+		// 	bench_del_big,
+		// 	// bench_put_huge_values,
+		// 	// bench_get_huge_values,
+		// 	// bench_del_huge_values,
+		// 	// bench_put_huge,
+		// 	// bench_get_huge,
+		// 	// bench_del_huge,
+		// 	// bench_stress,
+		// ],
 	};
 
 	run_benchmarks(&benchmarks, &mut std::io::stdout());

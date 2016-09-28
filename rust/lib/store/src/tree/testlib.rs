@@ -24,7 +24,9 @@ impl Testable for BTree {
 		Self::new()
 	}
 
-	fn teardown(self) {}
+	fn teardown(self) {
+		self.check_invariants();
+	}
 }
 
 impl Testable for PersistentBTree {
@@ -36,7 +38,9 @@ impl Testable for PersistentBTree {
 		Self::new()
 	}
 
-	fn teardown(self) {}
+	fn teardown(self) {
+		self.check_invariants();
+	}
 }
 
 /// A Testable that does nothing. Useful for using the defbench macro for one-offs.

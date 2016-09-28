@@ -1,5 +1,4 @@
 use std::borrow::*;
-use std::iter::FromIterator;
 
 use super::slice::*;
 

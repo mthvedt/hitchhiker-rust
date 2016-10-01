@@ -354,6 +354,7 @@ fn main() {
 			ByteTreeMap,
 			PersistentBTree,
 		] => [
+			bench_put_no_verify,
 		    bench_put,
 		    bench_get,
 			bench_del,

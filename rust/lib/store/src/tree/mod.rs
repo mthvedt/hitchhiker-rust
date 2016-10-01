@@ -6,6 +6,8 @@
 // #[macro_use]
 // extern crate quickcheck;
 
+mod nodeptr;
+
 pub mod btree;
 // TODO why don't this work?
 // pub use self::btree::*;

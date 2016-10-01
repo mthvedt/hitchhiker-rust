@@ -15,20 +15,6 @@ pub trait Testable {
 	fn teardown(mut self) -> ();
 }
 
-impl Testable for BTree {
-	fn name() -> String {
-		String::from("BTree")
-	}
-
-	fn setup() -> Self {
-		Self::new()
-	}
-
-	fn teardown(self) {
-		self.check_invariants();
-	}
-}
-
 impl Testable for PersistentBTree {
 	fn name() -> String {
 		String::from("PBTree")

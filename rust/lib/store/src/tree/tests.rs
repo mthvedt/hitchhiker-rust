@@ -56,11 +56,6 @@ fn smoke_test_delete<T: ByteMap>(t: &mut T) {
 }
 
 deftests! {
-	BTree: Tree => {
-		btree_smoke_test_insert, smoke_test_insert,
-		btree_smoke_test_get, smoke_test_get,
-		btree_smoke_test_delete, smoke_test_delete,
-	},
 	PersistentBTree: Tree => {
 		pbtree_smoke_test_insert, smoke_test_insert,
 		pbtree_smoke_test_get, smoke_test_get,

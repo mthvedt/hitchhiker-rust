@@ -1,4 +1,3 @@
-use std::borrow::Borrow;
 use std::cmp::{Ord, Ordering};
 use std::mem;
 use std::ptr;
@@ -6,196 +5,11 @@ use std::ptr;
 use data::*;
 use data::slice::ByteBox;
 
-// A brain-dead b-tree for testing/comparison.
-
-// TODO: make it a real life b tree.
-
-struct NodePtr {
-	v: Option<Box<Node>>,
-}
-
-impl NodePtr {
-	fn empty() -> NodePtr {
-		NodePtr {
-			v: None,
-		}
-	}
-
-	fn set(&mut self, n: Node) {
-		self.v = Some(Box::new(n));
-	}
-}
-
-struct ValuePtr {
-	v: Option<ByteBox>,
-}
-
-impl ValuePtr {
-	fn empty() -> ValuePtr {
-		ValuePtr {
-			v: None
-		}
-	}
-
-	fn set(&mut self, v: ByteBox) {
-		self.v = Some(v);
-	}
-}
-
 const NODE_CAPACITY: u16 = 16;
 
-struct Node {
-    vals: [ValuePtr; NODE_CAPACITY as usize],
-    children: [NodePtr; NODE_CAPACITY as usize],
-}
-
-impl Node {
-	fn empty() -> Node {
-		unsafe {
-			Node {
-        	    vals: make_array!(|_| ValuePtr::empty(), NODE_CAPACITY as usize),
-       	    	children: make_array!(|_| NodePtr::empty(), NODE_CAPACITY as usize),
-			}
-		}
-	}
-
-	fn get_child(&mut self, nibble: u8) -> Option<&mut Node> {
-		// TODO safety check in debug mode
-		let mut ptr = &mut self.children[nibble as usize];
-		match ptr.v {
-			Some(ref mut v) => Some(v),
-			None => None,
-		}
-	}
-
-	fn get_or_create_child(&mut self, nibble: u8) -> &mut Node {
-		// TODO safety check in debug mode
-		let mut ptr = &mut self.children[nibble as usize];
-		match ptr.v {
-			Some(ref mut v) => v,
-			None => {
-				ptr.set(Self::empty());
-				ptr.v.as_mut().unwrap() // now safe
-			}
-		}
-	}
-
-	fn get_ptr_for_hi_nibble<B, I>(&mut self, b: u8, k: I) -> Option<&mut ValuePtr> where
-	B: Borrow<u8>,
-	I: Iterator<Item = B>,
-	{
-		let n1 = (b & 0xf0) >> 4;
-		let n2 = b & 0x0f;
-		match self.get_child(n1) {
-			Some(child) => child.get_ptr_for_lo_nibble(n2, k),
-			None => None,
-		}
-	}
-
-	fn get_ptr_for_lo_nibble<B, I>(&mut self, nibble: u8, mut k: I) -> Option<&mut ValuePtr> where
-	B: Borrow<u8>,
-	I: Iterator<Item = B>,
-	{
-		match k.next() {
-			Some(bb) => {
-				let b = bb.borrow().clone();
-				match self.get_child(nibble) {
-					Some(child) => child.get_ptr_for_hi_nibble(b, k),
-					None => None,
-				}
-			},
-			None => Some(&mut self.vals[nibble as usize]),
-		}
-	}
-
-	fn get_ptr<B, I>(&mut self, mut k: I) -> Option<&mut ValuePtr> where
-	B: Borrow<u8>,
-	I: Iterator<Item = B>,
-	{
-		match k.next() {
-			Some(b) => self.get_ptr_for_hi_nibble(b.borrow().clone(), k),
-			None => panic!("Tried to get with empty key"), // TODO handle
-		}
-	}
-
-	fn insert_for_hi_nibble<D, B, I>(&mut self, b: u8, k: I, v: &D) where
-	D: Datum,
-	B: Borrow<u8>,
-	I: Iterator<Item = B>,
-	{
-		let n1 = (b & 0xf0) >> 4;
-		let n2 = b & 0x0f;
-		let mut child = self.get_or_create_child(n1);
-		child.insert_for_lo_nibble(n2, k, v);
-	}
-
-	fn insert_for_lo_nibble<D, B, I>(&mut self, nibble: u8, mut k: I, v: &D) where
-	D: Datum,
-	B: Borrow<u8>,
-	I: Iterator<Item = B>,
-	{
-		match k.next() {
-			Some(b) => {
-				let mut child = self.get_or_create_child(nibble);
-				child.insert_for_hi_nibble(b.borrow().clone(), k, v);
-			},
-			None => self.finish_insert(nibble, v),
-		}
-	}
-
-	fn finish_insert<D>(&mut self, nibble: u8, v: &D) where
-	D: Datum,
-	{
-		// TODO handle errors
-		self.vals[nibble as usize].set(ByteBox::from_value(v));
-	}
-
-	// Interface functions
-	fn insert<D, B, I>(&mut self, mut k: I, v: &D) where
-	D: Datum,
-	B: Borrow<u8>,
-	I: Iterator<Item = B>,
-	{
-		match k.next() {
-			Some(b) => self.insert_for_hi_nibble(b.borrow().clone(), k, v),
-			None => panic!("Tried to insert with empty key"), // TODO handle
-		}
-	}
-
-	fn get<B, I>(&mut self, k: I) -> Option<&ByteBox> where
-	B: Borrow<u8>,
-	I: Iterator<Item = B>,
-	{
-		match self.get_ptr(k) {
-			Some(vptr) => match vptr.v {
-				Some(ref mut val) => Some(val),
-				None => None,
-			},
-			None => None,
-		}
-	}
-
-	// Interface functions
-	fn delete<B, I>(&mut self, k: I) -> bool where
-	B: Borrow<u8>,
-	I: Iterator<Item = B>,
-	{
-		match self.get_ptr(k) {
-			Some(mut vptr) => {
-				vptr.v = None;
-				true
-			},
-			None => false,
-		}
-	}
-}
-
-// TODO: Key and StackDatum.
 // TODO: move to module level doc the below.
-/// A key is anything that can be (quickly, efficiently) converted to a byte iterator.
-/// It is the same as, but more broadly implemented than, IntoIterator<[u8]>. Though it is passed
-/// by value, most impls will be references.
-/// A value is a Datum, a set of bytes that can be streamed. It should be passed by reference.
+/// A key is anything that can be (quickly, efficiently) converted to raw bytes.
+/// A value is a Datum, a set of bytes that can be streamed.
 pub trait ByteMap {
 	type D: Datum;
 
@@ -214,41 +28,6 @@ pub trait ByteMap {
 // pub trait ByteTree: ByteMap {
 
 // }
-
-// TODO: rename. 'stupid btree'? We will delete this eventually.
-pub struct BTree {
-	head: Node,
-}
-
-impl BTree {
-	pub fn new() -> BTree {
-		BTree {
-			head: Node::empty(),
-		}
-	}
-}
-
-impl ByteMap for BTree {
-	type D = ByteBox;
-
-	fn insert<K: Key + ?Sized, V: Datum>(&mut self, k: &K, v: &V) -> () {
-		self.head.insert(k.bytes().iter(), v);
-	}
-
-	fn get<K: Key + ?Sized>(&mut self, k: &K) -> Option<&Self::D> {
-		self.head.get(k.bytes().iter())
-	}
-
-	fn delete<K: Key + ?Sized>(&mut self, k: &K) -> bool {
-		self.head.delete(k.bytes().iter())
-	}
-
-	fn check_invariants(&self) {
-		// Not implemented since this is going away
-	}
-}
-
-// TODO: cloning persistent map for the above
 
 struct Bucket {
 	k: ByteBox,
@@ -287,38 +66,38 @@ impl BucketPtr {
 	}
 }
 
-struct Node2Ptr {
-	v: Option<Box<Node2>>,
+struct NodePtr {
+	v: Option<Box<Node>>,
 }
 
-impl Node2Ptr {
-	fn new(p: Node2) -> Node2Ptr {
-		Node2Ptr {
+impl NodePtr {
+	fn new(p: Node) -> NodePtr {
+		NodePtr {
 			v: Some(Box::new(p)),
 		}
 	}
 
-	fn new_from_box(p: Box<Node2>) -> Node2Ptr {
-		Node2Ptr {
+	fn new_from_box(p: Box<Node>) -> NodePtr {
+		NodePtr {
 			v: Some(p),
 		}
 	}
 
-	fn empty() -> Node2Ptr {
-		Node2Ptr {
+	fn empty() -> NodePtr {
+		NodePtr {
 			v: None,
 		}
 	}
 
-	fn set(&mut self, n: Node2) {
+	fn set(&mut self, n: Node) {
 		self.v = Some(Box::new(n));
 	}
 
-	fn unwrap(&self) -> &Node2 {
+	fn unwrap(&self) -> &Node {
 		self.v.as_ref().unwrap().as_ref()
 	}
 
-	fn unwrap_mut(&mut self) -> &mut Node2 {
+	fn unwrap_mut(&mut self) -> &mut Node {
 		self.v.as_mut().unwrap().as_mut()
 	}
 
@@ -329,7 +108,7 @@ impl Node2Ptr {
 	fn flush_for_root(self) -> Self {
 		match self.v {
 			Some(mut bp) => match (*bp).flush() {
-				Some((new_bucket, new_node)) => Self::new(Node2::new_from_two(Self::new_from_box(bp), new_bucket, new_node)),
+				Some((new_bucket, new_node)) => Self::new(Node::new_from_two(Self::new_from_box(bp), new_bucket, new_node)),
 				// need to use new here because self.v is a move (it needs to be so it's mutable)
 				None => Self::new_from_box(bp),
 			},
@@ -343,7 +122,7 @@ impl Node2Ptr {
 		let mut newself = self.flush_for_root();
 		match newself.v {
 			Some(ref mut bn) => (*bn).insert(k, v),
-			None => newself = Self::new(Node2::new_from_one(k, v)),
+			None => newself = Self::new(Node::new_from_one(k, v)),
 		}
 		newself
 	}
@@ -363,14 +142,14 @@ impl Node2Ptr {
 		match newself.v {
 			Some(mut bn) => {
 				let r = bn.as_mut().delete(k);
-				if bn.as_ref().count_buckets == 0 {
+				if bn.as_ref().bucket_count == 0 {
 					let mut n = *bn;
 					if n.is_leaf() {
 						// We're empty!
 						(Self::empty(), r)
 					} else {
 						// There must be 0 buckets and 1 child
-						let mut new_node = Node2Ptr::empty();
+						let mut new_node = NodePtr::empty();
 						mem::swap(&mut new_node, &mut n.children[0]);
 						debug_assert!(new_node.v.is_some());
 						(new_node, r)
@@ -393,14 +172,14 @@ impl Node2Ptr {
 
 // TODO: figure out a good r/w interface for packing/unpacking nodes.
 // Packer/Unpacker<T>?
-struct Node2 {
+struct Node {
 	// Invariant: Height is max(height(children)) + 1 and no more than min(height(children)) + 2.
 	// If a leaf, height == 0.
 	// height: u8,
 	/// Invariant: between (NODE_CAPACITY - 1) / 2 and NODE_CAPACITY - 1 unless we are the top node,
 	/// in which case this is between 0 and NODE_CAPACITY - 1.
 	/// When flushed, this is between 0 and NODE_CAPACITY - 2.
-	count_buckets: u16,
+	bucket_count: u16,
 	// count_bytes: u16,
 	/// Buckets: key z pairs in this node.
 	/// Invariant: the buckets in the interval [0, count_children - 1) are populated,
@@ -409,36 +188,36 @@ struct Node2 {
 	/// Invariant: if not a leaf, the buckets in the interval [0, count_children) are populated,
 	/// all others are not.
 	/// If this is a leaf, all children are empty.
-    children: [Node2Ptr; NODE_CAPACITY as usize],
+    children: [NodePtr; NODE_CAPACITY as usize],
 }
 
-impl Node2 {
-	fn empty() -> Node2 {
+impl Node {
+	fn empty() -> Node {
 		unsafe {
-			Node2 {
+			Node {
 				// height: 0,
-				count_buckets: 0,
+				bucket_count: 0,
 				// We could use mem::uninitialized, but this is a test class.
         	    buckets: make_array!(|_| BucketPtr::empty(), (NODE_CAPACITY - 1) as usize),
-       	    	children: make_array!(|_| Node2Ptr::empty(), NODE_CAPACITY as usize),
+       	    	children: make_array!(|_| NodePtr::empty(), NODE_CAPACITY as usize),
 			}
 		}
 	}
 
-	fn new_from_one<V: Datum>(k: &[u8], v: &V) -> Node2 {
+	fn new_from_one<V: Datum>(k: &[u8], v: &V) -> Node {
 		let mut r = Self::empty();
 		r.buckets[0] = BucketPtr::new(k, v);
-		r.count_buckets = 1;
+		r.bucket_count = 1;
 		r
 	}
 
-	fn new_from_two(n1: Node2Ptr, b1: BucketPtr, n2: Node2Ptr) -> Node2 {
+	fn new_from_two(n1: NodePtr, b1: BucketPtr, n2: NodePtr) -> Node {
 		let mut r = Self::empty();
 
 		r.buckets[0] = b1;
 		r.children[0] = n1;
 		r.children[1] = n2;
-		r.count_buckets = 1;
+		r.bucket_count = 1;
 
 		r
 	}
@@ -448,13 +227,13 @@ impl Node2 {
 	}
 
 	fn needs_flush(&self) -> bool {
-		self.count_buckets == NODE_CAPACITY - 1
+		self.bucket_count == NODE_CAPACITY - 1
 	}
 
 	/// A node is deficient iff it can be merged with another deficient node
 	/// without needing a flush.
 	fn is_deficient(&self) -> bool {
-		self.count_buckets < (NODE_CAPACITY - 1) / 2
+		self.bucket_count < (NODE_CAPACITY - 1) / 2
 	}
 
 	// TODO dont need these
@@ -462,7 +241,7 @@ impl Node2 {
 		self.buckets[idx].unwrap()
 	}
 
-	fn get_child(&self, idx: usize) -> &Node2 {
+	fn get_child(&self, idx: usize) -> &Node {
 		self.children[idx].unwrap()
 	}
 
@@ -470,7 +249,7 @@ impl Node2 {
 		self.buckets[idx].unwrap_mut()
 	}
 
-	fn get_child_mut(&mut self, idx: usize) -> &mut Node2 {
+	fn get_child_mut(&mut self, idx: usize) -> &mut Node {
 		self.children[idx].unwrap_mut()
 	}
 
@@ -479,7 +258,7 @@ impl Node2 {
 	/// If buckets are empty (which probably shouldn't happen), returns Err(0).
 	fn find_bucket(&self, k: &[u8]) -> Result<usize, usize> {
 		// TODO: we can make this faster with a subslice.
-		self.buckets[0..(self.count_buckets as usize)].binary_search_by(
+		self.buckets[0..(self.bucket_count as usize)].binary_search_by(
 			|bp| bp.v.as_ref().unwrap().k.bytes().cmp(k.bytes()))
 	}
 
@@ -565,22 +344,22 @@ impl Node2 {
 		debug_assert!(!self.needs_flush());
 		debug_assert!(self.is_leaf());
 
-		Self::rotate_in(&mut BucketPtr::new(k, v), &mut self.buckets[idx..(self.count_buckets as usize + 1)]);
-		// TODO: count_buckets -> bucket_count
-		self.count_buckets += 1;
+		Self::rotate_in(&mut BucketPtr::new(k, v), &mut self.buckets[idx..(self.bucket_count as usize + 1)]);
+		// TODO: bucket_count -> bucket_count
+		self.bucket_count += 1;
 	}
 
 	/// Requirements: b.key is between bucket[idx].key and bucket[idx + 1].key, if the latter exists,
 	/// or merely greater than bucket[idx].key if not.
 	/// The values descended from n are *greater* than b.key, and less than bucket[idx + 1].key.
 	/// Precondition: Not a leaf, fully flushed.
-	fn insert_sibling(&mut self, idx: usize, mut b: BucketPtr, mut n: Node2Ptr) {
+	fn insert_sibling(&mut self, idx: usize, mut b: BucketPtr, mut n: NodePtr) {
 		debug_assert!(!self.needs_flush());
 		debug_assert!(!self.is_leaf());
 
-		Self::rotate_in(&mut b, &mut self.buckets[idx..(self.count_buckets as usize + 1)]);
-		Self::rotate_in(&mut n, &mut self.children[(idx + 1)..(self.count_buckets  as usize + 2)]);
-		self.count_buckets += 1;
+		Self::rotate_in(&mut b, &mut self.buckets[idx..(self.bucket_count as usize + 1)]);
+		Self::rotate_in(&mut n, &mut self.children[(idx + 1)..(self.bucket_count  as usize + 2)]);
+		self.bucket_count += 1;
 	}
 
 	/// Fully flushes this node, making it ready for insertion. May cause the node to split. Does not modify children.
@@ -590,26 +369,26 @@ impl Node2 {
 	/// Result: This node is fully flushed.
 	/// Returns: If this node was split, the bucket and node pointer that should be inserted into a parent node.
 	/// Note that the bucket should be this node's new parent bucket, and the new node should inherit the old bucket.
-	fn flush(&mut self) -> Option<(BucketPtr, Node2Ptr)> {
+	fn flush(&mut self) -> Option<(BucketPtr, NodePtr)> {
 		if self.needs_flush() {
-			let count_buckets = self.count_buckets as usize;
+			let bucket_count = self.bucket_count as usize;
 			// Split down the middle. If we have (2n + 1) buckets, this picks bucket n (0-indexed), exactly in the middle.
 			// If we have 2n buckets the nodes will be uneven so we pick n, saving us one bucket copy.
-			let split_idx = count_buckets / 2;
+			let split_idx = bucket_count / 2;
 			let mut n2 = Self::empty();
 
 			// TODO: use rotate fns
-			for i in (split_idx + 1)..count_buckets {
+			for i in (split_idx + 1)..bucket_count {
 				let dst_idx = i - split_idx - 1; // start from 0 in dst
 				mem::swap(&mut self.buckets[i], &mut n2.buckets[dst_idx]);
 				// Note that this is safe even if we are a leaf, because if so, all children are empty.
 				mem::swap(&mut self.children[i], &mut n2.children[dst_idx]);
 			}
 			// Don't forget the last child
-			mem::swap(&mut self.children[count_buckets], &mut n2.children[count_buckets - split_idx - 1]);
+			mem::swap(&mut self.children[bucket_count], &mut n2.children[bucket_count - split_idx - 1]);
 
-			n2.count_buckets = self.count_buckets - split_idx  as u16 - 1;
-			self.count_buckets = split_idx as u16;
+			n2.bucket_count = self.bucket_count - split_idx  as u16 - 1;
+			self.bucket_count = split_idx as u16;
 
 			// Now our children are divided among two nodes. This leaves an extra bucket, which we return
 			// so the parent node can do something with it.
@@ -617,12 +396,12 @@ impl Node2 {
 			mem::swap(&mut bp, &mut self.buckets[split_idx]);
 
 			// We are done, time to return.
-			// println!("split {} {} -> {} {}", count_buckets, split_idx, self.count_buckets, n2.count_buckets);
+			// println!("split {} {} -> {} {}", bucket_count, split_idx, self.bucket_count, n2.bucket_count);
 
 			// self.quickcheck_invariants();
 			// n2.quickcheck_invariants();
 
-			let mut n2p = Node2Ptr::empty();
+			let mut n2p = NodePtr::empty();
 			n2p.set(n2);
 
 			Some((bp, n2p))
@@ -634,47 +413,47 @@ impl Node2 {
 	/// Preconditions: The parent node, if it exists, is not deficient. Both args are deficient.
 	fn merge_deficient_nodes(&mut self, right_other: &mut Self, bucket_to_steal: &mut BucketPtr) {
 		debug_assert!(self.is_deficient() && right_other.is_deficient());
-		let count_buckets = self.count_buckets as usize;
-		let other_count_buckets = right_other.count_buckets as usize;
+		let bucket_count = self.bucket_count as usize;
+		let other_bucket_count = right_other.bucket_count as usize;
 
 		// We are 'stealing' this bucket from the parent
-		mem::swap(&mut self.buckets[count_buckets], bucket_to_steal);
+		mem::swap(&mut self.buckets[bucket_count], bucket_to_steal);
 		Self::swap(
-			&mut self.buckets[(count_buckets + 1)..(count_buckets + other_count_buckets + 1)],
-			&mut right_other.buckets[..other_count_buckets]);
+			&mut self.buckets[(bucket_count + 1)..(bucket_count + other_bucket_count + 1)],
+			&mut right_other.buckets[..other_bucket_count]);
 		Self::swap(
-			&mut self.children[(count_buckets + 1)..(count_buckets + other_count_buckets + 2)],
-			&mut right_other.children[..(other_count_buckets + 1)]);
-		self.count_buckets += right_other.count_buckets + 1;
+			&mut self.children[(bucket_count + 1)..(bucket_count + other_bucket_count + 2)],
+			&mut right_other.children[..(other_bucket_count + 1)]);
+		self.bucket_count += right_other.bucket_count + 1;
 
 		// self.check_invariants();
 	}
 
-	fn borrow_left(&mut self, left: &mut Node2Ptr, left_parent_bucket: &mut BucketPtr) {
+	fn borrow_left(&mut self, left: &mut NodePtr, left_parent_bucket: &mut BucketPtr) {
 		let mut ln = left.unwrap_mut();
-		let num_to_borrow = (ln.count_buckets - self.count_buckets + 1) / 2;
-		debug_assert!(num_to_borrow >= 1, "invalid bucket sizes: {} {}", ln.count_buckets, self.count_buckets);
-		let count_buckets = self.count_buckets as usize;
+		let num_to_borrow = (ln.bucket_count - self.bucket_count + 1) / 2;
+		debug_assert!(num_to_borrow >= 1, "invalid bucket sizes: {} {}", ln.bucket_count, self.bucket_count);
+		let bucket_count = self.bucket_count as usize;
 
 		// Make room for the things we're borrowing.
-		Self::rotate_right(&mut self.buckets[..(count_buckets + num_to_borrow as usize)], num_to_borrow as usize);
-		Self::rotate_right(&mut self.children[..(count_buckets + num_to_borrow as usize + 1)], num_to_borrow as usize);
+		Self::rotate_right(&mut self.buckets[..(bucket_count + num_to_borrow as usize)], num_to_borrow as usize);
+		Self::rotate_right(&mut self.children[..(bucket_count + num_to_borrow as usize + 1)], num_to_borrow as usize);
 
 		// The first bororwed bucket becomes the new parent bucket, and the old parent bucket is moved into this node.
 		mem::swap(left_parent_bucket, &mut self.buckets[num_to_borrow as usize - 1]);
-		mem::swap(&mut ln.buckets[(ln.count_buckets - num_to_borrow) as usize], left_parent_bucket);
+		mem::swap(&mut ln.buckets[(ln.bucket_count - num_to_borrow) as usize], left_parent_bucket);
 
 		// Swap in the buckets and children. Empty buckets will be swapped into ln.
 		// We borrow n children and n-1 buckets (additionally, we did the little shuffle above, borrowing n total).
 		Self::swap(
-			&mut ln.buckets[(ln.count_buckets - num_to_borrow + 1) as usize..ln.count_buckets as usize],
+			&mut ln.buckets[(ln.bucket_count - num_to_borrow + 1) as usize..ln.bucket_count as usize],
 			&mut self.buckets[..(num_to_borrow as usize - 1)]);
 		Self::swap(
-			&mut ln.children[(ln.count_buckets - num_to_borrow + 1) as usize..(ln.count_buckets as usize + 1)],
+			&mut ln.children[(ln.bucket_count - num_to_borrow + 1) as usize..(ln.bucket_count as usize + 1)],
 			&mut self.children[..(num_to_borrow as usize)]);
 
-		self.count_buckets += num_to_borrow;
-		ln.count_buckets -= num_to_borrow;
+		self.bucket_count += num_to_borrow;
+		ln.bucket_count -= num_to_borrow;
 
 		// self.quickcheck_invariants();
 		// ln.quickcheck_invariants();
@@ -682,31 +461,31 @@ impl Node2 {
 			// ln.check_invariants();
 	}
 
-	fn borrow_right(&mut self, right: &mut Node2Ptr, right_parent_bucket: &mut BucketPtr) {
+	fn borrow_right(&mut self, right: &mut NodePtr, right_parent_bucket: &mut BucketPtr) {
 		let mut rn = right.unwrap_mut();
-		let num_to_borrow = (rn.count_buckets - self.count_buckets + 1) / 2;
-		debug_assert!(num_to_borrow >= 1, "invalid bucket sizes: {} {}", self.count_buckets, rn.count_buckets);
-		let count_buckets = self.count_buckets as usize;
+		let num_to_borrow = (rn.bucket_count - self.bucket_count + 1) / 2;
+		debug_assert!(num_to_borrow >= 1, "invalid bucket sizes: {} {}", self.bucket_count, rn.bucket_count);
+		let bucket_count = self.bucket_count as usize;
 
 		// The last bororwed bucket becomes the new parent bucket, and the old parent bucket is moved into this node.
-		mem::swap(right_parent_bucket, &mut self.buckets[count_buckets]);
+		mem::swap(right_parent_bucket, &mut self.buckets[bucket_count]);
 		mem::swap(&mut rn.buckets[num_to_borrow as usize - 1], right_parent_bucket);
 
 		// Swap in the buckets and children. Empty buckets will be swapped into rn.
 		// We borrow n children and n-1 buckets (additionally, we did the little shuffle above, borrowing n total).
 		Self::swap(
 			&mut rn.buckets[0..(num_to_borrow - 1) as usize],
-			&mut self.buckets[(count_buckets + 1)..(count_buckets + num_to_borrow as usize)]);
+			&mut self.buckets[(bucket_count + 1)..(bucket_count + num_to_borrow as usize)]);
 		Self::swap(
 			&mut rn.children[0..num_to_borrow as usize],
-			&mut self.children[(count_buckets + 1)..(count_buckets + num_to_borrow as usize + 1)]);
+			&mut self.children[(bucket_count + 1)..(bucket_count + num_to_borrow as usize + 1)]);
 
 		// Adjust the positions in the right node.
-		Self::rotate_left(&mut rn.buckets[0..(rn.count_buckets ) as usize], num_to_borrow as usize);
-		Self::rotate_left(&mut rn.children[0..(rn.count_buckets + 1) as usize], num_to_borrow as usize);
+		Self::rotate_left(&mut rn.buckets[0..(rn.bucket_count ) as usize], num_to_borrow as usize);
+		Self::rotate_left(&mut rn.children[0..(rn.bucket_count + 1) as usize], num_to_borrow as usize);
 
-		self.count_buckets += num_to_borrow;
-		rn.count_buckets -= num_to_borrow;
+		self.bucket_count += num_to_borrow;
+		rn.bucket_count -= num_to_borrow;
 
 		// self.quickcheck_invariants();
 		// rn.quickcheck_invariants();
@@ -721,8 +500,8 @@ impl Node2 {
 	/// that bucket.
 
 	// TODO: ptrs and bucketptrs are already options...
-	fn merge(&mut self, left: Option<&mut Node2Ptr>, left_parent_bucket: Option<&mut BucketPtr>,
-		right: Option<&mut Node2Ptr>, right_parent_bucket: Option<&mut BucketPtr>)
+	fn merge(&mut self, left: Option<&mut NodePtr>, left_parent_bucket: Option<&mut BucketPtr>,
+		right: Option<&mut NodePtr>, right_parent_bucket: Option<&mut BucketPtr>)
 	-> Option<bool> {
 		debug_assert!(self.is_deficient());
 		debug_assert!(left.is_some() || right.is_some());
@@ -739,7 +518,7 @@ impl Node2 {
 							if rv.unwrap().is_deficient() {
 								self.merge_deficient_nodes(rv.unwrap_mut(), right_parent_bucket.unwrap());
 								Some(true)
-							} else if rv.unwrap().count_buckets > lv.unwrap().count_buckets {
+							} else if rv.unwrap().bucket_count > lv.unwrap().bucket_count {
 								self.borrow_right(rv, right_parent_bucket.unwrap());
 								None
 							} else {
@@ -782,11 +561,11 @@ impl Node2 {
 	/// Returns true if merging happened (and hence buckets[idx] has changed).
 	// TODO: this code is pure shit.
 	fn check_deficient_child(&mut self, idx: usize) {
-		debug_assert!(idx <= self.count_buckets as usize);
+		debug_assert!(idx <= self.bucket_count as usize);
 
 		if self.get_child(idx).is_deficient() {
 			let delete_result;
-			let count_buckets = self.count_buckets as usize;
+			let bucket_count = self.bucket_count as usize;
 
 			{
 				// Get the borrows we need, in a way that won't make Rust freak out.
@@ -814,7 +593,7 @@ impl Node2 {
 					left_parent_bucket = None;
 				}
 
-				if idx < count_buckets {
+				if idx < bucket_count {
 					right_sibling = Some(&mut right_child_dummy[0]);
 					right_parent_bucket = Some(&mut right_bucket_dummy[0]);
 				} else {
@@ -829,15 +608,15 @@ impl Node2 {
 			match delete_result {
 				// false == left bucket, middle child was deleted
 				Some(false) => {
-					Self::rotate_out(&mut self.buckets[(idx - 1)..count_buckets], &mut BucketPtr::empty());
-					Self::rotate_out(&mut self.children[idx..(count_buckets + 1)], &mut Node2Ptr::empty());
-					self.count_buckets -= 1;
+					Self::rotate_out(&mut self.buckets[(idx - 1)..bucket_count], &mut BucketPtr::empty());
+					Self::rotate_out(&mut self.children[idx..(bucket_count + 1)], &mut NodePtr::empty());
+					self.bucket_count -= 1;
 				}
 				// true = right bucket, right sibling was deleted
 				Some(true) => {
-					Self::rotate_out(&mut self.buckets[idx..count_buckets], &mut BucketPtr::empty());
-					Self::rotate_out(&mut self.children[(idx + 1)..(count_buckets + 1)], &mut Node2Ptr::empty());
-					self.count_buckets -= 1;
+					Self::rotate_out(&mut self.buckets[idx..bucket_count], &mut BucketPtr::empty());
+					Self::rotate_out(&mut self.children[(idx + 1)..(bucket_count + 1)], &mut NodePtr::empty());
+					self.bucket_count -= 1;
 				}
 				None => (),
 			}
@@ -848,11 +627,12 @@ impl Node2 {
 	}
 
 	// For the special case where head just has one bucket.
+	// TODO use me and test invariants!
 	fn collapse_maybe(mut self) -> Self {
 		self.check_deficient_child(0);
 		// Make sure we have a bucket left!
-		if self.count_buckets == 0 {
-			let mut dummy = Node2Ptr::empty();
+		if self.bucket_count == 0 {
+			let mut dummy = NodePtr::empty();
 			mem::swap(&mut self.children[0], &mut dummy);
 			*dummy.v.unwrap()
 		} else {
@@ -905,16 +685,16 @@ impl Node2 {
 
 	/// Postcondition: May leave this node deficient. Will not leave descendant nodes deficient.
 	fn yank_rightmost_bucket(&mut self) -> BucketPtr {
-		let count_buckets = self.count_buckets as usize;
+		let bucket_count = self.bucket_count as usize;
 
 		if self.is_leaf() {
 			let mut r = BucketPtr::empty();
-			mem::swap(&mut r, &mut self.buckets[count_buckets - 1]);
-			self.count_buckets -= 1;
+			mem::swap(&mut r, &mut self.buckets[bucket_count - 1]);
+			self.bucket_count -= 1;
 			r
 		} else {
-			let r = self.get_child_mut(count_buckets).yank_rightmost_bucket();
-			self.check_deficient_child(count_buckets);
+			let r = self.get_child_mut(bucket_count).yank_rightmost_bucket();
+			self.check_deficient_child(bucket_count);
 			r
 		}
 	}
@@ -923,8 +703,8 @@ impl Node2 {
 	fn yank_leftmost_bucket(&mut self) -> BucketPtr {
 		if self.is_leaf() {
 			let mut r = BucketPtr::empty();
-			Self::rotate_out(&mut self.buckets[0..self.count_buckets as usize], &mut r);
-			self.count_buckets -= 1;
+			Self::rotate_out(&mut self.buckets[0..self.bucket_count as usize], &mut r);
+			self.bucket_count -= 1;
 			r
 		} else {
 			let r = self.get_child_mut(0).yank_leftmost_bucket();
@@ -939,8 +719,8 @@ impl Node2 {
 		match self.find_bucket(k) {
 			Ok(idx) => {
 				if self.is_leaf() {
-					Self::rotate_out(&mut self.buckets[idx..self.count_buckets as usize], &mut BucketPtr::empty());
-					self.count_buckets -= 1;
+					Self::rotate_out(&mut self.buckets[idx..self.bucket_count as usize], &mut BucketPtr::empty());
+					self.bucket_count -= 1;
 					// self.check_invariants();
 					true
 			    } else {
@@ -967,17 +747,17 @@ impl Node2 {
 		}
 	}
 
+	#[allow(dead_code)]
 	fn quickcheck_invariants(&self) {
 		self.check_invariants_helper(None, None, false);
 	}
 
 	fn check_invariants_helper(&self, parent_lower_bound: Option<&ByteBox>, parent_upper_bound: Option<&ByteBox>, recurse: bool) {
 		// TODO: validate all leaves are at the same level
-		// TODO: validate that there are no sibling deficient nodes
 
 		// Validate the bucket count
 		for i in 0..(NODE_CAPACITY as usize - 1) {
-			if i >= self.count_buckets as usize {
+			if i >= self.bucket_count as usize {
 				assert!(self.buckets[i].v.is_none(), "expected empty bucket in position {}", i);
 			} else {
 				assert!(self.buckets[i].v.is_some(), "expected populated bucket in position {}", i);
@@ -990,15 +770,14 @@ impl Node2 {
 
 		// Validate bounds
 		assert!(parent_lower_bound.is_none() || &self.get_bucket(0).k > parent_lower_bound.unwrap());
-		assert!(parent_upper_bound.is_none() || &self.get_bucket(self.count_buckets as usize - 1).k < parent_upper_bound.unwrap());
+		assert!(parent_upper_bound.is_none() || &self.get_bucket(self.bucket_count as usize - 1).k < parent_upper_bound.unwrap());
 
-		// Node bounds. TODO: for parents only
-		// TODO: assert at least one bucket
-		// assert!(self.is_leaf() || self.count_buckets >= (NODE_CAPACITY - 3) / 2);
+		// TODO: assert non-head nodes are never deficient.
+		assert!(self.is_leaf() || self.bucket_count >= 2);
 
 		// Validate the children
 		for i in 0..(NODE_CAPACITY as usize) {
-			if self.is_leaf() || i >= self.count_buckets as usize + 1 {
+			if self.is_leaf() || i >= self.bucket_count as usize + 1 {
 				assert!(self.children[i].v.is_none());
 			} else {
 				assert!(self.children[i].v.is_some());
@@ -1012,7 +791,7 @@ impl Node2 {
 					}
 
 					let upper_bound: Option<&ByteBox>;
-					if i == self.count_buckets as usize {
+					if i == self.bucket_count as usize {
 						upper_bound = None;
 					} else {
 						upper_bound = Some(&self.get_bucket(i).k);
@@ -1031,13 +810,13 @@ impl Node2 {
 
 // A simple in-memory persistent b-tree.
 pub struct PersistentBTree {
-	head: Node2Ptr,
+	head: NodePtr,
 }
 
 impl PersistentBTree {
 	pub fn new() -> PersistentBTree {
 		PersistentBTree {
-			head: Node2Ptr::empty(),
+			head: NodePtr::empty(),
 		}
 	}
 }
@@ -1047,7 +826,7 @@ impl ByteMap for PersistentBTree {
 
 	fn insert<K: Key + ?Sized, V: Datum>(&mut self, k: &K, v: &V) -> () {
 		// Dummy to make the compiler behave. Since we're dealing in Options and Boxes, shouldn't have a runtime cost.
-		let mut dummy = Node2Ptr::empty();
+		let mut dummy = NodePtr::empty();
 		mem::swap(&mut dummy, &mut self.head);
 		self.head = dummy.insert_for_root(k.bytes(), v);
 	}
@@ -1057,7 +836,7 @@ impl ByteMap for PersistentBTree {
 	}
 
 	fn delete<K: Key + ?Sized>(&mut self, k: &K) -> bool {
-		let mut dummy = Node2Ptr::empty();
+		let mut dummy = NodePtr::empty();
 		mem::swap(&mut dummy, &mut self.head);
 		let (newhead, r) = dummy.delete_for_root(k.bytes());
 		self.head = newhead;

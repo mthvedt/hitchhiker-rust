@@ -353,7 +353,6 @@ fn main() {
 			ByteHashMap,
 			ByteTreeMap,
 			PersistentBTree,
-			BTree,
 		] => [
 		    bench_put,
 		    bench_get,

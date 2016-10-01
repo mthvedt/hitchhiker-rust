@@ -348,17 +348,19 @@ fn main() {
 	// debug_assert!(false, "This target should be run in release mode");
 
 	let benchmarks = create_benchmarks! {
-		// [DummyTestable,] => [bench_ref_std_map,],
+		[DummyTestable,] => [bench_ref_std_map,],
 		[
+			ByteHashMap,
 			ByteTreeMap,
 			PersistentBTree,
+			BTree,
 		] => [
 		    bench_put,
 		    bench_get,
-		// 	bench_del,
+			bench_del,
 			bench_put_big,
 			bench_get_big,
-		// 	bench_del_big,
+			bench_del_big,
 		],
 		// [
 		// 	ByteHashMap,

@@ -3,6 +3,12 @@ use std::borrow::*;
 use super::slice::*;
 
 /// Anything that can be quickly turned into bytes. A convenience trait.
+// TODO: what we really want is an into_box method, like so:
+// pub trait Key {
+	// fn bytes(&self) -> &[u8];
+	// fn into_box(self) -> Box<[u8]>;
+// }
+
 pub trait Key {
 	fn bytes(&self) -> &[u8];
 }

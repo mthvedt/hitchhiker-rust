@@ -7,6 +7,7 @@
 // extern crate quickcheck;
 
 mod nodeptr;
+mod util;
 
 pub mod btree;
 // TODO why don't this work?

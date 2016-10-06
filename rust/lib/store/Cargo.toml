@@ -5,7 +5,7 @@ authors = ["Mike Thvedt <mike.thvedt@gmail.com>"]
 
 [dependencies]
 byteorder = "0.5"
-futures = { git = "https://github.com/alexcrichton/futures-rs" }
+futures = "0.1"
 
 # TODO: these used by testlib. Need better isolation.
 rand = "0.3"

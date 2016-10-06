@@ -89,118 +89,118 @@ defbench! {
 	}
 }
 
-defbench! {
-	bench_get, t: ByteMap, b, T, V, {
-		let ks = random_byte_strings(0x45421572);
-		let vs = random_byte_strings(0x80E9F4A6);
-		let rand_tests = random_byte_strings(0xE06759F4);
+// defbench! {
+// 	bench_get, t: ByteMap, b, T, V, {
+// 		let ks = random_byte_strings(0x45421572);
+// 		let vs = random_byte_strings(0x80E9F4A6);
+// 		let rand_tests = random_byte_strings(0xE06759F4);
 
-		let mut m = HashMap::new();
+// 		let mut m = HashMap::new();
 
-		for i in 0..ks.len() {
-			t.insert(&ks[i], &vs[i].into_datum());
-			insert_hashmap::<V>(&mut m, &ks[i], &vs[i]);
-		}
+// 		for i in 0..ks.len() {
+// 			t.insert(&ks[i], &vs[i].into_datum());
+// 			insert_hashmap::<V>(&mut m, &ks[i], &vs[i]);
+// 		}
 
-		b.bench(u64::try_from(ks.len()).unwrap(), || {
-			for i in 0..ks.len() {
-				black_box(t.get(&ks[i]));
-				check_hashmap::<T, V>(t, &m, &ks[i]);
-				check_hashmap::<T, V>(t, &m, &rand_tests[i]);
-			}
-		})
-	}
-}
+// 		b.bench(u64::try_from(ks.len()).unwrap(), || {
+// 			for i in 0..ks.len() {
+// 				black_box(t.get(&ks[i]));
+// 				check_hashmap::<T, V>(t, &m, &ks[i]);
+// 				check_hashmap::<T, V>(t, &m, &rand_tests[i]);
+// 			}
+// 		})
+// 	}
+// }
 
-defbench! {
-	bench_del, t: ByteMap, b, T, V, {
-		let ks = random_byte_strings(0xC400D969);
-		let vs = random_byte_strings(0x3FB87EE6);
-		let rand_tests = random_byte_strings(0x6E7D2E0F);
+// defbench! {
+// 	bench_del, t: ByteMap, b, T, V, {
+// 		let ks = random_byte_strings(0xC400D969);
+// 		let vs = random_byte_strings(0x3FB87EE6);
+// 		let rand_tests = random_byte_strings(0x6E7D2E0F);
 
-		let mut m = HashMap::new();
+// 		let mut m = HashMap::new();
 
-		for i in 0..ks.len() {
-			t.insert(&ks[i], &vs[i].into_datum());
-			insert_hashmap::<V>(&mut m, &ks[i], &vs[i]);
-		}
+// 		for i in 0..ks.len() {
+// 			t.insert(&ks[i], &vs[i].into_datum());
+// 			insert_hashmap::<V>(&mut m, &ks[i], &vs[i]);
+// 		}
 
-		b.bench(u64::try_from(ks.len()).unwrap(), || {
-			for i in 0..ks.len() {
-				black_box(t.delete(&ks[i]));
-				delete_hashmap::<V>(&mut m, &ks[i]);
-				check_hashmap::<T, V>(t, &m, &ks[i]);
-				check_hashmap::<T, V>(t, &m, &rand_tests[i]);
-			}
-		})
-	}
-}
+// 		b.bench(u64::try_from(ks.len()).unwrap(), || {
+// 			for i in 0..ks.len() {
+// 				black_box(t.delete(&ks[i]));
+// 				delete_hashmap::<V>(&mut m, &ks[i]);
+// 				check_hashmap::<T, V>(t, &m, &ks[i]);
+// 				check_hashmap::<T, V>(t, &m, &rand_tests[i]);
+// 			}
+// 		})
+// 	}
+// }
 
-defbench! {
-	bench_put_big, t: ByteMap, b, T, V, {
-		let ks = random_big_byte_strings(0xC400D969);
-		let vs = random_big_byte_strings(0x3FB87EE6);
-		let rand_tests = random_big_byte_strings(0x6E7D2E0F);
+// defbench! {
+// 	bench_put_big, t: ByteMap, b, T, V, {
+// 		let ks = random_big_byte_strings(0xC400D969);
+// 		let vs = random_big_byte_strings(0x3FB87EE6);
+// 		let rand_tests = random_big_byte_strings(0x6E7D2E0F);
 
-		let mut m = HashMap::new();
+// 		let mut m = HashMap::new();
 
-		b.bench(u64::try_from(ks.len()).unwrap(), || {
-			for i in 0..ks.len() {
-				t.insert(&ks[i], &vs[i].into_datum());
-				insert_hashmap::<V>(&mut m, &ks[i], &vs[i]);
-				check_hashmap::<T, V>(t, &m, &ks[i]);
-				check_hashmap::<T, V>(t, &m, &rand_tests[i]);
-			}
-		})
-	}
-}
+// 		b.bench(u64::try_from(ks.len()).unwrap(), || {
+// 			for i in 0..ks.len() {
+// 				t.insert(&ks[i], &vs[i].into_datum());
+// 				insert_hashmap::<V>(&mut m, &ks[i], &vs[i]);
+// 				check_hashmap::<T, V>(t, &m, &ks[i]);
+// 				check_hashmap::<T, V>(t, &m, &rand_tests[i]);
+// 			}
+// 		})
+// 	}
+// }
 
-defbench! {
-	bench_del_big, t: ByteMap, b, T, V, {
-		let ks = random_big_byte_strings(0xC400D969);
-		let vs = random_big_byte_strings(0x3FB87EE6);
-		let rand_tests = random_big_byte_strings(0x6E7D2E0F);
+// defbench! {
+// 	bench_get_big, t: ByteMap, b, T, V, {
+// 		let ks = random_big_byte_strings(0xC400D969);
+// 		let vs = random_big_byte_strings(0x3FB87EE6);
+// 		let rand_tests = random_big_byte_strings(0x6E7D2E0F);
 
-		let mut m = HashMap::new();
+// 		let mut m = HashMap::new();
 
-		for i in 0..ks.len() {
-			t.insert(&ks[i], &vs[i].into_datum());
-			insert_hashmap::<V>(&mut m, &ks[i], &vs[i]);
-		}
+// 		for i in 0..ks.len() {
+// 			t.insert(&ks[i], &vs[i].into_datum());
+// 			insert_hashmap::<V>(&mut m, &ks[i], &vs[i]);
+// 		}
 
-		b.bench(u64::try_from(ks.len()).unwrap(), || {
-			for i in 0..ks.len() {
-				black_box(t.delete(&ks[i]));
-				delete_hashmap::<V>(&mut m, &ks[i]);
-				check_hashmap::<T, V>(t, &m, &ks[i]);
-				check_hashmap::<T, V>(t, &m, &rand_tests[i]);
-			}
-		})
-	}
-}
+// 		b.bench(u64::try_from(ks.len()).unwrap(), || {
+// 			for i in 0..ks.len() {
+// 				black_box(t.get(&ks[i]));
+// 				check_hashmap::<T, V>(t, &m, &ks[i]);
+// 				check_hashmap::<T, V>(t, &m, &rand_tests[i]);
+// 			}
+// 		})
+// 	}
+// }
 
-defbench! {
-	bench_get_big, t: ByteMap, b, T, V, {
-		let ks = random_big_byte_strings(0xC400D969);
-		let vs = random_big_byte_strings(0x3FB87EE6);
-		let rand_tests = random_big_byte_strings(0x6E7D2E0F);
+// defbench! {
+// 	bench_del_big, t: ByteMap, b, T, V, {
+// 		let ks = random_big_byte_strings(0xC400D969);
+// 		let vs = random_big_byte_strings(0x3FB87EE6);
+// 		let rand_tests = random_big_byte_strings(0x6E7D2E0F);
 
-		let mut m = HashMap::new();
+// 		let mut m = HashMap::new();
 
-		for i in 0..ks.len() {
-			t.insert(&ks[i], &vs[i].into_datum());
-			insert_hashmap::<V>(&mut m, &ks[i], &vs[i]);
-		}
+// 		for i in 0..ks.len() {
+// 			t.insert(&ks[i], &vs[i].into_datum());
+// 			insert_hashmap::<V>(&mut m, &ks[i], &vs[i]);
+// 		}
 
-		b.bench(u64::try_from(ks.len()).unwrap(), || {
-			for i in 0..ks.len() {
-				black_box(t.get(&ks[i]));
-				check_hashmap::<T, V>(t, &m, &ks[i]);
-				check_hashmap::<T, V>(t, &m, &rand_tests[i]);
-			}
-		})
-	}
-}
+// 		b.bench(u64::try_from(ks.len()).unwrap(), || {
+// 			for i in 0..ks.len() {
+// 				black_box(t.delete(&ks[i]));
+// 				delete_hashmap::<V>(&mut m, &ks[i]);
+// 				check_hashmap::<T, V>(t, &m, &ks[i]);
+// 				check_hashmap::<T, V>(t, &m, &rand_tests[i]);
+// 			}
+// 		})
+// 	}
+// }
 
 // defbench! {
 // 	bench_put_huge_values, t: ByteMap, b, T, V, {
@@ -354,13 +354,13 @@ fn main() {
 			ByteTreeMap,
 			PersistentBTree,
 		] => [
-			bench_put_no_verify,
+			// bench_put_no_verify,
 		    bench_put,
-		    bench_get,
-			bench_del,
-			bench_put_big,
-			bench_get_big,
-			bench_del_big,
+		 //    bench_get,
+			// bench_del,
+			// bench_put_big,
+			// bench_get_big,
+			// bench_del_big,
 		],
 		// [
 		// 	ByteHashMap,

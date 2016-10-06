@@ -1,3 +1,5 @@
+use super::slicerc::RcSlice;
+
 use std::borrow::Borrow;
 
 use super::traits::*;
@@ -9,6 +11,7 @@ pub struct ByteBox {
 }
 
 impl ByteBox {
+    // TODO: a 'ToBox' trait for Key
     pub fn new<B: Borrow<[u8]>>(bytes: B) -> ByteBox {
         ByteBox {
             // TODO size check
@@ -16,7 +19,6 @@ impl ByteBox {
         }
     }
 
-    // Note that we can't make ByteBox Borrow[u8]. OR CAN WE?
     pub fn from_key<K: Key + ?Sized>(k: &K) -> ByteBox {
         Self::new(k.bytes())
     }
@@ -29,6 +31,33 @@ impl ByteBox {
 }
 
 impl Borrow<[u8]> for ByteBox {
+    fn borrow(&self) -> &[u8] {
+        self.data.borrow()
+    }
+}
+
+#[derive(Clone)]
+pub struct ByteRc {
+    data: RcSlice<u8>,
+}
+
+impl ByteRc {
+    pub fn new<B: Borrow<[u8]>>(bytes: B) -> ByteRc {
+        Self::from_value(&SliceDatum::new(bytes.borrow()))
+    }
+
+    pub fn from_key<K: Key + ?Sized>(k: &K) -> ByteRc {
+        Self::new(k.bytes())
+    }
+
+    pub fn from_value<V: Datum>(v: &V) -> ByteRc {
+        ByteRc {
+            data: RcSlice::new(v.box_copy()),
+        }
+    }
+}
+
+impl Borrow<[u8]> for ByteRc {
     fn borrow(&self) -> &[u8] {
         self.data.borrow()
     }

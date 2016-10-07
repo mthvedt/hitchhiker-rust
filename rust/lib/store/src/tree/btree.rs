@@ -21,14 +21,15 @@ const MAX_DEPTH: u8 = 32;
 /// A key is anything that can be (quickly, efficiently) converted to raw bytes.
 /// A value is a Datum, a set of bytes that can be streamed.
 pub trait ByteMap {
-	type D: Datum;
+	type GetDatum: Datum;
+	type Get: Borrow<Self::GetDatum>;
 
 	/// We only accept references that can be quickly converted to keys and values,
 	/// for performance reasons.
 	fn insert<K: Key + ?Sized, V: Datum>(&mut self, k: &K, v: &V) -> ();
 
 	/// This is mutable because gets may introduce read conflicts, and hence mutate the underlying datastructure.
-	fn get<K: Key + ?Sized>(&mut self, k: &K) -> Option<&Self::D>;
+	fn get<K: Key + ?Sized>(&mut self, k: &K) -> Option<Self::Get>;
 
 	fn delete<K: Key + ?Sized>(&mut self, k: &K) -> bool;
 
@@ -84,9 +85,14 @@ impl BucketPtr {
 		self.v.as_ref().unwrap().k.borrow()
 	}
 
-	pub fn warm_value(&self) -> &[u8] {
-		self.v.as_ref().unwrap().v.borrow()
+	// TODO: return an address
+	fn value_address(&self) -> ByteRc {
+		self.v.as_ref().unwrap().v.clone()
 	}
+
+	// pub fn warm_value(&self) -> &[u8] {
+	// 	self.v.as_ref().unwrap().v.borrow()
+	// }
 
 	pub fn is_empty(&self) -> bool {
 		self.v.is_none()
@@ -251,24 +257,20 @@ impl NodeHandle {
 	}
 
 	/* CRUD */
-	// This was made into a tail recursive function as a result of a historical fight with the borrow checker.
-	// It's more elegant written recursively, anyway... finding a child should be a property of the current noderef.
-	// TODO: actually this should not be a property of an internal class.
-	// TODO: we shouldn't pass self by copy
-	fn find_node_chain_helper(&self, k: &[u8], stack: &mut NodeStack) -> bool {
-		// let search = unsafe { (&*(stack_top)).warm().find_bucket(k) };
-		let search = self.apply(|n| n.find_bucket(k));
 
-		match search {
+	// This was made into a tail recursive function as a result of a historical fight with the borrow checker.
+	// TODO: can we make this iterative?
+	// TODO: actually this should not be a property of an internal class.
+	fn find_node_chain_helper(&self, k: &[u8], stack: &mut NodeStack) -> bool {
+		match self.apply(|n| n.find_bucket(k)) {
 			Ok(idx) => {
 				stack.push(self.clone(), idx);
 				true
 			}
 			Err(idx) => {
-				let is_leaf = self.apply(HotNode::is_leaf);
 				stack.push(self.clone(), idx);
 
-				if is_leaf {
+				if self.apply(HotNode::is_leaf) {
 					false
 				} else {
 					let child = self.child_handle(idx);
@@ -282,30 +284,6 @@ impl NodeHandle {
 		let mut stack = NodeStack::new();
 		let r = self.find_node_chain_helper(k, &mut stack);
 		(stack, r)
-		// // The borrow checker fails if we let
-		// let mut stack_top = self as *mut Self;
-		// // debug_assert!() TODO compare pointers
-
-		// loop {
-		// 	let search = unsafe { (&*(stack_top)).warm().find_bucket(k) };
-
-		// 	match search {
-		// 		Ok(idx) => {
-		// 			cursor.push(stack_top, idx);
-		// 			return (cursor, true)
-		// 		}
-		// 		Err(idx) => {
-		// 			let mut new_stack_top = stack_top.warm().child_ptr_mut(idx).unwrap_mut();
-		// 			cursor.push(stack_top, idx);
-
-		// 			if stack_top.warm().is_leaf() {
-		// 				return (cursor, false)
-		// 			}
-
-		// 			stack_top = new_stack_top
-		// 		}
-		// 	}
-		// }
 	}
 
 	fn insert_helper_noflush(nhot: HotHandle, stack: &mut NodeStack) -> Option<NodeRef> {
@@ -386,6 +364,22 @@ impl NodeHandle {
 		let mut insert_result = nhot.apply_mut(|hn| hn.insert_at(idx, Bucket::new(k, v), None));
 
 		Self::insert_helper(nhot, insert_result, &mut stack)
+	}
+
+	// TODO: can we make this iterative?
+	// TODO: should have a ValueAddress
+	pub fn get(&self, k: &[u8]) -> Option<ByteRc> {
+		match self.apply(|n| n.find_bucket(k)) {
+			Ok(idx) => Some(self.apply(|n| n.bucket_ptr(idx).value_address())),
+			Err(idx) => {
+				if self.apply(HotNode::is_leaf) {
+					None
+				} else {
+					let child = self.child_handle(idx);
+					child.get(k)
+				}
+			},
+		}
 	}
 
 	// pub fn insert<D: Datum>(&mut self, k: &[u8], v: &D) -> Option<NodeRef> {
@@ -804,7 +798,7 @@ impl NodeRef {
 	// 			InsertResult::Dup => panic!("dup handling not implemented")
 	// 		}
 	// 	}
-	// }
+	// // }
 
 	// pub fn get(&self, k: &[u8]) -> Option<&ByteBox> {
 	// 	match self.find_bucket(k) {
@@ -988,9 +982,9 @@ impl HotNode {
 		// self.children[idx as usize].unwrap().acquire()
 	}
 
-	fn warm_value(&mut self, idx: u16) -> &[u8] {
-		self.buckets[idx as usize].warm_value()
-	}
+	// fn warm_value(&mut self, idx: u16) -> &[u8] {
+	// 	self.buckets[idx as usize].warm_value()
+	// }
 
 	/* Thermodynamic mutators */
 	// pub fn cool(&mut self) {
@@ -1434,7 +1428,8 @@ impl PersistentBTree {
 }
 
 impl ByteMap for PersistentBTree {
-	type D = ByteBox;
+	type GetDatum = ByteRc;
+	type Get = ByteRc;
 
 	fn insert<K: Key + ?Sized, V: Datum>(&mut self, k: &K, v: &V) -> () {
 		// Dummy to make the compiler behave. Since we're dealing in Options and Boxes, shouldn't have a runtime cost.
@@ -1443,8 +1438,8 @@ impl ByteMap for PersistentBTree {
 		self.head = dummy.insert(k.bytes(), v);
 	}
 
-	fn get<K: Key + ?Sized>(&mut self, k: &K) -> Option<&Self::D> {
-		panic!("not implemented")
+	fn get<K: Key + ?Sized>(&mut self, k: &K) -> Option<Self::Get> {
+		self.head.get(k.bytes())
 	}
 
 	fn delete<K: Key + ?Sized>(&mut self, k: &K) -> bool {

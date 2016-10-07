@@ -5,6 +5,7 @@
 extern crate thunderhead_store;
 extern crate test;
 
+use std::borrow::Borrow;
 use std::collections::*;
 use std::convert::TryFrom;
 use std::iter::FromIterator;
@@ -26,7 +27,7 @@ fn insert_hashmap<V: Verifier>(m: &mut HashMap<Vec<u8>, Vec<u8>>, k: &[u8], v: &
 fn check_hashmap<T: ByteMap, V: Verifier>(t: &mut T, m: &HashMap<Vec<u8>, Vec<u8>>, k: &[u8]) {
 	V::verify(|| "map get mismatch",
 		|| m.get(k).map(|x| x.as_ref())
-		   == t.get(k).map(Datum::box_copy).as_ref().map(Box::deref));
+		   == t.get(k).map(|x| x.borrow().box_copy()).as_ref().map(Box::deref));
 }
 
 // TODO rename
@@ -89,28 +90,28 @@ defbench! {
 	}
 }
 
-// defbench! {
-// 	bench_get, t: ByteMap, b, T, V, {
-// 		let ks = random_byte_strings(0x45421572);
-// 		let vs = random_byte_strings(0x80E9F4A6);
-// 		let rand_tests = random_byte_strings(0xE06759F4);
+defbench! {
+	bench_get, t: ByteMap, b, T, V, {
+		let ks = random_byte_strings(0x45421572);
+		let vs = random_byte_strings(0x80E9F4A6);
+		let rand_tests = random_byte_strings(0xE06759F4);
 
-// 		let mut m = HashMap::new();
+		let mut m = HashMap::new();
 
-// 		for i in 0..ks.len() {
-// 			t.insert(&ks[i], &vs[i].into_datum());
-// 			insert_hashmap::<V>(&mut m, &ks[i], &vs[i]);
-// 		}
+		for i in 0..ks.len() {
+			t.insert(&ks[i], &vs[i].into_datum());
+			insert_hashmap::<V>(&mut m, &ks[i], &vs[i]);
+		}
 
-// 		b.bench(u64::try_from(ks.len()).unwrap(), || {
-// 			for i in 0..ks.len() {
-// 				black_box(t.get(&ks[i]));
-// 				check_hashmap::<T, V>(t, &m, &ks[i]);
-// 				check_hashmap::<T, V>(t, &m, &rand_tests[i]);
-// 			}
-// 		})
-// 	}
-// }
+		b.bench(u64::try_from(ks.len()).unwrap(), || {
+			for i in 0..ks.len() {
+				black_box(t.get(&ks[i]));
+				check_hashmap::<T, V>(t, &m, &ks[i]);
+				check_hashmap::<T, V>(t, &m, &rand_tests[i]);
+			}
+		})
+	}
+}
 
 // defbench! {
 // 	bench_del, t: ByteMap, b, T, V, {
@@ -356,7 +357,7 @@ fn main() {
 		] => [
 			// bench_put_no_verify,
 		    bench_put,
-		 //    bench_get,
+		    bench_get,
 			// bench_del,
 			// bench_put_big,
 			// bench_get_big,

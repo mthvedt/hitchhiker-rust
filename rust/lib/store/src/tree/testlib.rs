@@ -2,7 +2,7 @@ extern crate rand;
 
 use self::rand::*;
 
-use std::borrow::BorrowMut;
+use std::borrow::*;
 use std::collections::*;
 
 use data::*;
@@ -82,15 +82,37 @@ impl Testable for ByteHashMap {
 	fn teardown(self) {}
 }
 
+// Incredibly unsafe, but this is only used in testing.
+// The reasoning behind this dumb trick is that macro type tags don't support lifetimes
+// so we can't use lifetimed traits/structs in our test code!
+pub struct ByteBoxRef {
+	r: *const ByteBox,
+}
+
+impl ByteBoxRef {
+	fn wrap(b: &ByteBox) -> ByteBoxRef {
+		ByteBoxRef {
+			r: b as *const _,
+		}
+	}
+}
+
+impl Borrow<ByteBox> for ByteBoxRef {
+	fn borrow(&self) -> &ByteBox {
+		unsafe { &*self.r }
+	}
+}
+
 impl ByteMap for ByteHashMap {
-	type D = ByteBox;
+    type GetDatum = ByteBox;
+    type Get = ByteBoxRef;
 
 	fn insert<K: Key + ?Sized, V: Datum>(&mut self, k: &K, v: &V) {
 		self.wrapped.insert(ByteBox::from_key(k), ByteBox::from_value(v));
 	}
 
-	fn get<K: Key + ?Sized>(&mut self, k: &K) -> Option<&ByteBox> {
-		self.wrapped.get(&ByteBox::from_key(k))
+	fn get<K: Key + ?Sized>(&mut self, k: &K) -> Option<ByteBoxRef> {
+		self.wrapped.get(&ByteBox::from_key(k)).map(ByteBoxRef::wrap)
 	}
 
 	fn delete<K: Key + ?Sized>(&mut self, k: &K) -> bool {
@@ -119,14 +141,15 @@ impl Testable for ByteTreeMap {
 }
 
 impl ByteMap for ByteTreeMap {
-	type D = ByteBox;
+    type GetDatum = ByteBox;
+    type Get = ByteBoxRef;
 
 	fn insert<K: Key + ?Sized, V: Datum>(&mut self, k: &K, v: &V) {
 		self.wrapped.insert(ByteBox::from_key(k), ByteBox::from_value(v));
 	}
 
-	fn get<K: Key + ?Sized>(&mut self, k: &K) -> Option<&ByteBox> {
-		self.wrapped.get(&ByteBox::from_key(k))
+	fn get<K: Key + ?Sized>(&mut self, k: &K) -> Option<ByteBoxRef> {
+		self.wrapped.get(&ByteBox::from_key(k)).map(ByteBoxRef::wrap)
 	}
 
 	fn delete<K: Key + ?Sized>(&mut self, k: &K) -> bool {

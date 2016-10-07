@@ -1,7 +1,7 @@
 use tree::btree::*;
 
 use data::*;
-use data::slice::ByteBox;
+use data::slice::ByteRc;
 
 pub struct NodePtr {
 	v: Option<NodeRef>,
@@ -70,12 +70,12 @@ impl NodePtr {
 		}
 	}
 
-	// pub fn get_for_root(&mut self, k: &[u8]) -> Option<&ByteBox> {
-	// 	match self.v {
-	// 		Some(ref mut bn) => (*bn).get(k),
-	// 		None => None,
-	// 	}
-	// }
+	pub fn get(&mut self, k: &[u8]) -> Option<ByteRc> {
+		match self.v.as_ref() {
+			Some(bn) => (*bn).handle().get(k),
+			None => None,
+		}
+	}
 
 	// pub fn delete_for_root(self, k: &[u8]) -> (Self, bool) {
 	// 	// to get around borrow checker

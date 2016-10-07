@@ -2,11 +2,21 @@ use std::borrow::*;
 
 use super::slice::*;
 
-/// Anything that can be quickly turned into bytes. A convenience trait.
-// TODO: what we really want is an into_box method, like so:
+// /// A key is a key for a PersistentTree. It has three properties:
+// ///
+// /// 1. It can be passed by value quickly.
+// ///
+// /// 2. It yields fast iterators.
+// ///
+// /// 3. It can be either moved or quickly cloned into a slice of bytes.
+// ///
+// /// Boxes (passed by value) fulfill the requirements for a Key, as well as any refernce to a Borrow<[u8]>.
 // pub trait Key {
-	// fn bytes(&self) -> &[u8];
-	// fn into_box(self) -> Box<[u8]>;
+// 	type AsIntoIter: IntoIterator<[u8]>;
+
+// 	fn byte_iter(&self) -> Self::AsIntoIter;
+
+// 	fn into_box(self) -> Box<[u8]>;
 // }
 
 pub trait Key {

@@ -22,11 +22,11 @@ pub fn rotate_right<T>(arr: &mut [T], pos: usize) {
 	// arr = deabc
 }
 
-pub fn rotate_left<T>(arr: &mut [T], pos: usize) {
-	// borrow checker...
-	let len = arr.len() - pos;
-	rotate_right(arr, len);
-}
+// pub fn rotate_left<T>(arr: &mut [T], pos: usize) {
+// 	// borrow checker...
+// 	let len = arr.len() - pos;
+// 	rotate_right(arr, len);
+// }
 
 pub fn swap<T>(a: &mut [T], b: &mut [T]) {
 	if a.len() != b.len() {
@@ -52,15 +52,15 @@ pub fn rotate_in<T>(item: &mut T, arr: &mut [T]) {
 	mem::forget(dummy); // How odd this isn't unsafe...
 }
 
-pub fn rotate_out<T>(arr: &mut [T], item: &mut T) {
-	// Unfortunately we must be a little unsafe here, even though this is supposed to be a foolproof fn
-	// Optimizer should remove the extra mem copies
-	let mut dummy: [T; 1] = unsafe { mem::uninitialized() };
-	mem::swap(item, &mut dummy[0]);
-	rotate_out_slice(arr, dummy.as_mut());
-	mem::swap(item, &mut dummy[0]);
-	mem::forget(dummy); // How odd this isn't unsafe...
-}
+// pub fn rotate_out<T>(arr: &mut [T], item: &mut T) {
+// 	// Unfortunately we must be a little unsafe here, even though this is supposed to be a foolproof fn
+// 	// Optimizer should remove the extra mem copies
+// 	let mut dummy: [T; 1] = unsafe { mem::uninitialized() };
+// 	mem::swap(item, &mut dummy[0]);
+// 	rotate_out_slice(arr, dummy.as_mut());
+// 	mem::swap(item, &mut dummy[0]);
+// 	mem::forget(dummy); // How odd this isn't unsafe...
+// }
 
 pub fn rotate_in_slice<T>(src: &mut [T], dst: &mut [T]) {
 	// Borrow checker tricks
@@ -70,12 +70,12 @@ pub fn rotate_in_slice<T>(src: &mut [T], dst: &mut [T]) {
 	swap(src, &mut dst[..srclen]);
 }
 
-pub fn rotate_out_slice<T>(src: &mut [T], dst: &mut [T]) {
-	// Borrow checker tricks
-	let dstlen = dst.len();
-	// Rotating forward len - n is equivalent to rotating backward n
-	// let len = src.len() - dstlen;
+// pub fn rotate_out_slice<T>(src: &mut [T], dst: &mut [T]) {
+// 	// Borrow checker tricks
+// 	let dstlen = dst.len();
+// 	// Rotating forward len - n is equivalent to rotating backward n
+// 	// let len = src.len() - dstlen;
 
-	swap(&mut src[..dstlen], dst);
-	rotate_left(src, dstlen);
-}
+// 	swap(&mut src[..dstlen], dst);
+// 	rotate_left(src, dstlen);
+// }

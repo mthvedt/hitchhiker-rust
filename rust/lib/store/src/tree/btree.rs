@@ -1,14 +1,13 @@
 use std::borrow::Borrow;
 use std::cell::*;
-use std::cmp::{Ord, Ordering};
-use std::marker::PhantomData;
+use std::cmp::Ord;
 use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::ptr;
 use std::rc::{Rc, Weak};
 
 use data::*;
-use data::slice::{ByteBox, ByteRc};
+use data::slice::ByteRc;
 
 use tree::nodeptr::*;
 use tree::util::*;
@@ -35,10 +34,6 @@ pub trait ByteMap {
 
 	fn check_invariants(&self);
 }
-
-// pub trait ByteTree: ByteMap {
-
-// }
 
 #[derive(Clone)]
 pub struct Bucket {
@@ -90,133 +85,52 @@ impl BucketPtr {
 		self.v.as_ref().unwrap().v.clone()
 	}
 
-	// pub fn warm_value(&self) -> &[u8] {
-	// 	self.v.as_ref().unwrap().v.borrow()
-	// }
-
 	pub fn is_empty(&self) -> bool {
 		self.v.is_none()
 	}
 }
 
-// trait RefCell<T> {
+type NodeCursor = (NodeHandle, u16);
 
-// }
+struct NodeStack {
+	// master_node: NodeRef,
+	entries: Vec<NodeCursor>,
+}
 
-// struct DebugRefCell<T> {
+impl NodeStack {
+	pub fn new() -> NodeStack {
+		NodeStack {
+			// master_node: topnode,
+			entries: Vec::with_capacity(MAX_DEPTH as usize),
+		}
+	}
 
-// }
+	fn push(&mut self, node: NodeHandle, child_index: u16) {
+		debug_assert!(self.entries.len() < MAX_DEPTH as usize);
+		self.entries.push((node, child_index));
+	}
 
-// impl RefCell<T> for DebugRefCell<T> {
+	fn pop(&mut self) -> Option<NodeCursor> {
+		self.entries.pop()
+	}
+}
 
-// }
-
-// struct FastRefCell<T> {
-
-// }
-
-// impl RefCell<T> for FastRefCell<T> {
-
-// }
-
-// trait TreeTypeclass {
-// 	type RefCellT: RefCell,
-// }
-
-/*
-TODO: how to insert? :( :( :(
-
-We want to travel down the tree, converting any ColdRefs to WarmRefs.
-
-These need to be compiled into a RefSet, which validates/invalidates refs.
-
-A node pointer. Hm...
-
-Async reads have these components:
-* A master validating/invalidating pointer.
-* The nodes themselves. They can be "warm", representing read-only disk data, or "hot", representing unflushed data.
-* ***RAW POINTERS*** to the nodes. References don't work because of borrow checker nightmares.
-
-Handles shouldn't be mutable. In general, prefer nonmutability--push mutability out to the frontier.
-Warming a handle may return a new handle to a hot node or an existing one.
-Whatever the case, it's now ready for borrowing.
-
-Warm nodes are never mutable.
-
-Hot nodes are mutable.
-
----
-
-SO. Final decision.
-
-We need to have the following:
-* Reader handles. These present a way to look up a node. They can look up
-  warm nodes or hot nodes. They are always immutable--recall that in Rust, mutability has syntactic meaning.
-* Hot references. In addition to functioning like a handle that yields a hot node, they can be back-written
-  to hot node parents.
-	- In the case where the parent and child are hot, we must be able to borrow and mutate the child
-	  without knowing the state of the parent or having a mutable reference. Thus, an internal hot reference
-	  needs to live in some kind of cell, which we can borrow mutably without modifying the hot parent.
-	  When the "modified" hot child is written back to the parent, its reference inside the parent is overwritten.
-* Internal hot references (see above).
-* Nodes themselves.
-
-*/
-
-// TODO: Cold Warm Hot -> Cold Ready Hot
-
-// /// An address to a Node, which may be hot, ready or cold.
-// /// TODO: address validators. Need to always be owned by a node address.
-// struct NodeAddress {
-// 	// TODO: something faster. Ideal situation is a head snapshot pointer and a raw pointer.
-// 	n: *const NodeRef,
-// }
-
-// impl NodeAddress {
-// 	fn new(n: &NodeRef) -> NodeAddress {
-// 		NodeAddress { n: n as *const _ }
-// 	}
-
-// 	/// Readies the contents of this node handle, possibly incurring I/O and resource aquisition.
-// 	/// Returns a NodeHandle. If resources were acquired, the returned NodeHandle owns that acquisition.
-// 	// TODO make this a future.
-// 	fn lookup(&self, v: HandleRepo) -> NodeHandle {
-// 		NodeHandle {
-// 			n: self.n,
-// 		}
-// 	}
-// }
+// TODO can specialize these a bit
+pub enum InsertResult {
+	Ok,
+	Flushed(Bucket, HotNode),
+}
 
 /// A handle to a ready node which can be quickly dereferenced. The existence of this handle
 /// may pin resources.
 #[derive(Clone)]
 pub enum NodeHandle {
  	// TODO: something faster. Ideal situation is a head snapshot/job pointer and a raw pointer.
-	// n: *const NodeRef,
-	// job: JobPtr,
-
 	Hot(Weak<RefCell<HotNode>>),
 	Warm(Weak<HotNode>),
 }
 
 impl NodeHandle {
-	// TODO:
-
-	/// The design principle is to avoid trait polymorphism. We want at most one unoptimizable
-	/// enum switch when we look up the dynamic type of a node or handle. Furthermore,
-	/// we want the inliner to inline the results of such calls. This design pattern serves a dual purpose;
-	/// one, once the type of an enum is known, the optimizer can often inline and infer enum values
-	/// for related functions; two, each application creates a function call context that is "de-enumized",
-	/// so that un-inlinable scenarios still do not result in us re-testing the same enum over and over.
-	///
-	/// "But polymorphism isn't that slow." Yes it is. Languages which lean heavily on it, such as Java,
-	/// have complex optimizers that can inline and optimize large chains of virtual calls. Languages
-	/// which use statically compiled virtual "fat pointers", like Rust or C++, cannot do that.
-	// pub fn apply<F, N, R>(&self, f: F) -> R where
-	// F = FnOnce<N, Output = R>,
-	// N = Node,
-	// {}
-
 	fn upgrade(&self) -> NodeRef {
 		match self {
 			// Same call, different objects. Necessary because of the monomorphism restriction.
@@ -225,8 +139,7 @@ impl NodeHandle {
 		}
 	}
 
-	pub fn apply<F, R> (&self, f: F) -> R where
-	F: for<'x> FnOnce(&'x HotNode) -> R,
+	pub fn apply<F, R> (&self, f: F) -> R where F: for<'x> FnOnce(&'x HotNode) -> R,
 	{
 		match self {
 			// Same call, different objects. Necessary because of the monomorphism restriction.
@@ -239,18 +152,6 @@ impl NodeHandle {
 			&NodeHandle::Warm(ref w_hn) => f(w_hn.upgrade().unwrap().deref()),
 		}
 	}
-
-	// fn get_ref(&self) -> &NodeRef {
-	// 	// self.n.
-	// }
-
-	// fn get_raw<'a>(&'a self) -> HotRef<'a> {
-	// 	self.upgrade().acquire()
-	// }
-
-	// fn heat(&self) -> (HotHandle, bool) {
-	// 	self.upgrade().heat()
-	// }
 
 	fn child_handle(&self, idx: u16) -> NodeHandle {
 		self.apply(|hn| hn.child_ref(idx).handle())
@@ -363,10 +264,10 @@ impl NodeHandle {
 		}
 
 		// Prepare to insert
-		let (mut node, idx) = stack.pop().unwrap();
+		let (node, idx) = stack.pop().unwrap();
 		let _ntmp = node.upgrade();
 		let (mut nhot, _) = _ntmp.heat();
-		let mut insert_result = nhot.apply_mut(|hn| hn.insert_at(idx, Bucket::new(k, v), None));
+		let insert_result = nhot.apply_mut(|hn| hn.insert_at(idx, Bucket::new(k, v), None));
 
 		self.insert_helper(nhot, insert_result, &mut stack)
 	}
@@ -386,89 +287,11 @@ impl NodeHandle {
 			},
 		}
 	}
-
-	// pub fn insert<D: Datum>(&mut self, k: &[u8], v: &D) -> Option<NodeRef> {
-	// 	// TODO use an array stack. Minimize allocs
-	// 	// Depth is 0-indexed
-	// 	let (mut stack, exists) = self.find_node_chain(k);
-	// 	if exists {
-	// 		panic!("not implemented")
-	// 	}
-
-	// 	let (mut node, idx) = stack.pop().unwrap();
-	// 	// First, insert for the leaf.
-	// 	let _ntmp = node.upgrade();
-	// 	let (mut nhot, _) = _ntmp.heat();
-	// 	let mut insert_result = nhot.apply_mut(|hn| hn.insert_at(idx, Bucket::new(k, v), None));
-
-	// 	loop {
-	// 		if let Some((parent, parent_idx)) = stack.pop() {
-	// 			// Get the next node up the stack, loop while we have to modify nodes
-	// 			// TODO: weak references?
-	// 			let _ntmp = parent.upgrade();
-	// 			let (mut parent_hot, was_copied) = _ntmp.heat();
-
-	// 			match insert_result {
-	// 				InsertResult::Ok => {
-	// 					if was_copied {
-	// 						parent_hot.apply_mut(|hn| hn.reassign_child(parent_idx, nhot));
-	// 						nhot = parent_hot;
-
-	// 						loop {
-	// 							// This pointer was modified. Flushing will not be necessary,
-	// 							// but we have to continue looping until we no longer need to modify parent pointers.
-	// 							if let Some((parent, parent_idx)) = stack.pop() {
-	// 								let _ntmp = parent.upgrade();
-	// 								let (mut parent_hot, was_copied) = _ntmp.heat();
-	// 								parent_hot.apply_mut(|hn| hn.reassign_child(parent_idx, nhot));
-
-	// 								// Termination and reloop
-	// 								if !was_copied {
-	// 									return None
-	// 								}
-	// 								nhot = parent_hot;
-	// 							} else {
-	// 								// Termination condition
-	// 								return None
-	// 							}
-	// 						}
-	// 					} else {
-	// 						return None
-	// 					}
-	// 				}
-	// 				InsertResult::Flushed(split_bucket, newnode) => {
-	// 					// This might trigger a flush, so we must continue in the flush loop.
-	// 					insert_result = parent_hot.apply_mut(
-	// 						|hn| hn.insert_at(parent_idx, split_bucket, Some(NodePtr::new(newnode))));
-	// 				}
-	// 			}
-
-	// 			nhot = parent_hot;
-	// 		} else {
-	// 			// Made it, ma! Top of the world! (We have looped all the way back to the head node.)
-	// 			match insert_result {
-	// 				InsertResult::Ok => {
-	// 					// self.get_ref().reassign(nhot);
-	// 					panic!("how do i do this?")
-	// 				}
-	// 				InsertResult::Flushed(split_bucket, newnode) => {
-	// 					// Need to create a new head node, and return it.
-	// 					// self.get_ref().reassign(nhot);
-	// 					panic!("how do i do this?")
-	// 					// return Some(NodeRef::new(HotNode::new_from_two(NodePtr::wrap(self),
-	// 					// 	split_bucket, NodePtr::new(newnode))))
-	// 				}
-	// 			}
-	// 		}
-	// 	}
-	// }
 }
 
 // TODO rearrange this file
-// TODO shouldn't have both debug and not debug
 /// A handle to a hot node which can be quickly dereferenced. The existence of this handle
 /// may pin resources, including an owned HotNode.
-#[cfg(debug_assertions)]
 pub enum HotHandle<'a> {
 	Existing(RefMut<'a, HotNode>),
 	// The NodeRef is used for debug assertions. It is forbidden to reassign a NodeRef to a HotHandle
@@ -477,29 +300,7 @@ pub enum HotHandle<'a> {
 	New(Option<&'a NodeRef>, Rc<RefCell<HotNode>>),
 }
 
-#[cfg(not(debug_assertions))]
-pub enum HotHandle<'a> {
-	Existing(RefMut<'a, HotNode>),
-	// Use a zero-sized type so that HotRef has the same syntactic layout in debug and release mode.
-	New((), Rc<RefCell<HotNode>>),
-}
-
 impl<'a> HotHandle<'a> {
-	// fn as_ref(&self) -> &HotNode {
-	// 	match self {
-	// 		&HotRef::Existing(ref refmut) => refmut.deref(),
-	// 		&HotRef::New(_, ref box_cell) => box_cell.as_ref().borrow().deref(),
-	// 	}
-	// }
-
-	// fn as_mut(&mut self) -> &mut HotNode {
-	// 	match self {
-	// 		&mut HotHandle::Existing(ref mut refmut) => refmut.deref_mut(),
-	// 		// Note we get_mut the RC cell, to enforce the constraint that this HotNode is not borrowed elsewhere.
-	// 		&mut HotHandle::New(_, ref mut rc_cell) => Rc::get_mut(rc_cell).unwrap().deref_mut().borrow_mut(),
-	// 	}
-	// }
-
 	pub fn apply_mut<F, R> (&mut self, f: F) -> R where
 	F: FnOnce(&mut HotNode) -> R
 	{
@@ -514,126 +315,14 @@ impl<'a> HotHandle<'a> {
 		HotHandle::Existing(n)
 	}
 
-	#[cfg(debug_assertions)]
 	fn heated(r: &'a NodeRef, n: HotNode) -> HotHandle<'a> {
 		HotHandle::New(Some(r), Rc::new(RefCell::new(n)))
 	}
-
-	#[cfg(not(debug_assertions))]
-	fn heated(r: &'a NodeRef, n: HotNode) -> HotHandle<'a> {
-		HotHandle::New((), Rc::new(RefCell::new(n)))
-	}
-
-	// #[cfg(debug_assertions)]
-	// fn new(n: HotNode) -> HotRef<'static> {
-	// 	HotRef::New(None, Box::new(RefCell::new(n)))
-	// }
-
-	// #[cfg(not(debug_assertions))]
-	// fn new(n: HotNode) -> HotRef<'static> {
-	// 	HotRef::New((), Box::new(RefCell::new(n)))
-	// }
-
-	// fn empty() -> HotRef<'static> {
-	// 	HotRef::new(HotNode::empty())
-	// }
 }
 
-// // Unfortunately, there is no way around using weak pointers for the node stack.
-// #[derive(Clone)]
-// pub struct NodeRefWeak {
-// 	noderef: *mut NodeRef,
-// }
-
-// impl NodeRefWeak {
-// 	fn new(n: &mut NodeRef) -> NodeRefWeak {
-// 		NodeRefWeak {
-// 			noderef: n as *mut _,
-// 		}
-// 	}
-
-// 	fn as_ref(&self) -> &NodeRef {
-// 		unsafe { &*self.noderef }
-// 	}
-
-// 	fn as_mut(&self) -> &mut NodeRef {
-// 		unsafe { &mut *self.noderef }
-// 	}
-// }
-
-// TODO private
-type NodeCursor = (NodeHandle, u16);
-
-struct NodeStack {
-	// master_node: NodeRef,
-	entries: Vec<NodeCursor>,
-}
-
-impl NodeStack {
-	pub fn new() -> NodeStack {
-		NodeStack {
-			// master_node: topnode,
-			entries: Vec::with_capacity(MAX_DEPTH as usize),
-		}
-	}
-
-	fn push(&mut self, node: NodeHandle, child_index: u16) {
-		debug_assert!(self.entries.len() < MAX_DEPTH as usize);
-		self.entries.push((node, child_index));
-	}
-
-	// fn peek_unsafe(&'a self) -> &'a mut NodeRef {
-	// 	let (r, _) = self.entries[self.entries.len() - 1];
-	// 	r
-	// }
-
-	fn pop(&mut self) -> Option<NodeCursor> {
-		self.entries.pop()
-	}
-}
-
-/// A lifetimed, temporary reference to a hot node.
-/// This reference may contain a new hot node, or an already existing one.
-// TODO: do we need both this and HotHandle?
-pub enum HotRef<'a> {
-	Hot(Ref<'a, HotNode>),
-	Warm(&'a HotNode),
-}
-
-impl<'a> HotRef<'a> {
-	fn lookup(&'a self) -> &'a HotNode {
-		match self {
-			&HotRef::Hot(ref r) => &*r,
-			&HotRef::Warm(ref r) => r,
-		}
-	}
-}
-
-// TODO can specialize these a bit
-pub enum InsertResult {
-	Ok,
-	Flushed(Bucket, HotNode),
-}
-
-// enum NodeRefInt {
-// 	Hot(RefCell<HotNode>),
-// 	Warm(Rc<HotNode>),
-// }
-
-// TODO: this is the node itself, not a ref.
 /// A reference to a node in a ready or hot state, together with information about
 /// whether it's hot or cold. Used internally in a lot of places.
-// /// Although its contents are static,
-// /// NodeRef itself is lifetimed so it can be used internally in Handles, which need to pass
-// /// a consistent lifetime parameter around.
 pub enum NodeRef {
-	// It's idiomatic to modify child nodes independenty of their parents in our code, so all child NodeStack
-	// are wrapped in RefCells. One is free to BorrowMut such cells.
-	// In particular, the futures implementation keeps a stack of mutable references around,
-	// and you cannot borrow a thing and a member of that thing at the same time. So we must use pointers.
-	// In the future, we might consider using raw pointers. For now, we rely on Rust.
-
-	// TODO: in the future, don't use RC here.
 	Hot(Rc<RefCell<HotNode>>),
 	Warm(Rc<HotNode>),
 }
@@ -672,10 +361,9 @@ impl NodeRef {
 	/// Reassigns this node ref to the HotNode referred to by the given HotHandle,
 	/// with the idea that the given HotRef is a modified version or copy of the contained Node.
 	/// In debug mode, asserts that such is true. TODO: should not be pub.
-	#[cfg(debug_assertions)]
 	pub fn reassign(&mut self, nref: HotHandle) {
 		match nref {
-			HotHandle::Existing(hn_ref) => (), // debug_assert!(ptr_eq(self.acquire().lookup(), hn_ref.deref())),
+			HotHandle::Existing(_) => (), // debug_assert!(ptr_eq(self.acquire().lookup(), hn_ref.deref())),
 			HotHandle::New(nref, hn_box_cell) => {
 				debug_assert!(ptr_eq(self, nref.unwrap()));
 				// TODO: can we do self = ?
@@ -685,34 +373,7 @@ impl NodeRef {
 		}
 	}
 
-	#[cfg(not(debug_assertions))]
-	pub fn reassign(&mut self, nref: HotHandle) {
-		match nref {
-			HotHandle::Existing(hn_ref) => (),
-			HotHandle::New(_, hn_box_cell) => {
-				let mut replacement = NodeRef::Hot(hn_box_cell);
-				mem::swap(&mut replacement, self)
-			}
-		}
-	}
-
 	/* Thermodynamics */
-	fn is_hot(&self) -> bool {
-		match self {
-			&NodeRef::Hot(_) => true,
-			&_ => false,
-		}
-	}
-
-	/// Acquire an object that can directly reference the underlying warm node.
-	/// Guaranteed to return quickly (if a lock conflict happens, it will panic or cause UB).
-	// TODO: can we return the reference directly?
-	fn acquire<'a>(&'a self) -> HotRef<'a> {
-		match self {
-			&NodeRef::Hot(ref box_cell_hn) => HotRef::Hot(box_cell_hn.as_ref().borrow()),
-			&NodeRef::Warm(ref rc_hn) => HotRef::Warm(rc_hn.as_ref()),
-		}
-	}
 
 	/// Returns a hot NodeRef which may be modified, together with a reference to that node. May return self.
 	fn heat<'a>(&'a self) -> (HotHandle<'a>, bool) {
@@ -721,13 +382,6 @@ impl NodeRef {
 			&NodeRef::Warm(ref rc_hn) => (HotHandle::heated(self, (*rc_hn).fork()), true),
 		}
 	}
-
-	// fn heat(self) -> (NodeRef, bool) {
-	// 	match self {
-	// 		NodeRef::Hot(box_hn) => NodeRef::Hot(box_hn),
-	// 		NodeRef::Warm(rc_hn) => NodeRef::Hot(Box::new(rc_hn.as_ref().fork())),
-	// 	}
-	// }
 
 	pub fn cool(&mut self) {
 		panic!("not implemented")
@@ -751,73 +405,6 @@ impl NodeRef {
 	// 	mem::swap(&mut r, &mut self.children[0]);
 	// 	r
 	// }
-
-	// fn insert<'a, D: Datum>(&'a mut self, k: &[u8], v: &D) -> InsertResult<'a> {
-	// 	let search = self.warm().find_bucket(k);
-
-	// 	match search {
-	// 		Ok(_) => InsertResult::Dup,
-	// 		Err(idx) => if self.warm().is_leaf() {
-	// 			self.heat().as_mut().insert_at(idx as u16, Bucket::new(k, v), None)
-	// 		} else {
-	// 			unsafe {
-	// 				// warm_child borrows self mutably, and insert extends that borrow since it might return a hot reference to the child itself.
-	// 				// Here we trick Rust into letting it compile.
-	// 				let insert_result = self.warm().warm_child(idx as u16).insert_at(idx as u16, Bucket::new(k, v), None).unsafe_strip_lifetime();
-	// 				match insert_result {
-	// 					InsertResult::Good(hotref) => {
-	// 						// let r: HotRef<'a> = self.heat();
-	// 						// r.as_mut().reassign_child(idx as u16, hotref);
-	// 						// InsertResult::Good(r)
-	// 						InsertResult::Good(self.heat())
-	// 					},
-	// 					// The child was flushed and split into two children. We need to insert both.
-	// 					InsertResult::Flushed(hotref1, split_bucket, node2) => {
-	// 						let r: HotRef<'a> = self.heat();
-	// 						r.as_mut().reassign_child(idx as u16, hotref1);
-	// 						// This may cause us to flush, in turn.
-	// 						r.as_mut().insert_at(idx as u16, split_bucket, Some(NodePtr::new(node2)))
-	// 					}
-	// 					InsertResult::Dup => InsertResult::Dup,
-	// 				}
-	// 			}
-	// 		},
-	// 	}
-	// }
-
-	// /// Like insert, but where this node is a root node.
-	// pub fn insert_for_root<D: Datum>(mut self, k: &[u8], v: &D) -> Self {
-	// 	unsafe {
-	// 		let insert_result = self.insert(k, v).unsafe_strip_lifetime();
-	// 		match insert_result {
-	// 			InsertResult::Good(newnode) => {
-	// 				self.reassign(newnode);
-	// 				self
-	// 			}
-	// 			InsertResult::Flushed(hotref1, split_bucket, node2) => {
-	// 				self.reassign(hotref1);
-	// 				NodeRef::new(HotNode::new_from_two(NodePtr::wrap(self), split_bucket, NodePtr::new(node2)))
-	// 			}
-	// 			InsertResult::Dup => panic!("dup handling not implemented")
-	// 		}
-	// 	}
-	// // }
-
-	// pub fn get(&self, k: &[u8]) -> Option<&ByteBox> {
-	// 	match self.find_bucket(k) {
-	// 		Ok(idx) => Some(&self.get_bucket(idx).v),
-	// 		Err(idx) => {
-	// 			if self.is_leaf() {
-	// 				None
-	// 			} else {
-	// 				self.get_child(idx).get(k)
-	// 			}
-	// 		},
-	// 	}
-	// }
-
-	// /// I think this ptr/raw node split is correct. Only a mut self can be heated.
-	// /// No, it's wrong. We need to clone and heat a copy of ourselves.
 
 	// /// Postcondition: May leave this node deficient.
 	// pub fn delete(&mut self, k: &[u8]) -> bool {
@@ -866,35 +453,27 @@ impl NodeRef {
 	/* Invariant checking */
 	#[allow(dead_code)]
 	fn quickcheck_invariants(&self) {
-		self.acquire().lookup().check_invariants(None, None, false);
+		self.handle().apply(|x| x.check_invariants(None, None, false));
 	}
 
 	pub fn check_invariants(&self) {
-		// TODO maybe some hot/warm invariants?
-		self.acquire().lookup().check_invariants(None, None, true);
+		self.handle().apply(|x| x.check_invariants(None, None, true));
 	}
 }
 
 // TODO: figure out a good r/w interface for packing/unpacking nodes.
 // Packer/Unpacker<T>?
 pub struct HotNode {
-	// TODO
-// pub struct HotNode<TC: TreeTypeclass> {
 	/// Invariant: between (NODE_CAPACITY - 1) / 2 and NODE_CAPACITY - 1 unless we are the top node,
 	/// in which case this is between 0 and NODE_CAPACITY - 1.
 	/// When flushed, this is between 0 and NODE_CAPACITY - 2.
 	bucket_count: u16,
-	// count_bytes: u16,
-	/// Buckets: key z pairs in this node.
+	/// Buckets: key pairs in this node.
 	/// Invariant: the buckets in the interval [0, bucket_count) are populated,
 	/// all others are not.
     buckets: [BucketPtr; NODE_CAPACITY as usize - 1],
 	/// Invariant: If this is a leaf, all children are empty. Otherwise, child_count == bucket_count = 1.
     children: [NodePtr; NODE_CAPACITY as usize],
-    // TODO
-    // children: [Option<RefCell<NodeRef>>; NODE_CAPACITY as usize],
-    // TODO
-    // children: [TC:RefCellT<NodePtr::empty()>; NODE_CAPACITY as usize - 1];
 }
 
 impl HotNode {
@@ -953,59 +532,26 @@ impl HotNode {
 		self.bucket_count
 	}
 
-	fn child_count(&self) -> u16 {
-		self.bucket_count() + 1
-	}
-
-	fn key(&self, idx: u16) -> &[u8] {
-		self.buckets[idx as usize].key()
-	}
-
 	fn bucket_ptr(&self, idx: u16) -> &BucketPtr {
 		&self.buckets[idx as usize]
-	}
-
-	fn child_ptr(&self, idx: u16) -> &NodePtr {
-		&self.children[idx as usize]
 	}
 
 	fn child_ref(&self, idx: u16) -> &NodeRef {
 		&self.children[idx as usize].unwrap()
 	}
 
-	// fn child_ref_mut(&self, idx: u16) -> &mut NodeRef {
-	// 	// This is 'safe' in the sense it's safe to modify the child even if the parent is immutable,
-	// 	// provided one observes invariants.
-	// 	unsafe { mem::transmute::<&NodeRef, &mut NodeRef>(self.child_ref(idx)) }
-	// }
-
-	/* Thermodynamic accessors */
-	fn warm_child(&self, idx: u16) -> &HotNode {
-		panic!("this is wrong")
-		// self.children[idx as usize].unwrap().acquire()
-	}
-
-	// fn warm_value(&mut self, idx: u16) -> &[u8] {
-	// 	self.buckets[idx as usize].warm_value()
-	// }
-
 	/* Thermodynamic mutators */
-	// pub fn cool(&mut self) {
-	// 	for i in 0..(self.child_count() as usize) {
-	// 		self.children[i].cool()
-	// 	}
-	// }
 
 	/* Basic helpers */
 	pub fn is_leaf(&self) -> bool {
 		self.children[0].is_empty()
 	}
 
-	/// A node is deficient iff it can be merged with another deficient node
-	/// without needing a flush.
-	fn is_deficient(&self) -> bool {
-		self.bucket_count < (NODE_CAPACITY - 1) / 2
-	}
+	// /// A node is deficient iff it can be merged with another deficient node
+	// /// without needing a flush.
+	// fn is_deficient(&self) -> bool {
+	// 	self.bucket_count < (NODE_CAPACITY - 1) / 2
+	// }
 
 	/* Insert helpers */
 
@@ -1448,10 +994,6 @@ impl ByteMap for PersistentBTree {
 	fn delete<K: Key + ?Sized>(&mut self, k: &K) -> bool {
 		panic!("not implemented")
 	}
-
-	// fn get<K: Key + ?Sized>(&mut self, k: &K) -> Option<&Self::D> {
-	// 	self.head.get_for_root(k.bytes())
-	// }
 
 	// fn delete<K: Key + ?Sized>(&mut self, k: &K) -> bool {
 	// 	let mut dummy = NodePtr::empty();

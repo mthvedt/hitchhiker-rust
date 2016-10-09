@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::ops::Deref;
 
 use data::*;
@@ -5,7 +6,7 @@ use super::testlib::*;
 use super::btree::*;
 
 fn test_get_str<T: ByteMap>(t: &mut T, key: &str, val: Option<&str>) {
-	assert_eq!(t.get(key.as_bytes()).map(Datum::box_copy).as_ref().map(Deref::deref), val.map(str::as_bytes));
+	assert_eq!(t.get(key.as_bytes()).map(|x| x.borrow().box_copy()).as_ref().map(Deref::deref), val.map(str::as_bytes));
 }
 
 fn smoke_test_insert<T: ByteMap>(t: &mut T) {

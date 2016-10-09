@@ -60,13 +60,8 @@ impl NodePtr {
 
 	pub fn insert<D: Datum>(self, k: &[u8], v: &D) -> Self {
 		match self.v {
-			Some(noderef) => {
-				match noderef.handle().insert(k, v) {
-					Some(newself) => Self::wrap(newself),
-					None => Self::wrap(noderef),
-				}
-			}
-			None => Self::empty(),
+			Some(noderef) => Self::wrap(noderef.handle().insert(k, v)),
+			None => Self::new(HotNode::new_from_one(k, v)),
 		}
 	}
 

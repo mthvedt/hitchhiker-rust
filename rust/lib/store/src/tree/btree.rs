@@ -280,37 +280,41 @@ impl NodeHandle {
 		}
 	}
 
-	fn find_node_chain(&mut self, k: &[u8]) -> (NodeStack, bool) {
+	fn find_node_chain(&self, k: &[u8]) -> (NodeStack, bool) {
 		let mut stack = NodeStack::new();
 		let r = self.find_node_chain_helper(k, &mut stack);
 		(stack, r)
 	}
 
-	fn insert_helper_noflush(nhot: HotHandle, stack: &mut NodeStack) -> Option<NodeRef> {
+	/// Precondition: self is the head node.
+	fn insert_helper_noflush(&mut self, nhot: HotHandle, stack: &mut NodeStack) -> NodeRef {
 		if let Some((parent, parent_idx)) = stack.pop() {
-			let _ntmp = parent.upgrade();
-			let (mut parent_hot, was_copied) = _ntmp.heat();
+			let parent_handle = parent.upgrade();
+			let (mut parent_hot, was_copied) = parent_handle.heat();
 			parent_hot.apply_mut(|hn| hn.reassign_child(parent_idx, nhot));
 
-			if !was_copied {
-				// Termination condition
-				None
+			if was_copied {
+				self.insert_helper_noflush(parent_hot, stack)
 			} else {
-				Self::insert_helper_noflush(parent_hot, stack)
+				// If not, we reached the termination condition, and the head node is not modified
+				self.upgrade()
 			}
 		} else {
-			// Termination condition
-			None
+			// Termination condition, and we recursed all the way back to the (hot) head node
+			let mut r = self.upgrade();
+			r.reassign(nhot);
+			r
 		}
 	}
 
-	fn insert_helper(nhot: HotHandle, insert_result: InsertResult, stack: &mut NodeStack) -> Option<NodeRef> {
+	// TODO: figure out how to have a simple return thingy
+	fn insert_helper(&mut self, nhot: HotHandle, insert_result: InsertResult, stack: &mut NodeStack) -> NodeRef {
 		if let Some((parent, parent_idx)) = stack.pop() {
 			// Get the next node up the stack, loop while we have to modify nodes
 			// TODO: weak references?
-			let _ntmp = parent.upgrade();
+			let parent_handle = parent.upgrade();
 			// TODO: HotNodes shouldn't work this way.
-			let (mut parent_hot, was_copied) = _ntmp.heat();
+			let (mut parent_hot, was_copied) = parent_handle.heat();
 
 			match insert_result {
 				InsertResult::Ok => {
@@ -318,38 +322,39 @@ impl NodeHandle {
 						// This hot parent was modified. Flushing will not be necessary,
 						// but we have to continue looping until we no longer need to modify hot parents.
 						parent_hot.apply_mut(|hn| hn.reassign_child(parent_idx, nhot));
-						Self::insert_helper_noflush(parent_hot, stack)
+						self.insert_helper_noflush(parent_hot, stack)
 					} else {
-						None
+						// Termination condition, and we have not modified the head node
+						self.upgrade()
 					}
 				}
 				InsertResult::Flushed(split_bucket, newnode) => {
 					// This might trigger another flush.
 					let insert_result = parent_hot.apply_mut(
 						|hn| hn.insert_at(parent_idx, split_bucket, Some(NodePtr::new(newnode))));
-					Self::insert_helper(parent_hot, insert_result, stack)
+					self.insert_helper(parent_hot, insert_result, stack)
 				}
 			}
 		} else {
-			// Made it, ma! Top of the world! (We have looped all the way back to the head node.)
+			// We have recursed all the way back to the head node.
+			let mut r = self.upgrade();
+			r.reassign(nhot);
+
 			match insert_result {
 				InsertResult::Ok => {
-					// self.get_ref().reassign(nhot);
-					panic!("how do i do this?")
+					// Termination condition, and we have recursed all the way back to the (hot) head node
+					r
 				}
 				InsertResult::Flushed(split_bucket, newnode) => {
-					// Need to create a new head node, and return it.
-					// self.get_ref().reassign(nhot);
-					panic!("how do i do this?")
-					// return Some(NodeRef::new(HotNode::new_from_two(NodePtr::wrap(self),
-					// 	split_bucket, NodePtr::new(newnode))))
+					// Need to create a new head node, and return it
+					NodeRef::new(HotNode::new_from_two(NodePtr::wrap(r), split_bucket, NodePtr::new(newnode)))
 				}
 			}
 		}
 	}
 
 	// TODO: flushed should probably return a NodeRef as its 2nd node return value.
-	pub fn insert<D: Datum>(&mut self, k: &[u8], v: &D) -> Option<NodeRef> {
+	pub fn insert<D: Datum>(&mut self, k: &[u8], v: &D) -> NodeRef {
 		// TODO use an array stack. Minimize allocs
 		// Depth is 0-indexed
 		let (mut stack, exists) = self.find_node_chain(k);
@@ -357,13 +362,13 @@ impl NodeHandle {
 			panic!("not implemented")
 		}
 
+		// Prepare to insert
 		let (mut node, idx) = stack.pop().unwrap();
-		// First, insert for the leaf.
 		let _ntmp = node.upgrade();
 		let (mut nhot, _) = _ntmp.heat();
 		let mut insert_result = nhot.apply_mut(|hn| hn.insert_at(idx, Bucket::new(k, v), None));
 
-		Self::insert_helper(nhot, insert_result, &mut stack)
+		self.insert_helper(nhot, insert_result, &mut stack)
 	}
 
 	// TODO: can we make this iterative?
@@ -460,6 +465,7 @@ impl NodeHandle {
 }
 
 // TODO rearrange this file
+// TODO shouldn't have both debug and not debug
 /// A handle to a hot node which can be quickly dereferenced. The existence of this handle
 /// may pin resources, including an owned HotNode.
 #[cfg(debug_assertions)]
@@ -473,7 +479,7 @@ pub enum HotHandle<'a> {
 
 #[cfg(not(debug_assertions))]
 pub enum HotHandle<'a> {
-	Existing(RefMut<HotNode>),
+	Existing(RefMut<'a, HotNode>),
 	// Use a zero-sized type so that HotRef has the same syntactic layout in debug and release mode.
 	New((), Rc<RefCell<HotNode>>),
 }
@@ -494,7 +500,6 @@ impl<'a> HotHandle<'a> {
 	// 	}
 	// }
 
-	#[cfg(debug_assertions)]
 	pub fn apply_mut<F, R> (&mut self, f: F) -> R where
 	F: FnOnce(&mut HotNode) -> R
 	{
@@ -670,9 +675,8 @@ impl NodeRef {
 	#[cfg(debug_assertions)]
 	pub fn reassign(&mut self, nref: HotHandle) {
 		match nref {
-			HotHandle::Existing(hn_ref) => debug_assert!(ptr_eq(self.acquire().lookup(), hn_ref.deref())),
+			HotHandle::Existing(hn_ref) => (), // debug_assert!(ptr_eq(self.acquire().lookup(), hn_ref.deref())),
 			HotHandle::New(nref, hn_box_cell) => {
-				// TODO: assert if this assignment is invalid.
 				debug_assert!(ptr_eq(self, nref.unwrap()));
 				// TODO: can we do self = ?
 				let mut replacement = NodeRef::Hot(hn_box_cell);
@@ -684,10 +688,9 @@ impl NodeRef {
 	#[cfg(not(debug_assertions))]
 	pub fn reassign(&mut self, nref: HotHandle) {
 		match nref {
-			HotHandle::Existing(hn_ref) => debug_assert!(ptr_eq(self.as_ref(), hn_ref)),
-			HotHandle::New(_, hn_box) => {
-				// TODO: assert if this assignment is invalid.
-				let replacement = NodeRef::Hot(hn_box.map(|x| RefCell::new(x)));
+			HotHandle::Existing(hn_ref) => (),
+			HotHandle::New(_, hn_box_cell) => {
+				let mut replacement = NodeRef::Hot(hn_box_cell);
 				mem::swap(&mut replacement, self)
 			}
 		}
@@ -1089,9 +1092,9 @@ impl HotNode {
 			let (bp, mut node2) = self.flush();
 			// Suppose ref1 now has 7 buckets and ref2 now has 7 buckets. This means bucket number 7 is now
 			// a new parent bucket. So if idx is less than 7, we insert into ref1.
-			let idx2 = idx - self.bucket_count() - 1;
+			let idx2 = idx as i32 - self.bucket_count() as i32 - 1;
 			if idx2 >= 0 {
-				node2.insert_unchecked(idx2, b, right_child);
+				node2.insert_unchecked(idx2 as u16, b, right_child);
 			} else {
 				self.insert_unchecked(idx, b, right_child);
 			}

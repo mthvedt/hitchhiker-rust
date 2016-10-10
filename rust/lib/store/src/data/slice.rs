@@ -1,4 +1,4 @@
-use super::slicerc::RcSlice;
+use data::rcslice::RcSlice;
 
 use std::borrow::Borrow;
 

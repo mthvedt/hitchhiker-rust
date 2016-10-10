@@ -1,7 +1,11 @@
 #[macro_use]
 pub mod util;
-pub mod slice;
-pub mod slicerc;
-mod traits;
 
+mod slice;
+pub use self::slice::*;
+
+mod rcslice;
+pub use self::rcslice::RcSlice;
+
+mod traits;
 pub use self::traits::*;

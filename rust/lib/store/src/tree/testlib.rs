@@ -6,7 +6,6 @@ use std::borrow::*;
 use std::collections::*;
 
 use data::*;
-use data::slice::*;
 use tree::btree::*;
 
 pub trait Testable {

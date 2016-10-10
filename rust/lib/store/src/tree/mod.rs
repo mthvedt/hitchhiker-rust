@@ -6,6 +6,9 @@
 // #[macro_use]
 // extern crate quickcheck;
 
+mod bucket;
+
+mod hotnode;
 mod nodeptr;
 mod util;
 

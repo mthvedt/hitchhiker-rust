@@ -29,6 +29,10 @@ impl BucketPtr {
 		}
 	}
 
+	pub fn is_empty(&self) -> bool {
+		self.v.is_none()
+	}
+
 	pub fn wrap(b: Bucket) -> BucketPtr {
 		BucketPtr { v: Some(b), }
 	}

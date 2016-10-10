@@ -115,8 +115,20 @@ impl HotNode {
 		self.bucket_count
 	}
 
+	fn key(&self, idx: u16) -> &[u8] {
+		self.buckets[idx as usize].key()
+	}
+
 	pub fn value(&self, idx: u16) -> ByteRc {
 		self.buckets[idx as usize].value_address()
+	}
+
+	fn bucket_ptr(&self, idx: u16) -> &BucketPtr {
+		&self.buckets[idx as usize]
+	}
+
+	fn child_ptr(&self, idx: u16) -> &NodePtr {
+		&self.children[idx as usize]
 	}
 
 	pub fn child(&self, idx: u16) -> &NodeRef {
@@ -502,50 +514,50 @@ impl HotNode {
 		// TODO: validate all leaves are at the same level
 
 		// Validate the bucket count
-		// for i in 0..(NODE_CAPACITY - 1) {
-		// 	if i >= self.bucket_count() {
-		// 		assert!(self.bucket_ref(i).is_empty(), "expected empty bucket in position {}", i);
-		// 	} else {
-		// 		assert!(!self.bucket_ref(i).is_empty(), "expected populated bucket in position {}", i);
-		// 		// Validate sorted order
-		// 		if i > 1 {
-		// 			assert!(self.key(i) > self.key(i - 1));
-		// 		}
-		// 	}
-		// }
+		for i in 0..(NODE_CAPACITY - 1) {
+			if i >= self.bucket_count() {
+				assert!(self.bucket_ptr(i).is_empty(), "expected empty bucket in position {}", i);
+			} else {
+				assert!(!self.bucket_ptr(i).is_empty(), "expected populated bucket in position {}", i);
+				// Validate sorted order
+				if i > 1 {
+					assert!(self.key(i) > self.key(i - 1));
+				}
+			}
+		}
 
-		// // Validate bounds
-		// assert!(parent_lower_bound.is_none() || self.key(0) > parent_lower_bound.unwrap());
-		// assert!(parent_upper_bound.is_none() || self.key(self.bucket_count() - 1) < parent_upper_bound.unwrap());
+		// Validate bounds
+		assert!(parent_lower_bound.is_none() || self.key(0) > parent_lower_bound.unwrap());
+		assert!(parent_upper_bound.is_none() || self.key(self.bucket_count() - 1) < parent_upper_bound.unwrap());
 
-		// // TODO: assert non-head nodes are never deficient.
-		// assert!(self.is_leaf() || self.bucket_count() >= 1);
+		// TODO: assert non-head nodes are never deficient.
+		assert!(self.is_leaf() || self.bucket_count() >= 1);
 
-		// // Validate the children
-		// for i in 0..NODE_CAPACITY {
-		// 	if self.is_leaf() || i >= self.bucket_count() + 1 {
-		// 		assert!(self.child_ref(i).is_empty());
-		// 	} else {
-		// 		assert!(!self.child_ref(i).is_empty());
+		// Validate the children
+		for i in 0..NODE_CAPACITY {
+			if self.is_leaf() || i >= self.bucket_count() + 1 {
+				assert!(self.child_ptr(i).is_empty());
+			} else {
+				assert!(!self.child_ptr(i).is_empty());
 
-		// 		if recurse {
-		// 			let lower_bound;
-		// 			if i == 0 {
-		// 				lower_bound = None;
-		// 			} else {
-		// 				lower_bound = Some(self.key(i - 1));
-		// 			}
+				if recurse {
+					let lower_bound;
+					if i == 0 {
+						lower_bound = None;
+					} else {
+						lower_bound = Some(self.key(i - 1));
+					}
 
-		// 			let upper_bound;
-		// 			if i == self.bucket_count() {
-		// 				upper_bound = None;
-		// 			} else {
-		// 				upper_bound = Some(self.key(i));
-		// 			}
+					let upper_bound;
+					if i == self.bucket_count() {
+						upper_bound = None;
+					} else {
+						upper_bound = Some(self.key(i));
+					}
 
-		// 			self.warm_child(i).check_invariants(lower_bound, upper_bound, recurse);
-		// 		}
-		// 	}
-		// }
+					self.child(i).apply(|x| x.check_invariants_helper(lower_bound, upper_bound, recurse));
+				}
+			}
+		}
 	}
 }

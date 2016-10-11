@@ -51,30 +51,6 @@ use std::rc::{Rc, Weak};
 ///
 /// NB. this can lead to applications effectively leaking memory if a
 /// short subslice of a long `RcSlice` is held.
-///
-/// # Examples
-///
-/// ```rust
-/// use shared_slice::rc::RcSlice;
-///
-/// let x = RcSlice::new(Box::new(["foo", "bar", "baz"]));
-/// println!("{:?}", x); // ["foo", "bar", "baz"]
-/// println!("{:?}", x.slice(1, 3)); // ["bar", "baz"]
-/// ```
-///
-/// Constructing with a dynamic number of elements:
-///
-/// ```rust
-/// # #![allow(unstable)]
-/// use shared_slice::rc::RcSlice;
-///
-/// let n = 5;
-///
-/// let v: Vec<u8> = (0u8..n).collect(); // 0, ..., 4
-///
-/// let x = RcSlice::new(v.into_boxed_slice());
-/// assert_eq!(&*x, [0, 1, 2, 3, 4]);
-/// ```
 pub struct RcSlice<T> {
     data: *const [T],
     counts: Rc<Box<[T]>>,

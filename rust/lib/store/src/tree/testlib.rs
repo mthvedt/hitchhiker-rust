@@ -48,7 +48,7 @@ impl Testable for DummyTestable {
 #[macro_export]
 macro_rules! deftests {
 	// TODO: what is $tr for?
-	{ $($testable:ty: $tr:ty => { $($name:ident, $test:path,)* }, )* } => {
+	{ $($testable:ty => { $($name:ident, $test:path,)* }, )* } => {
         $(
         	$(
                 #[test]
@@ -106,20 +106,22 @@ impl ByteMap for ByteHashMap {
     type GetDatum = ByteBox;
     type Get = ByteBoxRef;
 
-	fn insert<K: Key + ?Sized, V: Datum>(&mut self, k: &K, v: &V) {
-		self.wrapped.insert(ByteBox::from_key(k), ByteBox::from_value(v));
-	}
-
 	fn get<K: Key + ?Sized>(&mut self, k: &K) -> Option<ByteBoxRef> {
 		self.wrapped.get(&ByteBox::from_key(k)).map(ByteBoxRef::wrap)
 	}
 
-	fn delete<K: Key + ?Sized>(&mut self, k: &K) -> bool {
-		self.wrapped.remove(&ByteBox::from_key(k)).is_some()
-	}
-
 	fn check_invariants(&self) {
 		// Do nothing, assume impl is correct
+	}
+}
+
+impl MutableByteMap for ByteHashMap {
+	fn insert<K: Key + ?Sized, V: Datum>(&mut self, k: &K, v: &V) {
+		self.wrapped.insert(ByteBox::from_key(k), ByteBox::from_value(v));
+	}
+
+	fn delete<K: Key + ?Sized>(&mut self, k: &K) -> bool {
+		self.wrapped.remove(&ByteBox::from_key(k)).is_some()
 	}
 }
 
@@ -143,20 +145,23 @@ impl ByteMap for ByteTreeMap {
     type GetDatum = ByteBox;
     type Get = ByteBoxRef;
 
-	fn insert<K: Key + ?Sized, V: Datum>(&mut self, k: &K, v: &V) {
-		self.wrapped.insert(ByteBox::from_key(k), ByteBox::from_value(v));
-	}
-
 	fn get<K: Key + ?Sized>(&mut self, k: &K) -> Option<ByteBoxRef> {
 		self.wrapped.get(&ByteBox::from_key(k)).map(ByteBoxRef::wrap)
 	}
 
-	fn delete<K: Key + ?Sized>(&mut self, k: &K) -> bool {
-		self.wrapped.remove(&ByteBox::from_key(k)).is_some()
-	}
 
 	fn check_invariants(&self) {
 		// Do nothing, assume impl is correct
+	}
+}
+
+impl MutableByteMap for ByteTreeMap {
+	fn insert<K: Key + ?Sized, V: Datum>(&mut self, k: &K, v: &V) {
+		self.wrapped.insert(ByteBox::from_key(k), ByteBox::from_value(v));
+	}
+
+	fn delete<K: Key + ?Sized>(&mut self, k: &K) -> bool {
+		self.wrapped.remove(&ByteBox::from_key(k)).is_some()
 	}
 }
 

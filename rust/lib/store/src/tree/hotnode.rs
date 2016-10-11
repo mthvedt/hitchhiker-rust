@@ -28,7 +28,9 @@ pub enum HotHandle<'a> {
 	Existing(RefMut<'a, HotNode>),
 	// The NodeRef is used for debug assertions. It is forbidden to reassign a NodeRef to a HotHandle
 	// that did not 'come from' that NodeRef.
-	// We use a Rc<RefCell> here so it's easier to pass into NodeRef.
+	// We use a Rc<RefCell> here so it's easier to pass into NodeRef without copying.
+	// Becaues RCs are thin pointers to a {refcount, T} pair, this has very little performance penalty
+	// and saves us a copy when we 'cool' a HotNode.
 	New(Option<&'a NodeRef>, Rc<RefCell<HotNode>>),
 }
 
@@ -94,21 +96,29 @@ impl HotNode {
 		r
 	}
 
-	pub fn fork(&self) -> HotNode {
-		panic!("not implemented")
+	/// Immutes this HotNode, recursively immuting its children.
+	pub fn cool(&mut self) {
+		for i in 0..(self.bucket_count() as usize) {
+			self.children[i].cool();
+		}
 	}
 
-	// pub fn fork(&self) -> HotNode {
-	// 	let mut r = Self::empty();
-	// 	r.bucket_count = self.bucket_count();
+	/// Creates a copy of this HotNode. For this to make sense, this node must be immutable.
+	pub fn fork(&self) -> HotNode {
+		// Right now, this is a poor man's Clone.
+		let mut r = Self::empty();
 
-	// 	for i in 0..(self.bucket_count() as usize) {
-	// 		r.buckets[i] = self.buckets[i].clone();
-	// 		r.children[i] = self.children[i].fork();
-	// 	}
+		r.bucket_count = 1;
+		for i in 0..self.bucket_count as usize {
+			r.buckets[i] = self.buckets[i].clone();
+		}
 
-	// 	r
-	// }
+		for i in 0..self.bucket_count as usize + 1 {
+			r.children[i] = self.children[i].fork();
+		}
+
+		r
+	}
 
 	/* Fast accessors */
 	fn bucket_count(&self) -> u16 {

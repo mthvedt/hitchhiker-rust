@@ -55,7 +55,7 @@ defbench! {
 
 defbench! {
 	// This serves as a smoke test--it should give the same benchmarks as bench_put below.
-	bench_put_no_verify, t: ByteMap, b, T, V, {
+	bench_put_no_verify, t: MutableByteMap, b, T, V, {
 		// Note that the seeds are the same as bench_put. This is on purpose.
 		let ks = random_byte_strings(0xC400D969);
 		let vs = random_byte_strings(0x3FB87EE6);
@@ -72,7 +72,7 @@ defbench! {
 // TODO: we can parameterize these better... we want a test with 100 byte keys, and 100 byte key 8k value.
 // We also want to record bytes/sec.
 defbench! {
-	bench_put, t: ByteMap, b, T, V, {
+	bench_put, t: MutableByteMap, b, T, V, {
 		let ks = random_byte_strings(0xBCA2E7D6);
 		let vs = random_byte_strings(0xA8541B4F);
 		let rand_tests = random_byte_strings(0x0BACE2CE);
@@ -91,7 +91,7 @@ defbench! {
 }
 
 defbench! {
-	bench_get, t: ByteMap, b, T, V, {
+	bench_get, t: MutableByteMap, b, T, V, {
 		let ks = random_byte_strings(0x45421572);
 		let vs = random_byte_strings(0x80E9F4A6);
 		let rand_tests = random_byte_strings(0xE06759F4);

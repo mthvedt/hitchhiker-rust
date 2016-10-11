@@ -17,17 +17,17 @@ pub struct NodePtr {
 
 // TODO this class is redundant
 impl NodePtr {
-	pub fn new(p: HotNode) -> NodePtr {
+	pub fn new(p: HotNode) -> Self {
 		Self::wrap(NodeRef::new(p))
 	}
 
-	pub fn wrap(p: NodeRef) -> NodePtr {
+	pub fn wrap(p: NodeRef) -> Self {
 		NodePtr {
 			v: Some(p),
 		}
 	}
 
-	pub fn empty() -> NodePtr {
+	pub fn empty() -> Self {
 		NodePtr {
 			v: None,
 		}
@@ -53,18 +53,20 @@ impl NodePtr {
 		self.v.as_mut().unwrap()
 	}
 
-	// pub fn cool(&mut self) {
-	// 	if let Some(noderef) = self.v.as_mut() {
-	// 		noderef.cool()
-	// 	}
-	// }
+	// Immtues this NodePtr, recurisvely immuting its children.
+	pub fn cool(&mut self) {
+		match self.v.as_mut() {
+			Some(noderef) => noderef.cool(),
+			None => (),
+		}
+	}
 
-	// pub fn fork(&self) -> NodePtr {
-	// 	match self.v.as_ref() {
-	// 		Some(noderef) => Self::wrap(noderef.fork()),
-	// 		None => Self::empty()
-	// 	}
-	// }
+	pub fn fork(&self) -> Self {
+		match self.v.as_ref() {
+			Some(noderef) => Self::wrap(noderef.fork()),
+			None => Self::empty(),
+		}
+	}
 
 	pub fn insert<D: Datum>(self, k: &[u8], v: &D) -> Self {
 		match self.v {
@@ -115,7 +117,9 @@ impl NodePtr {
 }
 
 /// A container for various kinds of nodes.
+/// TODO: hot things should only be owned by one job at a time.
 pub enum NodeRef {
+	// TODO: either these two arms should be identical, or this shouldn't be RC.
 	Hot(Rc<RefCell<HotNode>>),
 	Warm(Rc<HotNode>),
 }
@@ -151,16 +155,54 @@ impl NodeRef {
 		}
 	}
 
-	/// Reassigns this node ref to the HotNode referred to by the given HotHandle,
-	/// with the idea that the given HotRef is a modified version or copy of the contained Node.
-	/// In debug mode, asserts that such is true. TODO: should not be pub.
-	pub fn reassign(&mut self, nref: HotHandle) {
-		match nref {
-			HotHandle::Existing(_) => (), // debug_assert!(ptr_eq(self.acquire().lookup(), hn_ref.deref())),
-			HotHandle::New(nref, hn_box_cell) => {
-				debug_assert!(ptr_eq(self, nref.unwrap()));
+	/// Debug helper for assign/reassign.
+	fn hn_ptr(&self) -> *const HotNode {
+		match self {
+			&NodeRef::Hot(ref rc_rfc_hn) =>  rc_rfc_hn.deref().as_ptr(),
+			&NodeRef::Warm(ref rc_hn) => rc_hn.deref() as *const _,
+		}
+	}
+
+	/// Reassigns this node ref to the HotNode referred to by the given HotHandle.
+	/// The given HotHandle must be a modified copy of this NodeRef (verified with debug assertions).
+	pub fn reassign(&mut self, h: HotHandle) {
+		match h {
+			HotHandle::Existing(hn_ref) => {
+				// Safety check: A HotHandle::Existing may only be reassigned to itself.
+				if let &mut NodeRef::Hot(ref rc_rfc_hn) = self {
+					debug_assert!(ptr_eq(rc_rfc_hn.deref().as_ptr(), hn_ref.deref() as *const _))
+				} else {
+					debug_assert!(false, "Cannot assign an existing HotNode to a warm NodeRef")
+				}
+			}
+			HotHandle::New(h_nref, hn_rc_cell) => {
+				let p = h_nref.unwrap();
+				debug_assert!(ptr_eq(self, p));
 				// TODO: can we do self = ?
-				let mut replacement = NodeRef::Hot(hn_box_cell);
+				let mut replacement = NodeRef::Hot(hn_rc_cell);
+				mem::swap(&mut replacement, self)
+			}
+		}
+	}
+
+	/// Reassigns this node ref to the HotNode referred to by the given HotHandle.
+	/// The given HotHandle must be a modified copy of the HotNode inside this NodeRef (verified with debug assertions).
+	/// The difference between this fn and reassign is that this fn is intended for creating new NodeRefs with
+	/// modified nodes inside, whereas reassign is for read-modify-write cycles on one NodeRef.
+	pub fn assign(&mut self, h: HotHandle) {
+		match h {
+			HotHandle::Existing(hn_ref) => {
+				// Safety check: A HotHandle::Existing may only be reassigned to itself.
+				if let &mut NodeRef::Hot(ref rc_rfc_hn) = self {
+					debug_assert!(ptr_eq(rc_rfc_hn.deref().as_ptr(), hn_ref.deref() as *const _))
+				} else {
+					debug_assert!(false, "Cannot assign an existing HotNode to a warm NodeRef")
+				}
+			}
+			HotHandle::New(h_nref, hn_rc_cell) => {
+				debug_assert!(ptr_eq(self.hn_ptr(), h_nref.unwrap().hn_ptr()));
+				// TODO: can we do self = ?
+				let mut replacement = NodeRef::Hot(hn_rc_cell);
 				mem::swap(&mut replacement, self)
 			}
 		}
@@ -171,22 +213,44 @@ impl NodeRef {
 	/// Returns a hot NodeRef which may be modified, together with a reference to that node. May return self.
 	pub fn heat<'a>(&'a self) -> (HotHandle<'a>, bool) {
 		match self {
-			&NodeRef::Hot(ref box_cell_hn) => (HotHandle::Existing(box_cell_hn.as_ref().borrow_mut()), false),
-			&NodeRef::Warm(ref rc_hn) => (HotHandle::New(Some(self), Rc::new(RefCell::new((*rc_hn).fork()))), true),
+			&NodeRef::Hot(ref rc_cell_hn) => (HotHandle::Existing(rc_cell_hn.as_ref().borrow_mut()), false),
+			&NodeRef::Warm(ref rc_hn) => {
+				let newnode: HotNode = (*rc_hn).fork();
+				(HotHandle::New(Some(self), Rc::new(RefCell::new(newnode))), true)
+			}
 		}
 	}
 
+	/// Immutes this NodeRef, recursively immuting its children.
 	pub fn cool(&mut self) {
-		panic!("not implemented")
-		// match self {
-		// 	&mut NodeRef::Hot(_) => {
-		// 		let newself = self;
-		// 		box_hn.as_mut().cool();∂ar
-		// 		let mut newself = NodeRef::Warm(Rc::new(*box_hn));
-		// 		mem::swap(&mut newself, self)
-		// 	},
-		// 	&mut NodeRef::Warm(_) => (),
-		// }
+		// Bunch of footwork so we can modify ourselves in place without breaking mut safety.
+		// Who knows if this optimizes correctly?
+		let mut dummy = unsafe { mem::uninitialized() };
+		let mut dummy2;
+		mem::swap(self, &mut dummy);
+
+		match dummy {
+			NodeRef::Hot(rc_cell_hn) => {
+				let mut hn = Rc::try_unwrap(rc_cell_hn).ok().unwrap().into_inner();
+				hn.cool();
+				dummy2 = NodeRef::Warm(Rc::new(hn));
+			}
+			NodeRef::Warm(x) => {
+				dummy2 = NodeRef::Warm(x);
+			}
+		}
+
+		mem::swap(self, &mut dummy2);
+		mem::drop(dummy2);
+	}
+
+	/// Creates a mutable copy of this NodeRef.
+	pub fn fork(&self) -> NodeRef {
+		// Right now, all this does is throw if we're hot already.
+		match self {
+			&NodeRef::Hot(ref _x) => panic!("cannot fork a hot node"),
+			&NodeRef::Warm(ref rc_) => NodeRef::Warm(rc_.clone()),
+		}
 	}
 
 	// // For the edge case where head has 1 child.

@@ -7,6 +7,8 @@ use std::io::Write;
 
 use self::time::*;
 
+// TODO: latency benchmarks
+
 #[derive(Clone)]
 pub enum BenchResult {
 	Ok(Duration, u64),

@@ -9,7 +9,7 @@ futures = "0.1"
 
 # TODO: these used by testlib. Need better isolation.
 # adamantium = "0.0.1"
-adamantium = { git = "https://github.com/mthvedt/adamantium.git" }
+# adamantium = { git = "https://github.com/mthvedt/adamantium.git" }
 rand = "0.3"
 time = "0.1"
 

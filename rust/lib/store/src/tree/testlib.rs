@@ -1,9 +1,7 @@
-extern crate rand;
-
-use self::rand::*;
-
 use std::borrow::*;
 use std::collections::*;
+
+use rand::*;
 
 use data::*;
 use tree::btree::*;

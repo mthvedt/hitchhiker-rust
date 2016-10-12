@@ -98,7 +98,7 @@ impl HotNode {
 
 	/// Immutes this HotNode, recursively immuting its children.
 	pub fn cool(&mut self) {
-		for i in 0..(self.bucket_count() as usize) {
+		for i in 0..(self.bucket_count() as usize + 1) {
 			self.children[i].cool();
 		}
 	}
@@ -108,13 +108,16 @@ impl HotNode {
 		// Right now, this is a poor man's Clone.
 		let mut r = Self::empty();
 
-		r.bucket_count = 1;
+		r.bucket_count = self.bucket_count;
+
 		for i in 0..self.bucket_count as usize {
 			r.buckets[i] = self.buckets[i].clone();
 		}
 
-		for i in 0..self.bucket_count as usize + 1 {
-			r.children[i] = self.children[i].fork();
+		if !self.is_leaf() {
+			for i in 0..self.bucket_count as usize + 1 {
+				r.children[i] = self.children[i].shallow_clone();
+			}
 		}
 
 		r
@@ -515,12 +518,8 @@ impl HotNode {
 	// }
 
 	/* Invariants */
-	pub fn check_invariants(&self) {
-		self.check_invariants_helper(None, None, true)
-	}
-
 	pub fn check_invariants_helper(&self, parent_lower_bound: Option<&[u8]>, parent_upper_bound: Option<&[u8]>,
-		recurse: bool) {
+		is_hot: bool, recurse: bool) {
 		// TODO: validate all leaves are at the same level
 
 		// Validate the bucket count
@@ -565,7 +564,7 @@ impl HotNode {
 						upper_bound = Some(self.key(i));
 					}
 
-					self.child(i).apply(|x| x.check_invariants_helper(lower_bound, upper_bound, recurse));
+					self.child(i).check_invariants_helper(lower_bound, upper_bound, is_hot, recurse);
 				}
 			}
 		}

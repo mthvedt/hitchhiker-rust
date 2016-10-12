@@ -15,6 +15,9 @@
 extern crate byteorder;
 extern crate futures;
 
+// Used for bench. TODO: separate crates...
+extern crate rand;
+
 // TODO consider better way to hide these macros...
 #[macro_use]
 pub mod bench;

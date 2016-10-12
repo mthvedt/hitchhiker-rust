@@ -1,9 +1,11 @@
 #![feature(try_from)]
 #![feature(test)]
 
+extern crate rand;
+extern crate test;
+
 #[macro_use]
 extern crate thunderhead_store;
-extern crate test;
 
 use std::borrow::Borrow;
 use std::collections::*;
@@ -11,7 +13,10 @@ use std::convert::TryFrom;
 use std::iter::FromIterator;
 use std::marker::PhantomData;
 use std::ops::Deref;
+
 use test::black_box;
+
+use rand::{Rng, SeedableRng};
 
 use thunderhead_store::*;
 use thunderhead_store::bench::*;
@@ -73,10 +78,15 @@ defbench! {
 // We also want to record bytes/sec.
 defbench! {
 	bench_put, t: MutableByteMap, b, T, V, {
+		let mut r = b.rand();
+
 		let ks = random_byte_strings(0xBCA2E7D6);
 		let vs = random_byte_strings(0xA8541B4F);
+		// TODO: mix some valid k's into here.
 		let rand_tests = random_byte_strings(0x0BACE2CE);
 
+		// TODO why use a map when we can test directly? We should force ourselves to write out the expected
+		// results anyway.
 		let mut m = HashMap::new();
 
 		b.bench(u64::try_from(ks.len()).unwrap(), || {
@@ -344,11 +354,53 @@ defbench! {
 
 // }
 
+defbench! {
+	bench_snapshots_frequent, t: CowByteMap, b, T, V, {
+		let mut r = b.rand();
+
+		let ks = random_byte_strings(0xBCA2E7D6);
+		let vs = random_byte_strings(0xA8541B4F);
+		let mut snapvec = Vec::with_capacity(ks.len());
+
+		b.bench(u64::try_from(ks.len()).unwrap(), || {
+			for i in 0..ks.len() {
+				t.insert(&ks[i], &vs[i].into_datum());
+				// Snap number i contains keys 1..i
+				snapvec.push(t.snap());
+
+				V::verify(|| "map get mismatch", || {
+					let idx = r.next_u32() as usize % ks.len();
+					if idx <= i {
+						t.get(&ks[idx]).map_or(false, |r| r.borrow().box_copy().deref() == &vs[idx])
+					} else {
+						t.get(&ks[idx]).is_none()
+					}
+				});
+
+				V::verify(|| "snapshot mismatch", || {
+					let idx = r.next_u32() as usize % ks.len();
+					let snapid = r.next_u32() as usize % snapvec.len();
+					if idx <= snapid {
+						snapvec[snapid].get(&ks[idx]).map_or(false, |r| r.borrow().box_copy().deref() == &vs[idx])
+					} else {
+						snapvec[snapid].get(&ks[idx]).is_none()
+					}
+				});
+			}
+		})
+	}
+}
+
 fn main() {
 	// TODO: use cargo to default to release, but enable both modes
 	// debug_assert!(false, "This target should be run in release mode");
 
 	let benchmarks = create_benchmarks! {
+		[
+			PersistentBTree,
+		] => [
+			bench_snapshots_frequent,
+		],
 		[DummyTestable,] => [bench_ref_std_map,],
 		[
 			ByteHashMap,

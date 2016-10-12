@@ -5,6 +5,9 @@ use std::clone::Clone;
 use std::convert::TryFrom;
 use std::io::Write;
 
+use rand;
+use rand::StdRng;
+
 use self::time::*;
 
 // TODO: latency benchmarks
@@ -17,14 +20,21 @@ pub enum BenchResult {
 }
 
 pub struct Bencher {
+	// set before the benchmark runs
+	pub rng: Option<StdRng>,
 	result: BenchResult,
 }
 
 impl Bencher {
 	pub fn new() -> Bencher {
 		Bencher {
+			rng: None,
 			result: BenchResult::None,
 		}
+	}
+
+	pub fn rand(&self) -> StdRng {
+		self.rng.unwrap().clone()
 	}
 
 	pub fn bench<T, F>(&mut self, count: u64, f: F) where F: FnOnce() -> T {
@@ -85,6 +95,7 @@ impl Verifier for RealVerifier {
 pub trait Benchable {
 	fn name(&self) -> (String, String);
 	fn bench(&self, b: &mut Bencher);
+	fn get_rand(&self) -> rand::StdRng;
 	fn verify(&self);
 }
 
@@ -92,6 +103,8 @@ pub trait Benchable {
 macro_rules! defbench {
 	// We want to have id1trait to be a ty, but that doesn't work. See https://github.com/rust-lang/rust/issues/20272
 	{ $name:ident, $id1:ident: $id1trait:ident, $idbencher:ident, $idtype:ident, $idverifier:ident, $e:expr } => {
+		// Define a function, paramaterized by the given Testable, that produces a Benchable at the end.
+
 		// Basically, we want to 'bundle' Testables into Benchables, parameterized by different kinds of Testable.
 		// This ugly macro is the easiest way to do it: we get a nice bundle of Benchable at the end, parameterizable by
 		// a statically-checked type. If we had HKTs or typeclasses like Haskell,
@@ -112,8 +125,21 @@ macro_rules! defbench {
 			impl<$idtype: $id1trait + Testable + 'static> Benchable for _AnonBenchable<$idtype> {
 				fn name(&self) -> (String, String) { (String::from(stringify!($name)), <$idtype as Testable>::name()) }
 
+				fn get_rand(&self) -> rand::StdRng {
+					// Seed from name
+					let (n1, n2) = self.name();
+					let s: String = n1 + &n2;
+					let mut vec_usize = Vec::with_capacity(s.len());
+					for c in s.bytes() {
+						vec_usize.push(c as usize);
+					}
+
+					rand::StdRng::from_seed(vec_usize.as_slice())
+				}
+
 				fn bench(&self, b: &mut Bencher) {
 					let mut t = $idtype::setup();
+					b.rng = Some(self.get_rand());
 					self._anon_bench::<NullVerifier>(&mut t, b);
 					t.teardown();
 				}
@@ -122,6 +148,7 @@ macro_rules! defbench {
 					// Unused bencher
 					let mut t = $idtype::setup();
 					let mut b = Bencher::new();
+					b.rng = Some(self.get_rand());
 					self._anon_bench::<RealVerifier>(&mut t, &mut b);
 					t.teardown();
 				}

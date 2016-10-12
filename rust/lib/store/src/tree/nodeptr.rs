@@ -61,9 +61,9 @@ impl NodePtr {
 		}
 	}
 
-	pub fn fork(&self) -> Self {
+	pub fn shallow_clone(&self) -> Self {
 		match self.v.as_ref() {
-			Some(noderef) => Self::wrap(noderef.fork()),
+			Some(noderef) => Self::wrap(noderef.shallow_clone()),
 			None => Self::empty(),
 		}
 	}
@@ -77,7 +77,7 @@ impl NodePtr {
 
 	pub fn get(&mut self, k: &[u8]) -> Option<ByteRc> {
 		match self.v.as_ref() {
-			Some(bn) => (*bn).handle().get(k),
+			Some(nref) => (*nref).handle().get(k),
 			None => None,
 		}
 	}
@@ -110,7 +110,7 @@ impl NodePtr {
 
 	pub fn check_invariants(&self) {
 		match self.v.as_ref() {
-			Some(bn) => (*bn).handle().apply(|n| n.check_invariants()),
+			Some(nref) => nref.check_invariants(),
 			None => (),
 		}
 	}
@@ -165,19 +165,22 @@ impl NodeRef {
 
 	/// Reassigns this node ref to the HotNode referred to by the given HotHandle.
 	/// The given HotHandle must be a modified copy of this NodeRef (verified with debug assertions).
+	// TODO: better implementations for this
 	pub fn reassign(&mut self, h: HotHandle) {
 		match h {
 			HotHandle::Existing(hn_ref) => {
 				// Safety check: A HotHandle::Existing may only be reassigned to itself.
 				if let &mut NodeRef::Hot(ref rc_rfc_hn) = self {
-					debug_assert!(ptr_eq(rc_rfc_hn.deref().as_ptr(), hn_ref.deref() as *const _))
+					let tgt = rc_rfc_hn.deref().as_ptr();
+					let src = hn_ref.deref() as *const _;
+					debug_assert!(ptr_eq(tgt, src),
+						"Mismatch in node reassignment: target {:p}, source {:p}", tgt, src);
 				} else {
 					debug_assert!(false, "Cannot assign an existing HotNode to a warm NodeRef")
 				}
 			}
 			HotHandle::New(h_nref, hn_rc_cell) => {
-				let p = h_nref.unwrap();
-				debug_assert!(ptr_eq(self, p));
+				debug_assert!(ptr_eq(self.hn_ptr(), h_nref.unwrap().hn_ptr()));
 				// TODO: can we do self = ?
 				let mut replacement = NodeRef::Hot(hn_rc_cell);
 				mem::swap(&mut replacement, self)
@@ -194,7 +197,10 @@ impl NodeRef {
 			HotHandle::Existing(hn_ref) => {
 				// Safety check: A HotHandle::Existing may only be reassigned to itself.
 				if let &mut NodeRef::Hot(ref rc_rfc_hn) = self {
-					debug_assert!(ptr_eq(rc_rfc_hn.deref().as_ptr(), hn_ref.deref() as *const _))
+					let tgt = rc_rfc_hn.deref().as_ptr();
+					let src = hn_ref.deref() as *const _;
+					debug_assert!(ptr_eq(tgt, src),
+						"Mismatch in node reassignment: target {:p}, source {:p}", tgt, src);
 				} else {
 					debug_assert!(false, "Cannot assign an existing HotNode to a warm NodeRef")
 				}
@@ -225,30 +231,31 @@ impl NodeRef {
 	pub fn cool(&mut self) {
 		// Bunch of footwork so we can modify ourselves in place without breaking mut safety.
 		// Who knows if this optimizes correctly?
-		let mut dummy = unsafe { mem::uninitialized() };
-		let mut dummy2;
-		mem::swap(self, &mut dummy);
+		let mut oldself = unsafe { mem::uninitialized() };
+		let mut newself;
+		mem::swap(self, &mut oldself);
+		// now self is uninitialized
 
-		match dummy {
+		// destroys oldself
+		match oldself {
 			NodeRef::Hot(rc_cell_hn) => {
 				let mut hn = Rc::try_unwrap(rc_cell_hn).ok().unwrap().into_inner();
 				hn.cool();
-				dummy2 = NodeRef::Warm(Rc::new(hn));
+				newself = NodeRef::Warm(Rc::new(hn));
 			}
 			NodeRef::Warm(x) => {
-				dummy2 = NodeRef::Warm(x);
+				newself = NodeRef::Warm(x);
 			}
 		}
 
-		mem::swap(self, &mut dummy2);
-		mem::drop(dummy2);
+		mem::swap(self, &mut newself);
+		// now newself is uninitialized
+		mem::forget(newself);
 	}
 
-	/// Creates a mutable copy of this NodeRef.
-	pub fn fork(&self) -> NodeRef {
-		// Right now, all this does is throw if we're hot already.
+	pub fn shallow_clone(&self) -> NodeRef {
 		match self {
-			&NodeRef::Hot(ref _x) => panic!("cannot fork a hot node"),
+			&NodeRef::Hot(ref _x) => panic!("cannot shallow_clone a hot node"),
 			&NodeRef::Warm(ref rc_) => NodeRef::Warm(rc_.clone()),
 		}
 	}
@@ -306,4 +313,25 @@ impl NodeRef {
 	// 		},
 	// 	}
 	// }
+
+	fn is_hot(&self) -> bool {
+		match self {
+			&NodeRef::Hot(_) => true,
+			&NodeRef::Warm(_) => false,
+		}
+	}
+
+	fn check_invariants(&self) {
+		self.check_invariants_helper(None, None, self.is_hot(), true)
+	}
+
+	pub fn check_invariants_helper(&self, parent_lower_bound: Option<&[u8]>, parent_upper_bound: Option<&[u8]>,
+		is_hot: bool, recurse: bool) {
+
+		if !is_hot && self.is_hot() {
+			panic!("failed invariant: child of immutable node is hot");
+		} else {
+			self.apply(|n| n.check_invariants_helper(parent_lower_bound, parent_upper_bound, self.is_hot(), recurse));
+		}
+	}
 }

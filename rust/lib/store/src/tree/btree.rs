@@ -166,15 +166,15 @@ impl NodeHandle {
 			// Get the next node up the stack, loop while we have to modify nodes
 			// TODO: weak references?
 			let parent_handle = parent.to_node_ref();
-			// TODO: HotNodes shouldn't work this way.
+			// TODO: HotNodes shouldn't work this way. This is lasagna logic
 			let (mut parent_hot, was_copied) = parent_handle.heat();
+			parent_hot.apply_mut(|hn| hn.reassign_child(parent_idx, nhot));
 
 			match insert_result {
 				InsertResult::Ok => {
 					if was_copied {
 						// This hot parent was modified. Flushing will not be necessary,
 						// but we have to continue looping until we no longer need to modify hot parents.
-						parent_hot.apply_mut(|hn| hn.reassign_child(parent_idx, nhot));
 						self.insert_helper_nosplit(parent_hot, stack)
 					} else {
 						// Termination condition, and we have not modified the head node
@@ -315,7 +315,7 @@ impl CowByteMap for PersistentBTree {
 
 		PersistentSnap {
 			v: PersistentBTree {
-				head: self.head.fork(),
+				head: self.head.shallow_clone(),
 			}
 		}
 	}

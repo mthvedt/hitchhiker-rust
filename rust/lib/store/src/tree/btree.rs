@@ -7,8 +7,10 @@ use std::rc::Weak;
 use data::*;
 
 use tree::bucket::*;
+use tree::counter::*;
 use tree::hotnode::*;
 use tree::nodeptr::*;
+use tree::traits::*;
 
 const MAX_DEPTH: u8 = 32;
 
@@ -77,18 +79,20 @@ impl NodeStack {
 
 /// A handle to a ready node which can be quickly dereferenced. The existence of this handle
 /// may pin resources.
+/// TODO: delete this class, use pointers to FatNodes. Rc in debug, raw in release.
 #[derive(Clone)]
 pub enum NodeHandle {
  	// TODO: something faster. Ideal situation is a head snapshot/job pointer and a raw pointer.
 	Hot(Weak<RefCell<HotNode>>),
-	Warm(Weak<HotNode>),
+	// TODO: shouldn't expose PersistentNode inner like this.
+	Warm(Weak<(Counter, HotNode)>),
 }
 
 impl NodeHandle {
-	fn to_node_ref(&self) -> NodeRef {
+	fn to_fat_node(&self) -> FatNode {
 		match self {
-			&NodeHandle::Hot(ref w_) => NodeRef::Hot(w_.upgrade().unwrap()),
-			&NodeHandle::Warm(ref w_) => NodeRef::Warm(w_.upgrade().unwrap()),
+			&NodeHandle::Hot(ref w_) => FatNode::Transient(w_.upgrade().unwrap()),
+			&NodeHandle::Warm(ref w_) => FatNode::Persistent(PersistentNode{ v: w_.upgrade().unwrap() }),
 		}
 	}
 
@@ -101,7 +105,7 @@ impl NodeHandle {
 				let r = f(x.deref().borrow().deref());
 				r
 			}
-			&NodeHandle::Warm(ref w_hn) => f(w_hn.upgrade().unwrap().deref()),
+			&NodeHandle::Warm(ref w_hn) => f(&w_hn.upgrade().unwrap().deref().deref().1),
 		}
 	}
 
@@ -140,9 +144,9 @@ impl NodeHandle {
 	}
 
 	/// Precondition: self is the head node.
-	fn insert_helper_nosplit(&mut self, nhot: HotHandle, stack: &mut NodeStack) -> NodeRef {
+	fn insert_helper_nosplit(&mut self, nhot: HotHandle, stack: &mut NodeStack) -> FatNode {
 		if let Some((parent, parent_idx)) = stack.pop() {
-			let parent_handle = parent.to_node_ref();
+			let parent_handle = parent.to_fat_node();
 			let (mut parent_hot, was_copied) = parent_handle.heat();
 			parent_hot.apply_mut(|hn| hn.reassign_child(parent_idx, nhot));
 
@@ -150,22 +154,22 @@ impl NodeHandle {
 				self.insert_helper_nosplit(parent_hot, stack)
 			} else {
 				// If not, we reached the termination condition, and the head node is not modified
-				stack.head_or(&parent).to_node_ref()
+				stack.head_or(&parent).to_fat_node()
 			}
 		} else {
 			// Termination condition, and we recursed all the way back to the (hot) head node
-			let mut r = self.to_node_ref();
-			r.assign(nhot);
+			let mut r = self.to_fat_node();
+			r.reassign(nhot);
 			r
 		}
 	}
 
 	// TODO: figure out how to have a simple return thingy
-	fn insert_helper(&mut self, nhot: HotHandle, insert_result: InsertResult, stack: &mut NodeStack) -> NodeRef {
+	fn insert_helper(&mut self, nhot: HotHandle, insert_result: InsertResult, stack: &mut NodeStack) -> FatNode {
 		if let Some((parent, parent_idx)) = stack.pop() {
 			// Get the next node up the stack, loop while we have to modify nodes
 			// TODO: weak references?
-			let parent_handle = parent.to_node_ref();
+			let parent_handle = parent.to_fat_node();
 			// TODO: HotNodes shouldn't work this way. This is lasagna logic
 			let (mut parent_hot, was_copied) = parent_handle.heat();
 			parent_hot.apply_mut(|hn| hn.reassign_child(parent_idx, nhot));
@@ -178,20 +182,20 @@ impl NodeHandle {
 						self.insert_helper_nosplit(parent_hot, stack)
 					} else {
 						// Termination condition, and we have not modified the head node
-						stack.head_or(&parent).to_node_ref()
+						stack.head_or(&parent).to_fat_node()
 					}
 				}
 				InsertResult::Flushed(split_bucket, newnode) => {
 					// This might trigger another flush.
 					let insert_result = parent_hot.apply_mut(
-						|hn| hn.insert_at(parent_idx, split_bucket, Some(NodePtr::new(newnode))));
+						|hn| hn.insert_at(parent_idx, split_bucket, Some(NodePtr::new_transient(newnode))));
 					self.insert_helper(parent_hot, insert_result, stack)
 				}
 			}
 		} else {
 			// We have recursed all the way back to the head node.
-			let mut r = self.to_node_ref();
-			r.assign(nhot);
+			let mut r = self.to_fat_node();
+			r.reassign(nhot);
 
 			match insert_result {
 				InsertResult::Ok => {
@@ -200,14 +204,15 @@ impl NodeHandle {
 				}
 				InsertResult::Flushed(split_bucket, newnode) => {
 					// Need to create a new head node, and return it
-					NodeRef::new(HotNode::new_from_two(NodePtr::wrap(r), split_bucket, NodePtr::new(newnode)))
+					FatNode::new_transient(
+						HotNode::new_from_two(NodePtr::wrap(r), split_bucket, NodePtr::new_transient(newnode)))
 				}
 			}
 		}
 	}
 
-	// TODO: flushed should probably return a NodeRef as its 2nd node return value.
-	pub fn insert<D: Datum>(&mut self, k: &[u8], v: &D) -> NodeRef {
+	// TODO: flushed should probably return a FatNode as its 2nd node return value.
+	pub fn insert<D: Datum>(&mut self, k: &[u8], v: &D) -> FatNode {
 		// TODO use an array stack. Minimize allocs
 		// Depth is 0-indexed
 		let (mut stack, exists) = self.find_node_chain(k);
@@ -217,7 +222,7 @@ impl NodeHandle {
 
 		// Prepare to insert
 		let (node, idx) = stack.pop().unwrap();
-		let _ntmp = node.to_node_ref();
+		let _ntmp = node.to_fat_node();
 		let (mut nhot, _) = _ntmp.heat();
 		let insert_result = nhot.apply_mut(|hn| hn.insert_at(idx, Bucket::new(k, v), None));
 
@@ -225,7 +230,6 @@ impl NodeHandle {
 	}
 
 	// TODO: can we make this iterative?
-	// TODO: should have a ValueAddress
 	pub fn get(&self, k: &[u8]) -> Option<ByteRc> {
 		match self.apply(|n| n.find(k)) {
 			Ok(idx) => Some(self.apply(|n| n.value(idx))),
@@ -241,15 +245,43 @@ impl NodeHandle {
 	}
 }
 
+// // The idea behind having Jobs for everything is we eventually want to put such into Futures.
+
+// /// A job for getting a key.
+// struct GetJob {
+// }
+
+// impl GetJob {
+// 	// TODO: can we make this iterative?
+// 	pub fn get<H>(&self, k: &[u8], h: Handle) -> Option<ByteRc> {
+// 		match self.apply(|n| n.find(k)) {
+// 			Ok(idx) => Some(self.apply(|n| n.value(idx))),
+// 			Err(idx) => {
+// 				if self.apply(HotNode::is_leaf) {
+// 					None
+// 				} else {
+// 					let child = self.child_handle(idx);
+// 					child.get(k)
+// 				}
+// 			},
+// 		}
+// 	}
+// }
+
 // A simple in-memory persistent b-tree.
 pub struct PersistentBTree {
 	head: NodePtr,
+	// TODO: safety check and tests?
+	// The txid of the next transaction to be committed. Should always be one more than the previous one.
+	// TODO: test this invariant.
+	leading_txid: Counter,
 }
 
 impl PersistentBTree {
 	pub fn new() -> PersistentBTree {
 		PersistentBTree {
 			head: NodePtr::empty(),
+			leading_txid: Counter::new(0),
 		}
 	}
 }
@@ -311,11 +343,14 @@ impl CowByteMap for PersistentBTree {
 	type Snap = PersistentSnap;
 
 	fn snap(&mut self) -> Self::Snap {
-		self.head.cool();
+		self.head.cool(self.leading_txid);
+		// We might bump the leading txid even if the transaction does nothing. This is by design.
+		self.leading_txid.inc();
 
 		PersistentSnap {
 			v: PersistentBTree {
 				head: self.head.shallow_clone(),
+				leading_txid: self.leading_txid,
 			}
 		}
 	}

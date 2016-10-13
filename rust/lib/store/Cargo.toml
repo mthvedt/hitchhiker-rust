@@ -4,7 +4,6 @@ version = "0.1.0"
 authors = ["Mike Thvedt <mike.thvedt@gmail.com>"]
 
 [dependencies]
-byteorder = "0.5"
 futures = "0.1"
 
 # TODO: these used by testlib. Need better isolation.

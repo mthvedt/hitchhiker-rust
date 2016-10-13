@@ -8,9 +8,15 @@
 
 mod bucket;
 
+mod counter;
+pub use self::counter::*;
+
 mod hotnode;
 mod nodeptr;
 mod util;
+
+mod traits;
+pub use self::traits::*;
 
 pub mod btree;
 // TODO why don't this work?

@@ -1,8 +1,9 @@
 // TODO might not need byteorder.
-use byteorder::{ByteOrder, LittleEndian};
 use futures;
 
 use data::*;
+
+use tree::Counter;
 
 pub enum ErrorType {
     NotFound,
@@ -75,38 +76,6 @@ pub trait KvStream {
     fn cursor(&self) -> KvCursor<D = Self::D, R = Self::R>;
 }
 */
-
-// TODO: consider perf consequences of making this variable-sized
-// TODO: move to data.rs
-// TODO: if the above, make this u128
-#[derive(PartialEq, Eq, Hash, Clone, Copy)]
-pub struct Counter {
-    // little-endian
-    data: u64,
-}
-
-impl Counter {
-    pub fn new(x: u64) -> Counter {
-        Counter { data: x }
-    }
-
-    pub fn inc(&self) -> Counter {
-        Counter { data: self.data + 1 }
-    }
-}
-
-// TODO impl Key
-impl Datum for Counter {
-    fn len(&self) -> usize {
-        8
-    }
-
-    fn write_bytes<W: DataWrite>(&self, w: W) -> W::Result {
-        let mut tmp = [0 as u8; 8];
-        LittleEndian::write_u64(&mut tmp, self.data);
-        w.write(&tmp)
-    }
-}
 
 // TODO: ???
 // We want ephemeral snapshots to be addressable by pointer, for speed.

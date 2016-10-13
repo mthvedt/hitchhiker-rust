@@ -8,6 +8,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use data::*;
 use traits::*;
 
+use tree::Counter;
+
 /*
 Design of MVP kvs
 

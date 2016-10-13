@@ -7,6 +7,7 @@ use std::ptr;
 use data::{ByteRc, Datum, Key};
 
 use tree::bucket::*;
+use tree::counter::*;
 use tree::nodeptr::*;
 use tree::util::*;
 
@@ -31,7 +32,7 @@ pub enum HotHandle<'a> {
 	// We use a Rc<RefCell> here so it's easier to pass into NodeRef without copying.
 	// Becaues RCs are thin pointers to a {refcount, T} pair, this has very little performance penalty
 	// and saves us a copy when we 'cool' a HotNode.
-	New(Option<&'a NodeRef>, Rc<RefCell<HotNode>>),
+	New(Option<&'a FatNode>, Rc<RefCell<HotNode>>),
 }
 
 impl<'a> HotHandle<'a> {
@@ -46,7 +47,6 @@ impl<'a> HotHandle<'a> {
 	}
 }
 
-/// A HotNode is an in-memory node. It can be modified.
 pub struct HotNode {
 	/// Invariant: between (NODE_CAPACITY - 1) / 2 and NODE_CAPACITY - 1 unless we are the top node,
 	/// in which case this is between 0 and NODE_CAPACITY - 1.
@@ -97,9 +97,9 @@ impl HotNode {
 	}
 
 	/// Immutes this HotNode, recursively immuting its children.
-	pub fn cool(&mut self) {
+	pub fn cool(&mut self, txid: Counter) {
 		for i in 0..(self.bucket_count() as usize + 1) {
-			self.children[i].cool();
+			self.children[i].cool(txid);
 		}
 	}
 
@@ -144,7 +144,7 @@ impl HotNode {
 		&self.children[idx as usize]
 	}
 
-	pub fn child(&self, idx: u16) -> &NodeRef {
+	pub fn child(&self, idx: u16) -> &FatNode {
 		&self.children[idx as usize].unwrap()
 	}
 

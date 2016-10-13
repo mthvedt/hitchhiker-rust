@@ -43,7 +43,7 @@ fn delete_hashmap<V: Verifier>(m: &mut HashMap<Vec<u8>, Vec<u8>>, k: &[u8]) {
 defbench! {
 	// This serves as a smoke test--it should give the same benchmarks as bench_put below.
 	bench_ref_std_map, _t: Testable, b, T, V, {
-		// Note that the seeds are the same as bench_put. This is on purpose.
+		// TODO: use the same rand everywhere.
 		let ks = random_byte_strings(0xC400D969);
 		let vs = random_byte_strings(0x3FB87EE6);
 		let kslices = ks.iter().map(|x| x.as_ref()).collect::<Vec<&[u8]>>();
@@ -78,8 +78,6 @@ defbench! {
 // We also want to record bytes/sec.
 defbench! {
 	bench_put, t: MutableByteMap, b, T, V, {
-		let mut r = b.rand();
-
 		let ks = random_byte_strings(0xBCA2E7D6);
 		let vs = random_byte_strings(0xA8541B4F);
 		// TODO: mix some valid k's into here.

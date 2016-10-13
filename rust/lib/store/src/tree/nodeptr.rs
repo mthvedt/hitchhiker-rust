@@ -6,22 +6,23 @@ use std::ops::Deref;
 use data::{ByteRc, Datum};
 
 use tree::btree::*;
+use tree::counter::*;
 use tree::hotnode::*;
 use tree::util::*;
 
 // TODO: this doesn't deserve its own module. Move to HotNode?
 
 pub struct NodePtr {
-	v: Option<NodeRef>,
+	v: Option<FatNode>,
 }
 
 // TODO this class is redundant
 impl NodePtr {
-	pub fn new(p: HotNode) -> Self {
-		Self::wrap(NodeRef::new(p))
+	pub fn new_transient(p: HotNode) -> Self {
+		Self::wrap(FatNode::new_transient(p))
 	}
 
-	pub fn wrap(p: NodeRef) -> Self {
+	pub fn wrap(p: FatNode) -> Self {
 		NodePtr {
 			v: Some(p),
 		}
@@ -37,26 +38,26 @@ impl NodePtr {
 		self.v.is_none()
 	}
 
-	pub fn deref(&self) -> Option<&NodeRef> {
+	pub fn deref(&self) -> Option<&FatNode> {
 		self.v.as_ref()
 	}
 
-	pub fn unwrap(&self) -> &NodeRef {
+	pub fn unwrap(&self) -> &FatNode {
 		self.v.as_ref().unwrap()
 	}
 
-	pub fn deref_mut(&mut self) -> Option<&mut NodeRef> {
+	pub fn deref_mut(&mut self) -> Option<&mut FatNode> {
 		self.v.as_mut()
 	}
 
-	pub fn unwrap_mut(&mut self) -> &mut NodeRef {
+	pub fn unwrap_mut(&mut self) -> &mut FatNode {
 		self.v.as_mut().unwrap()
 	}
 
 	// Immtues this NodePtr, recurisvely immuting its children.
-	pub fn cool(&mut self) {
+	pub fn cool(&mut self, txid: Counter) {
 		match self.v.as_mut() {
-			Some(noderef) => noderef.cool(),
+			Some(noderef) => noderef.cool(txid),
 			None => (),
 		}
 	}
@@ -71,7 +72,7 @@ impl NodePtr {
 	pub fn insert<D: Datum>(self, k: &[u8], v: &D) -> Self {
 		match self.v {
 			Some(noderef) => Self::wrap(noderef.handle().insert(k, v)),
-			None => Self::new(HotNode::new_from_one(k, v)),
+			None => Self::new_transient(HotNode::new_from_one(k, v)),
 		}
 	}
 
@@ -116,26 +117,35 @@ impl NodePtr {
 	}
 }
 
-/// A container for various kinds of nodes.
-/// TODO: hot things should only be owned by one job at a time.
-pub enum NodeRef {
-	// TODO: either these two arms should be identical, or this shouldn't be RC.
-	Hot(Rc<RefCell<HotNode>>),
-	Warm(Rc<HotNode>),
+#[derive(Clone)]
+pub struct PersistentNode {
+	// TODO this field should be private
+	pub v: Rc<(Counter, HotNode)>,
 }
 
-impl NodeRef {
-	/* Constructors */
-	pub fn new(n: HotNode) -> Self {
-		NodeRef::Hot(Rc::new(RefCell::new(n)))
+impl PersistentNode {
+	fn fork_hot(&self) -> HotNode {
+		self.v.deref().1.fork()
 	}
+}
 
-	// pub fn fork(&self) -> Self {
-	// 	match self {
-	// 		&NodeRef::Hot(_) => panic!("cannot fork a hot node"),
-	// 		&NodeRef::Warm(ref rc) => NodeRef::Warm(rc.clone()),
-	// 	}
-	// }
+/// A fat pointer to a Node. May pin underlying unique or shared resources.
+pub enum FatNode {
+	// Hot(RefCell<Rc<HotNode>>),
+	// TODO shouldn't be RC
+	Transient(Rc<RefCell<HotNode>>),
+	Persistent(PersistentNode),
+}
+
+use self::FatNode::*;
+
+impl FatNode {
+
+	/* Constructors */
+	// TODO shouldn't need
+	pub fn new_transient(n: HotNode) -> Self {
+		Transient(Rc::new(RefCell::new(n)))
+	}
 
 	/* Accessors */
 	pub fn apply<F, R> (&self, f: F) -> R where
@@ -143,72 +153,38 @@ impl NodeRef {
 	{
 		match self {
 			// Same call, different objects. Necessary because of the monomorphism restriction.
-			&NodeRef::Hot(ref w_rfc_hn) => f(w_rfc_hn.deref().borrow().deref()),
-			&NodeRef::Warm(ref w_hn) => f(w_hn.deref()),
+			&Transient(ref rfc_rc_hn) => f(rfc_rc_hn.deref().borrow().deref()),
+			&Persistent(ref pnode) => f(&pnode.v.deref().1),
 		}
 	}
 
+	// TODO: delete me.
 	pub fn handle(&self) -> NodeHandle {
 		match self {
-			&NodeRef::Hot(ref rc_) => NodeHandle::Hot(Rc::downgrade(&rc_)),
-			&NodeRef::Warm(ref rc_) => NodeHandle::Warm(Rc::downgrade(&rc_)),
-		}
-	}
-
-	/// Debug helper for assign/reassign.
-	fn hn_ptr(&self) -> *const HotNode {
-		match self {
-			&NodeRef::Hot(ref rc_rfc_hn) =>  rc_rfc_hn.deref().as_ptr(),
-			&NodeRef::Warm(ref rc_hn) => rc_hn.deref() as *const _,
+			&Transient(ref rc_) => NodeHandle::Hot(Rc::downgrade(&rc_)),
+			&Persistent(ref pnode) => NodeHandle::Warm(Rc::downgrade(&pnode.v)),
 		}
 	}
 
 	/// Reassigns this node ref to the HotNode referred to by the given HotHandle.
-	/// The given HotHandle must be a modified copy of this NodeRef (verified with debug assertions).
+	/// The given HotHandle must point to the same HotNode as this FatNode.
 	// TODO: better implementations for this
 	pub fn reassign(&mut self, h: HotHandle) {
 		match h {
 			HotHandle::Existing(hn_ref) => {
 				// Safety check: A HotHandle::Existing may only be reassigned to itself.
-				if let &mut NodeRef::Hot(ref rc_rfc_hn) = self {
+				if let &mut Transient(ref rc_rfc_hn) = self {
 					let tgt = rc_rfc_hn.deref().as_ptr();
 					let src = hn_ref.deref() as *const _;
 					debug_assert!(ptr_eq(tgt, src),
 						"Mismatch in node reassignment: target {:p}, source {:p}", tgt, src);
 				} else {
-					debug_assert!(false, "Cannot assign an existing HotNode to a warm NodeRef")
+					debug_assert!(false, "Cannot assign an existing HotNode to a persistent FatNode")
 				}
 			}
 			HotHandle::New(h_nref, hn_rc_cell) => {
-				debug_assert!(ptr_eq(self.hn_ptr(), h_nref.unwrap().hn_ptr()));
 				// TODO: can we do self = ?
-				let mut replacement = NodeRef::Hot(hn_rc_cell);
-				mem::swap(&mut replacement, self)
-			}
-		}
-	}
-
-	/// Reassigns this node ref to the HotNode referred to by the given HotHandle.
-	/// The given HotHandle must be a modified copy of the HotNode inside this NodeRef (verified with debug assertions).
-	/// The difference between this fn and reassign is that this fn is intended for creating new NodeRefs with
-	/// modified nodes inside, whereas reassign is for read-modify-write cycles on one NodeRef.
-	pub fn assign(&mut self, h: HotHandle) {
-		match h {
-			HotHandle::Existing(hn_ref) => {
-				// Safety check: A HotHandle::Existing may only be reassigned to itself.
-				if let &mut NodeRef::Hot(ref rc_rfc_hn) = self {
-					let tgt = rc_rfc_hn.deref().as_ptr();
-					let src = hn_ref.deref() as *const _;
-					debug_assert!(ptr_eq(tgt, src),
-						"Mismatch in node reassignment: target {:p}, source {:p}", tgt, src);
-				} else {
-					debug_assert!(false, "Cannot assign an existing HotNode to a warm NodeRef")
-				}
-			}
-			HotHandle::New(h_nref, hn_rc_cell) => {
-				debug_assert!(ptr_eq(self.hn_ptr(), h_nref.unwrap().hn_ptr()));
-				// TODO: can we do self = ?
-				let mut replacement = NodeRef::Hot(hn_rc_cell);
+				let mut replacement = Transient(hn_rc_cell);
 				mem::swap(&mut replacement, self)
 			}
 		}
@@ -219,16 +195,16 @@ impl NodeRef {
 	/// Returns a hot NodeRef which may be modified, together with a reference to that node. May return self.
 	pub fn heat<'a>(&'a self) -> (HotHandle<'a>, bool) {
 		match self {
-			&NodeRef::Hot(ref rc_cell_hn) => (HotHandle::Existing(rc_cell_hn.as_ref().borrow_mut()), false),
-			&NodeRef::Warm(ref rc_hn) => {
-				let newnode: HotNode = (*rc_hn).fork();
+			&Transient(ref rc_cell_hn) => (HotHandle::Existing(rc_cell_hn.as_ref().borrow_mut()), false),
+			&Persistent(ref pnode) => {
+				let newnode: HotNode = pnode.fork_hot();
 				(HotHandle::New(Some(self), Rc::new(RefCell::new(newnode))), true)
 			}
 		}
 	}
 
 	/// Immutes this NodeRef, recursively immuting its children.
-	pub fn cool(&mut self) {
+	pub fn cool(&mut self, txid: Counter) {
 		// Bunch of footwork so we can modify ourselves in place without breaking mut safety.
 		// Who knows if this optimizes correctly?
 		let mut oldself = unsafe { mem::uninitialized() };
@@ -238,13 +214,15 @@ impl NodeRef {
 
 		// destroys oldself
 		match oldself {
-			NodeRef::Hot(rc_cell_hn) => {
+			Transient(rc_cell_hn) => {
 				let mut hn = Rc::try_unwrap(rc_cell_hn).ok().unwrap().into_inner();
-				hn.cool();
-				newself = NodeRef::Warm(Rc::new(hn));
+				hn.cool(txid);
+				newself = Persistent(PersistentNode {
+					v: Rc::new((txid, hn)),
+				});
 			}
-			NodeRef::Warm(x) => {
-				newself = NodeRef::Warm(x);
+			Persistent(x) => {
+				newself = Persistent(x);
 			}
 		}
 
@@ -253,10 +231,10 @@ impl NodeRef {
 		mem::forget(newself);
 	}
 
-	pub fn shallow_clone(&self) -> NodeRef {
+	pub fn shallow_clone(&self) -> FatNode {
 		match self {
-			&NodeRef::Hot(ref _x) => panic!("cannot shallow_clone a hot node"),
-			&NodeRef::Warm(ref rc_) => NodeRef::Warm(rc_.clone()),
+			&Transient(ref _x) => panic!("cannot shallow_clone a hot node"),
+			&Persistent(ref pnode) => Persistent(pnode.clone()),
 		}
 	}
 
@@ -314,24 +292,25 @@ impl NodeRef {
 	// 	}
 	// }
 
-	fn is_hot(&self) -> bool {
+	fn is_transient(&self) -> bool {
 		match self {
-			&NodeRef::Hot(_) => true,
-			&NodeRef::Warm(_) => false,
+			&Transient(_) => true,
+			&Persistent(_) => false,
 		}
 	}
 
 	fn check_invariants(&self) {
-		self.check_invariants_helper(None, None, self.is_hot(), true)
+		self.check_invariants_helper(None, None, self.is_transient(), true)
 	}
 
 	pub fn check_invariants_helper(&self, parent_lower_bound: Option<&[u8]>, parent_upper_bound: Option<&[u8]>,
-		is_hot: bool, recurse: bool) {
+		is_transient: bool, recurse: bool) {
 
-		if !is_hot && self.is_hot() {
+		if !is_transient && self.is_transient() {
 			panic!("failed invariant: child of immutable node is hot");
 		} else {
-			self.apply(|n| n.check_invariants_helper(parent_lower_bound, parent_upper_bound, self.is_hot(), recurse));
+			self.apply(|n| n.check_invariants_helper(parent_lower_bound, parent_upper_bound, self.is_transient(),
+				recurse));
 		}
 	}
 }

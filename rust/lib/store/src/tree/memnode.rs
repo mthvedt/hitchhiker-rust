@@ -1,7 +1,11 @@
+//! memnode.rs
+//!
+//! An in-memory, modifiable node.
+
 use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
 use std::mem;
-use std::ops::DerefMut;
+use std::ops::{Deref, DerefMut};
 use std::ptr;
 
 use data::{ByteRc, Datum, Key};
@@ -9,35 +13,93 @@ use data::{ByteRc, Datum, Key};
 use tree::bucket::*;
 use tree::counter::*;
 use tree::nodeptr::*;
+use tree::noderef::*;
 use tree::util::*;
 
+/// TODO deftype for idx's
+
+/// The max capacity of a MemNode.
 const NODE_CAPACITY: u16 = 16;
+
+/// A simple pointer used internally by MemNode.
+/// This class was historically introduced because of over-strong coupling between
+/// MemNode's internals and client classes. Now, it's a simple Option,
+/// but we leave it around.
+///
+/// We could replace this with a humble value (either in debug or all configs), but we find that
+/// unlikely to yield major perf improvements. But who knows.
+struct MemPtr<T> {
+    v: Option<T>,
+}
+
+impl<T> MemPtr<T> {
+    pub fn empty() -> Self {
+        MemPtr {
+            v: None,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.v.is_none()
+    }
+
+    pub fn wrap(t: T) -> Self {
+        MemPtr { v: Some(t), }
+    }
+
+    // TODO: can we avoid this? clone should work just as good for referent types
+    pub fn unwrap(self) -> T {
+    	self.v.unwrap()
+    }
+}
+
+impl<T> Deref for MemPtr<T> {
+	type Target = T;
+
+	fn deref(&self) -> &Self::Target {
+		self.v.as_ref().unwrap()
+	}
+}
+
+impl<T> DerefMut for MemPtr<T> {
+	fn deref_mut(&mut self) -> &mut Self::Target {
+		self.v.as_mut().unwrap()
+	}
+}
+
+impl<T> Clone for MemPtr<T> where T: Clone {
+	fn clone(&self) -> Self {
+		MemPtr {
+			v: self.v.clone(),
+		}
+	}
+}
 
 // TODO: the heirarchy: disk has no deps on hot
 
 // TODO can specialize these a bit
-/// The result of inserting into a HotNode. Occasionally, nodes need to "split"
+/// The result of inserting into a MemNode. Occasionally, nodes need to "split"
 /// into separate nodes.
 pub enum InsertResult {
 	Ok,
-	Flushed(Bucket, HotNode),
+	Flushed(Bucket, MemNode),
 }
 
 /// A handle to a hot node which can be quickly dereferenced. Note that it's lifetimed--
 /// HotHandles are intended to be ephemeral.
 pub enum HotHandle<'a> {
-	Existing(RefMut<'a, HotNode>),
+	Existing(RefMut<'a, MemNode>),
 	// The NodeRef is used for debug assertions. It is forbidden to reassign a NodeRef to a HotHandle
 	// that did not 'come from' that NodeRef.
 	// We use a Rc<RefCell> here so it's easier to pass into NodeRef without copying.
 	// Becaues RCs are thin pointers to a {refcount, T} pair, this has very little performance penalty
-	// and saves us a copy when we 'cool' a HotNode.
-	New(Option<&'a FatNode>, Rc<RefCell<HotNode>>),
+	// and saves us a copy when we 'cool' a MemNode.
+	New(Option<&'a FatNodeRef>, Rc<RefCell<MemNode>>),
 }
 
 impl<'a> HotHandle<'a> {
-	/// Do something to the referenced HotNode.
-	pub fn apply_mut<F, R> (&mut self, f: F) -> R where F: FnOnce(&mut HotNode) -> R
+	/// Do something to the referenced MemNode.
+	pub fn apply_mut<F, R> (&mut self, f: F) -> R where F: FnOnce(&mut MemNode) -> R
 	{
 		match self {
 			// Same call, different objects. Necessary because of the monomorphism restriction.
@@ -47,7 +109,7 @@ impl<'a> HotHandle<'a> {
 	}
 }
 
-pub struct HotNode {
+pub struct MemNode {
 	/// Invariant: between (NODE_CAPACITY - 1) / 2 and NODE_CAPACITY - 1 unless we are the top node,
 	/// in which case this is between 0 and NODE_CAPACITY - 1.
 	/// When split, this is between 0 and NODE_CAPACITY - 2.
@@ -56,21 +118,22 @@ pub struct HotNode {
 	/// Invariant: the buckets in the interval [0, bucket_count) are populated,
 	/// all others are not.
 	// TODO: We don't need to use nullable pointers; we can use uninitialized data instead.
-    buckets: [BucketPtr; NODE_CAPACITY as usize - 1],
+    buckets: [MemPtr<Bucket>; NODE_CAPACITY as usize - 1],
 	/// Invariant: If this is a leaf, all children are empty. Otherwise, child_count == bucket_count = 1.
-    children: [NodePtr; NODE_CAPACITY as usize],
+    children: [MemPtr<FatNodeRef>; NODE_CAPACITY as usize],
 }
 
-impl HotNode {
+// TODO: rename MemNode -> MemNode
+impl MemNode {
 	/* Constructors */
-	pub fn empty() -> HotNode {
+	pub fn empty() -> MemNode {
 		unsafe {
-			HotNode {
+			MemNode {
 				// height: 0,
 				bucket_count: 0,
-				// We could use mem::uninitialized, but this is a test class.
-        	    buckets: make_array!(|_| BucketPtr::empty(), (NODE_CAPACITY - 1) as usize),
-       	    	children: make_array!(|_| NodePtr::empty(), NODE_CAPACITY as usize),
+				// using mem::uninitialized might be faster
+        	    buckets: make_array!(|_| MemPtr::empty(), (NODE_CAPACITY - 1) as usize),
+       	    	children: make_array!(|_| MemPtr::empty(), NODE_CAPACITY as usize),
        	    	// children: make_array!(|_| None, NODE_CAPACITY as usize),
         	    // TODO
        	    	// children: make_array!(|_| TC::RefCellT<NodePtr::empty()>, NODE_CAPACITY as usize),
@@ -78,46 +141,46 @@ impl HotNode {
 		}
 	}
 
-	pub fn new_from_one<V: Datum>(k: &[u8], v: &V) -> HotNode {
-		let mut r = Self::empty();
-		r.buckets[0] = BucketPtr::wrap(Bucket::new(k, v));
-		r.bucket_count = 1;
-		r
-	}
-
-	pub fn new_from_two(n1: NodePtr, b1: Bucket, n2: NodePtr) -> HotNode {
+	pub fn new_from_one(b: Bucket) -> MemNode {
 		let mut r = Self::empty();
 
-		r.buckets[0] = BucketPtr::wrap(b1);
-		r.children[0] = n1;
-		r.children[1] = n2;
+		r.buckets[0] = MemPtr::wrap(b);
 		r.bucket_count = 1;
 
 		r
 	}
 
-	/// Immutes this HotNode, recursively immuting its children.
+	pub fn new_from_two(n1: FatNodeRef, b1: Bucket, n2: FatNodeRef) -> MemNode {
+		let mut r = Self::empty();
+
+		r.buckets[0] = MemPtr::wrap(b1);
+		r.children[0] = MemPtr::wrap(n1);
+		r.children[1] = MemPtr::wrap(n2);
+		r.bucket_count = 1;
+
+		r
+	}
+
+	/// Immutes this MemNode, recursively immuting its children.
 	pub fn cool(&mut self, txid: Counter) {
-		for i in 0..(self.bucket_count() as usize + 1) {
+		for i in 0..self.child_count() as usize {
 			self.children[i].cool(txid);
 		}
 	}
 
-	/// Creates a copy of this HotNode. For this to make sense, this node must be immutable.
-	pub fn fork(&self) -> HotNode {
+	/// Creates a copy of this MemNode. For this to make sense, the current node must be immutable.
+	pub fn fork(&self) -> MemNode {
 		// Right now, this is a poor man's Clone.
 		let mut r = Self::empty();
 
 		r.bucket_count = self.bucket_count;
 
-		for i in 0..self.bucket_count as usize {
+		for i in 0..self.bucket_count() as usize {
 			r.buckets[i] = self.buckets[i].clone();
 		}
 
-		if !self.is_leaf() {
-			for i in 0..self.bucket_count as usize + 1 {
-				r.children[i] = self.children[i].shallow_clone();
-			}
+		for i in 0..self.child_count() as usize {
+			r.children[i] = MemPtr::wrap(self.children[i].shallow_clone());
 		}
 
 		r
@@ -128,27 +191,44 @@ impl HotNode {
 		self.bucket_count
 	}
 
-	fn key(&self, idx: u16) -> &[u8] {
-		self.buckets[idx as usize].key()
+	fn child_count(&self) -> u16 {
+		if self.is_leaf() {
+			0
+		} else {
+			self.bucket_count + 1
+		}
 	}
 
-	pub fn value(&self, idx: u16) -> ByteRc {
-		self.buckets[idx as usize].value_address()
-	}
-
-	fn bucket_ptr(&self, idx: u16) -> &BucketPtr {
+	fn bucket_ptr(&self, idx: u16) -> &MemPtr<Bucket> {
 		&self.buckets[idx as usize]
 	}
 
-	fn child_ptr(&self, idx: u16) -> &NodePtr {
+	fn key(&self, idx: u16) -> &[u8] {
+		self.bucket_ptr(idx).deref().k.bytes()
+	}
+
+	/// Gets the value associated at a particular index.
+	// TODO: should this be generic on node?
+	pub fn value(&self, idx: u16) -> &ByteRc {
+		&self.bucket_ptr(idx).deref().v
+	}
+
+	// fn bucket_ptr(&self, idx: u16) -> &BucketPtr {
+	// 	&self.buckets[idx as usize]
+	// }
+
+	// fn child_ptr(&self, idx: u16) -> &NodePtr {
+	// 	&self.children[idx as usize]
+	// }
+
+	fn child_ptr(&self, idx: u16) -> &MemPtr<FatNodeRef> {
 		&self.children[idx as usize]
 	}
 
-	pub fn child(&self, idx: u16) -> &FatNode {
-		&self.children[idx as usize].unwrap()
+	// TODO: return weak instead
+	pub fn child_ref(&self, idx: u16) -> &FatNodeRef {
+		self.child_ptr(idx).deref()
 	}
-
-	/* Thermodynamic mutators */
 
 	/* Basic helpers */
 	pub fn is_leaf(&self) -> bool {
@@ -169,7 +249,7 @@ impl HotNode {
 	pub fn find(&self, k: &[u8]) -> Result<u16, u16> {
 		// TODO: we can make this faster with a subslice.
 		self.buckets[0..(self.bucket_count() as usize)]
-		.binary_search_by(|bp| bp.key().bytes().cmp(k))
+		.binary_search_by(|bp| bp.deref().k.bytes().cmp(k))
 		.map(|x| x as u16)
 		.map_err(|x| x as u16)
 	}
@@ -186,8 +266,8 @@ impl HotNode {
 	/// Returns: If this node was split, the bucket and node pointer that should be inserted into a parent node.
 	/// Note that the bucket should be this node's new parent bucket, and the new node should inherit the old bucket.
 
-	// TODO: figure out how not to copy HotNode. Box it?
-	pub fn split(&mut self) -> (Bucket, HotNode) {
+	// TODO: figure out how not to copy MemNode. Box it?
+	pub fn split(&mut self) -> (Bucket, MemNode) {
 		debug_assert!(self.needs_split());
 
 		let bucket_count = self.bucket_count as usize;
@@ -211,7 +291,7 @@ impl HotNode {
 
 		// Now our children are divided among two nodes. This leaves an extra bucket, which we return
 		// so the parent node can do something with it.
-		let mut bp = BucketPtr::empty();
+		let mut bp = MemPtr::empty();
 		mem::swap(&mut bp, &mut self.buckets[split_idx]);
 
 		// We are done, time to return.
@@ -224,12 +304,13 @@ impl HotNode {
 	}
 
 	// TODO: can we avoid passing the new node on the stack?
-	fn insert_unchecked(&mut self, idx: u16, b: Bucket, right_child: Option<NodePtr>) {
-		rotate_in(&mut BucketPtr::wrap(b), &mut self.buckets[(idx as usize)..(self.bucket_count as usize + 1)]);
+	fn insert_unchecked(&mut self, idx: u16, b: Bucket, right_child: Option<FatNodeRef>) {
+		rotate_in(&mut MemPtr::wrap(b), &mut self.buckets[(idx as usize)..(self.bucket_count as usize + 1)]);
 		match right_child {
 			Some(mut nptr) => {
 				// TODO: debug assertions about nptr
-				rotate_in(&mut nptr, &mut self.children[(idx as usize + 1)..(self.bucket_count as usize + 2)]);
+				rotate_in(&mut MemPtr::wrap(nptr),
+					&mut self.children[(idx as usize + 1)..(self.bucket_count as usize + 2)]);
 			}
 			None => (),
 		}
@@ -239,7 +320,8 @@ impl HotNode {
 	/// Requirements: b.key is between bucket[idx].key and bucket[idx + 1].key, if the latter exists,
 	/// or merely greater than bucket[idx].key if not.
 	/// The values in right_child are *greater* than b.key, and less than bucket[idx + 1].key.
-	pub fn insert_at(&mut self, idx: u16, b: Bucket, right_child: Option<NodePtr>) -> InsertResult {
+	// TODO: FatNodeRef shouldnt be pub
+	pub fn insert_at(&mut self, idx: u16, b: Bucket, right_child: Option<FatNodeRef>) -> InsertResult {
 		debug_assert!(self.is_leaf() == right_child.is_none());
 
 		if self.needs_split() {
@@ -260,7 +342,7 @@ impl HotNode {
 	}
 
 	pub fn reassign_child(&mut self, idx: u16, n: HotHandle) {
-		self.children[idx as usize].unwrap_mut().reassign(n)
+		self.children[idx as usize].deref_mut().reassign(n)
 	}
 
 	/* Get helpers */
@@ -564,7 +646,7 @@ impl HotNode {
 						upper_bound = Some(self.key(i));
 					}
 
-					self.child(i).check_invariants_helper(lower_bound, upper_bound, is_hot, recurse);
+					self.child_ref(i).apply(|n| n.check_invariants_helper(lower_bound, upper_bound, is_hot, recurse));
 				}
 			}
 		}

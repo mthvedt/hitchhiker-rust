@@ -8,9 +8,9 @@ use data::*;
 
 use tree::bucket::*;
 use tree::counter::*;
-use tree::hotnode::*;
+use tree::memnode::*;
+use tree::noderef::*;
 use tree::nodeptr::*;
-use tree::traits::*;
 
 const MAX_DEPTH: u8 = 32;
 
@@ -79,24 +79,24 @@ impl NodeStack {
 
 /// A handle to a ready node which can be quickly dereferenced. The existence of this handle
 /// may pin resources.
-/// TODO: delete this class, use pointers to FatNodes. Rc in debug, raw in release.
+/// TODO: delete this class, use pointers to FatNodeRefs. Rc in debug, raw in release.
 #[derive(Clone)]
 pub enum NodeHandle {
  	// TODO: something faster. Ideal situation is a head snapshot/job pointer and a raw pointer.
-	Hot(Weak<RefCell<HotNode>>),
+	Hot(Weak<RefCell<MemNode>>),
 	// TODO: shouldn't expose PersistentNode inner like this.
-	Warm(Weak<(Counter, HotNode)>),
+	Warm(Weak<PersistentNode>),
 }
 
 impl NodeHandle {
-	fn to_fat_node(&self) -> FatNode {
+	fn to_fat_node(&self) -> FatNodeRef {
 		match self {
-			&NodeHandle::Hot(ref w_) => FatNode::Transient(w_.upgrade().unwrap()),
-			&NodeHandle::Warm(ref w_) => FatNode::Persistent(PersistentNode{ v: w_.upgrade().unwrap() }),
+			&NodeHandle::Hot(ref w_) => FatNodeRef::Transient(w_.upgrade().unwrap()),
+			&NodeHandle::Warm(ref w_) => FatNodeRef::Persistent(w_.upgrade().unwrap()),
 		}
 	}
 
-	pub fn apply<F, R> (&self, f: F) -> R where F: for<'x> FnOnce(&'x HotNode) -> R,
+	pub fn apply<F, R> (&self, f: F) -> R where F: for<'x> FnOnce(&'x MemNode) -> R,
 	{
 		match self {
 			&NodeHandle::Hot(ref w_rfc_hn) => {
@@ -105,12 +105,12 @@ impl NodeHandle {
 				let r = f(x.deref().borrow().deref());
 				r
 			}
-			&NodeHandle::Warm(ref w_hn) => f(&w_hn.upgrade().unwrap().deref().deref().1),
+			&NodeHandle::Warm(ref w_n) => f(&w_n.upgrade().unwrap().deref().deref().node),
 		}
 	}
 
 	fn child_handle(&self, idx: u16) -> NodeHandle {
-		self.apply(|hn| hn.child(idx).handle())
+		self.apply(|hn| hn.child_ref(idx).handle())
 	}
 
 	/* CRUD */
@@ -127,7 +127,7 @@ impl NodeHandle {
 			Err(idx) => {
 				stack.push(self.clone(), idx);
 
-				if self.apply(HotNode::is_leaf) {
+				if self.apply(MemNode::is_leaf) {
 					false
 				} else {
 					let child = self.child_handle(idx);
@@ -144,7 +144,7 @@ impl NodeHandle {
 	}
 
 	/// Precondition: self is the head node.
-	fn insert_helper_nosplit(&mut self, nhot: HotHandle, stack: &mut NodeStack) -> FatNode {
+	fn insert_helper_nosplit(&mut self, nhot: HotHandle, stack: &mut NodeStack) -> FatNodeRef {
 		if let Some((parent, parent_idx)) = stack.pop() {
 			let parent_handle = parent.to_fat_node();
 			let (mut parent_hot, was_copied) = parent_handle.heat();
@@ -165,12 +165,12 @@ impl NodeHandle {
 	}
 
 	// TODO: figure out how to have a simple return thingy
-	fn insert_helper(&mut self, nhot: HotHandle, insert_result: InsertResult, stack: &mut NodeStack) -> FatNode {
+	fn insert_helper(&mut self, nhot: HotHandle, insert_result: InsertResult, stack: &mut NodeStack) -> FatNodeRef {
 		if let Some((parent, parent_idx)) = stack.pop() {
 			// Get the next node up the stack, loop while we have to modify nodes
 			// TODO: weak references?
 			let parent_handle = parent.to_fat_node();
-			// TODO: HotNodes shouldn't work this way. This is lasagna logic
+			// TODO: MemNodes shouldn't work this way. This is lasagna logic
 			let (mut parent_hot, was_copied) = parent_handle.heat();
 			parent_hot.apply_mut(|hn| hn.reassign_child(parent_idx, nhot));
 
@@ -188,7 +188,7 @@ impl NodeHandle {
 				InsertResult::Flushed(split_bucket, newnode) => {
 					// This might trigger another flush.
 					let insert_result = parent_hot.apply_mut(
-						|hn| hn.insert_at(parent_idx, split_bucket, Some(NodePtr::new_transient(newnode))));
+						|hn| hn.insert_at(parent_idx, split_bucket, Some(FatNodeRef::new_transient(newnode))));
 					self.insert_helper(parent_hot, insert_result, stack)
 				}
 			}
@@ -204,15 +204,15 @@ impl NodeHandle {
 				}
 				InsertResult::Flushed(split_bucket, newnode) => {
 					// Need to create a new head node, and return it
-					FatNode::new_transient(
-						HotNode::new_from_two(NodePtr::wrap(r), split_bucket, NodePtr::new_transient(newnode)))
+					FatNodeRef::new_transient(
+						MemNode::new_from_two(r, split_bucket, FatNodeRef::new_transient(newnode)))
 				}
 			}
 		}
 	}
 
-	// TODO: flushed should probably return a FatNode as its 2nd node return value.
-	pub fn insert<D: Datum>(&mut self, k: &[u8], v: &D) -> FatNode {
+	// TODO: flushed should probably return a FatNodeRef as its 2nd node return value.
+	pub fn insert<D: Datum>(&mut self, k: &[u8], v: &D) -> FatNodeRef {
 		// TODO use an array stack. Minimize allocs
 		// Depth is 0-indexed
 		let (mut stack, exists) = self.find_node_chain(k);
@@ -232,9 +232,9 @@ impl NodeHandle {
 	// TODO: can we make this iterative?
 	pub fn get(&self, k: &[u8]) -> Option<ByteRc> {
 		match self.apply(|n| n.find(k)) {
-			Ok(idx) => Some(self.apply(|n| n.value(idx))),
+			Ok(idx) => Some(self.apply(|n| n.value(idx).clone())),
 			Err(idx) => {
-				if self.apply(HotNode::is_leaf) {
+				if self.apply(MemNode::is_leaf) {
 					None
 				} else {
 					let child = self.child_handle(idx);
@@ -257,7 +257,7 @@ impl NodeHandle {
 // 		match self.apply(|n| n.find(k)) {
 // 			Ok(idx) => Some(self.apply(|n| n.value(idx))),
 // 			Err(idx) => {
-// 				if self.apply(HotNode::is_leaf) {
+// 				if self.apply(MemNode::is_leaf) {
 // 					None
 // 				} else {
 // 					let child = self.child_handle(idx);

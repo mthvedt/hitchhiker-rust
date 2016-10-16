@@ -10,7 +10,6 @@ use tree::bucket::*;
 use tree::counter::*;
 use tree::memnode::*;
 use tree::noderef::*;
-use tree::nodeptr::*;
 
 const MAX_DEPTH: u8 = 32;
 
@@ -270,7 +269,8 @@ impl NodeHandle {
 
 // A simple in-memory persistent b-tree.
 pub struct PersistentBTree {
-	head: NodePtr,
+	// TODO: this shouldn't be an option.
+	head: Option<FatNodeRef>,
 	// TODO: safety check and tests?
 	// The txid of the next transaction to be committed. Should always be one more than the previous one.
 	// TODO: test this invariant.
@@ -280,7 +280,7 @@ pub struct PersistentBTree {
 impl PersistentBTree {
 	pub fn new() -> PersistentBTree {
 		PersistentBTree {
-			head: NodePtr::empty(),
+			head: None,
 			leading_txid: Counter::new(0),
 		}
 	}
@@ -291,20 +291,34 @@ impl ByteMap for PersistentBTree {
 	type Get = ByteRc;
 
 	fn get<K: Key + ?Sized>(&mut self, k: &K) -> Option<Self::Get> {
-		self.head.get(k.bytes())
+		match self.head.as_ref() {
+			Some(nref) => nref.handle().get(k.bytes()),
+			None => None,
+		}
 	}
 
 	fn check_invariants(&self) {
-		self.head.check_invariants();
+		match self.head.as_ref() {
+			Some(nref) => nref.check_invariants(),
+			None => (),
+		}
 	}
 }
 
 impl MutableByteMap for PersistentBTree {
 	fn insert<K: Key + ?Sized, V: Datum>(&mut self, k: &K, v: &V) -> () {
-		// Dummy to make the compiler behave. Since we're dealing in Options and Boxes, shouldn't have a runtime cost.
-		let mut dummy = NodePtr::empty();
-		mem::swap(&mut dummy, &mut self.head);
-		self.head = dummy.insert(k.bytes(), v);
+		let newhead;
+
+		match self.head.as_ref() {
+			Some(noderef) => {
+				newhead = noderef.handle().insert(k.bytes(), v);
+			}
+			None => {
+				newhead = FatNodeRef::new_transient(MemNode::new_from_one(Bucket::new(k.bytes(), v)))
+			}
+		}
+
+		self.head = Some(newhead);
 	}
 
 	// fn delete<K: Key + ?Sized>(&mut self, k: &K) -> bool {
@@ -343,13 +357,24 @@ impl CowByteMap for PersistentBTree {
 	type Snap = PersistentSnap;
 
 	fn snap(&mut self) -> Self::Snap {
-		self.head.cool(self.leading_txid);
+		let cloned_head;
+
+		match self.head.as_mut() {
+			Some(nref) => {
+				nref.cool(self.leading_txid);
+				cloned_head = Some(nref.shallow_clone());
+			}
+			None => {
+				cloned_head = None;
+			}
+		}
+
 		// We might bump the leading txid even if the transaction does nothing. This is by design.
 		self.leading_txid.inc();
 
 		PersistentSnap {
 			v: PersistentBTree {
-				head: self.head.shallow_clone(),
+				head: cloned_head,
 				leading_txid: self.leading_txid,
 			}
 		}

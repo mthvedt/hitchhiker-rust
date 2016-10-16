@@ -12,7 +12,6 @@ use data::{ByteRc, Datum, Key};
 
 use tree::bucket::*;
 use tree::counter::*;
-use tree::nodeptr::*;
 use tree::noderef::*;
 use tree::util::*;
 

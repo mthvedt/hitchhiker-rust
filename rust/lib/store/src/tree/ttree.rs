@@ -41,15 +41,15 @@ Simpler idea: recursive tree with tracing GC
 */
 
 // Tracks DB stats.
-enum TopInfo {
+// enum TopInfo {
 
-}
+// }
 
-trait NodeHeader {
+// trait NodeHeader {
 
-}
+// }
 
-trait HotNode {
-	fn prefix(&self) -> PrefixKey;
-	fn find(&self, k: PartialKey) -> Option<NodeHeaderHandle>;
-}
+// trait HotNode {
+// 	fn prefix(&self) -> PrefixKey;
+// 	fn find(&self, k: PartialKey) -> Option<NodeHeaderHandle>;
+// }

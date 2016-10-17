@@ -353,7 +353,7 @@ defbench! {
 // }
 
 defbench! {
-	bench_snapshots_frequent, t: CowByteMap, b, T, V, {
+	bench_snapshots_frequent, t: FunctionalByteMap, b, T, V, {
 		let mut r = b.rand();
 
 		let ks = random_byte_strings(0xBCA2E7D6);

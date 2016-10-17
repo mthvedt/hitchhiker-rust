@@ -34,8 +34,16 @@ pub trait MutableByteMap: ByteMap {
 	fn delete<K: Key + ?Sized>(&mut self, k: &K) -> bool;
 }
 
-pub trait CowByteMap: MutableByteMap {
-	type Snap: ByteMap;
+pub trait ByteMapSnapshot: ByteMap {
+	type Diff: ByteMap;
+
+	fn txid(&self) -> Counter;
+
+	fn diff(&self, past: Counter) -> Self::Diff;
+}
+
+pub trait FunctionalByteMap: MutableByteMap {
+	type Snap: ByteMapSnapshot;
 
 	fn snap(&mut self) -> Self::Snap;
 }
@@ -209,10 +217,12 @@ mod btree_insert {
 mod btree_get {
 	use data::*;
 
+	use tree::counter::*;
 	use tree::memnode::*;
 	use tree::noderef::{HotHandle, NodeRef};
 
-	pub fn get(mut n: NodeRef, k: &[u8]) -> Option<ByteRc> {
+	fn get_helper<F>(mut n: NodeRef, k: &[u8], filter: F) -> Option<ByteRc>
+	where F: Fn(&NodeRef) -> bool {
 		loop {
 			match n.apply(|node| node.find(k)) {
 				Ok(idx) => {
@@ -228,14 +238,23 @@ mod btree_get {
 			}
 		}
 	}
+
+	pub fn get(n: NodeRef, k: &[u8]) -> Option<ByteRc> {
+		get_helper(n, k, |_| true)
+	}
+
+	pub fn get_recent(mut n: NodeRef, k: &[u8], trailing_txid: Counter) -> Option<ByteRc> {
+		get_helper(n, k, |_| true)
+	}
 }
 
 // A simple in-memory persistent b-tree.
+// TODO: naming. Transient, persistent. Two separate structs maybe?
 pub struct PersistentBTree {
 	// TODO: this shouldn't be an option.
 	head: Option<FatNodeRef>,
-	// TODO: safety check and tests?
-	// The txid of the next transaction to be committed. Should always be one more than the previous one.
+	/// Gets the max txid of this PersistentBTree (exclusive). The next transient material to be persisted
+	/// will have this txid.
 	// TODO: test this invariant.
 	leading_txid: Counter,
 }
@@ -247,6 +266,44 @@ impl PersistentBTree {
 			leading_txid: Counter::new(0),
 		}
 	}
+
+	/// Gets the max txid of this PersistentBTree (exclusive).
+	fn txid(&self) -> Counter {
+		self.leading_txid
+	}
+
+	/// Internal method for snapshot diffs.
+	fn get_recent<K: Key + ?Sized>(&mut self, k: &K, trailing_txid: Counter) -> Option<ByteRc> {
+		self.head.as_ref().and_then(|strongref| btree_get::get_recent(strongref.noderef(), k.bytes(), trailing_txid))
+	}
+
+	/// Makes a persistent clone of this PersistentBTree. Does *not* update the current txid, of course.
+	fn shallow_clone(&mut self) -> Self {
+		let cloned_head;
+
+		match self.head.as_mut() {
+			Some(strongref) => {
+				strongref.cool(self.leading_txid);
+				cloned_head = Some(strongref.shallow_clone());
+			}
+			None => {
+				cloned_head = None;
+			}
+		}
+
+		PersistentBTree {
+			head: cloned_head,
+			leading_txid: self.leading_txid,
+		}
+	}
+
+	/// Like shallow clone, except not mutable. Panics if this tree is not persistent.
+	fn persistent_clone(&self) -> Self {
+		PersistentBTree {
+			head: self.head.as_ref().map(|strongref| strongref.shallow_clone()),
+			leading_txid: self.leading_txid,
+		}
+	}
 }
 
 impl ByteMap for PersistentBTree {
@@ -254,17 +311,11 @@ impl ByteMap for PersistentBTree {
 	type Get = ByteRc;
 
 	fn get<K: Key + ?Sized>(&mut self, k: &K) -> Option<Self::Get> {
-		match self.head.as_ref() {
-			Some(strongref) => btree_get::get(strongref.noderef(), k.bytes()),
-			None => None,
-		}
+		self.head.as_ref().and_then(|strongref| btree_get::get(strongref.noderef(), k.bytes()))
 	}
 
 	fn check_invariants(&self) {
-		match self.head.as_ref() {
-			Some(strongref) => strongref.check_invariants(),
-			None => (),
-		}
+		self.head.as_ref().map(|strongref| strongref.check_invariants());
 	}
 }
 
@@ -297,6 +348,25 @@ impl MutableByteMap for PersistentBTree {
 	}
 }
 
+pub struct PersistentDiff {
+	v: PersistentBTree,
+	rear_counter: Counter,
+}
+
+impl ByteMap for PersistentDiff {
+	type GetDatum = <PersistentBTree as ByteMap>::GetDatum;
+	type Get = <PersistentBTree as ByteMap>::Get;
+
+	fn get<K: Key + ?Sized>(&mut self, k: &K) -> Option<Self::Get> {
+		self.v.get_recent(k, self.rear_counter)
+	}
+
+	fn check_invariants(&self) {
+		// TODO: likely overkill
+		self.v.check_invariants()
+	}
+}
+
 // PersistentBTrees can serve as snapshots, as long as we don't try to write to a persistent node.
 pub struct PersistentSnap {
 	v: PersistentBTree,
@@ -315,31 +385,33 @@ impl ByteMap for PersistentSnap {
 	}
 }
 
-impl CowByteMap for PersistentBTree {
+impl ByteMapSnapshot for PersistentSnap {
+	type Diff = PersistentDiff;
+
+	fn txid(&self) -> Counter {
+		self.v.txid()
+	}
+
+	fn diff(&self, past: Counter) -> Self::Diff {
+		// TODO assertions about the counter
+		PersistentDiff {
+			v: self.v.persistent_clone(),
+			rear_counter: past,
+		}
+	}
+}
+
+impl FunctionalByteMap for PersistentBTree {
 	// I N C E P T I O N
 	type Snap = PersistentSnap;
 
 	fn snap(&mut self) -> Self::Snap {
-		let cloned_head;
-
-		match self.head.as_mut() {
-			Some(strongref) => {
-				strongref.cool(self.leading_txid);
-				cloned_head = Some(strongref.shallow_clone());
-			}
-			None => {
-				cloned_head = None;
-			}
-		}
-
+		let clone = self.shallow_clone();
 		// We might bump the leading txid even if the transaction does nothing. This is by design.
 		self.leading_txid.inc();
 
 		PersistentSnap {
-			v: PersistentBTree {
-				head: cloned_head,
-				leading_txid: self.leading_txid,
-			}
+			v: clone,
 		}
 	}
 }

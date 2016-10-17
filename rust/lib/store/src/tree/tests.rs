@@ -56,7 +56,7 @@ fn smoke_test_delete<T: MutableByteMap>(t: &mut T) {
 	t.check_invariants();
 }
 
-fn smoke_test_snapshot<T: CowByteMap>(t: &mut T) {
+fn smoke_test_snapshot<T: FunctionalByteMap>(t: &mut T) {
 	t.insert("foo".as_bytes(), &"bar".into_datum());
 	test_get_str(t, "foo", Some("bar"));
 	t.check_invariants();

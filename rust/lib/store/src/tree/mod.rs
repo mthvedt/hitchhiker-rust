@@ -16,8 +16,6 @@ mod node;
 mod noderef;
 mod util;
 
-mod traits;
-
 pub mod btree;
 // TODO why don't this work?
 // pub use self::btree::*;

@@ -84,6 +84,10 @@ impl PersistentNode {
     fn fork(&self) -> MemNode {
         self.node.fork()
     }
+
+    fn txid(&self) -> Counter {
+        self.txid
+    }
 }
 
 /// A fat pointer to a Node. If hot, may pin underlying unique or shared resources.
@@ -106,13 +110,21 @@ impl FatNodeRef {
     }
 
     /* Accessors */
-    pub fn apply<F, R> (&self, f: F) -> R where
-    F: Fn(&MemNode) -> R
+    pub fn apply<F, R>(&self, f: F) -> R where
+    F: FnOnce(&MemNode) -> R
     {
         match self {
-            // Same call, different objects. Necessary because of the monomorphism restriction.
             &FatNodeRef::Transient(ref rc_rfc_hn) => f(rc_rfc_hn.deref().borrow().deref()),
             &FatNodeRef::Persistent(ref rc_pn) => f(&rc_pn.deref().node),
+        }
+    }
+
+    pub fn apply_persistent<F, R>(&self, f: F) -> R where
+    F: FnOnce(&PersistentNode) -> R
+    {
+        match self {
+            &FatNodeRef::Transient(_) => panic!("node is not persistent"),
+            &FatNodeRef::Persistent(ref rc_pn) => f(&rc_pn.deref()),
         }
     }
 
@@ -123,19 +135,14 @@ impl FatNodeRef {
         }
     }
 
-    // pub fn noderef(&self) -> NodeRef {
-    //     match self {
-    //         &FatNodeRef::Transient(ref rc_) => NodeRef::Hot(Rc::downgrade(&rc_)),
-    //         &FatNodeRef::Persistent(ref rc_) => NodeRef::Warm(Rc::downgrade(&rc_)),
-    //     }
-    // }
-
     /// Reassigns this node ref to the MemNode referred to by the given HotHandle.
     /// The given HotHandle must point to the same MemNode as this FatNodeRef.
     // TODO: better implementations for this
     pub fn reassign(&mut self, h: HotHandle) {
         match h {
             HotHandle::Existing(hn_ref) => {
+                // TODO: impl a safety check?
+
                 // Safety check: A HotHandle::Existing may only be reassigned to itself.
                 // (Safety check disabled because perf consequences)
                 // if let &mut FatNodeRef::Transient(ref rc_rfc_hn) = self {

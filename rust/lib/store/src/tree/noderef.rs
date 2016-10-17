@@ -60,6 +60,13 @@ impl NodeRef {
         self.upgrade().apply(f)
     }
 
+    // TODO: figure out the 'apply' story.
+    pub fn apply_persistent<F, R> (&self, f: F) -> R where
+    F: Fn(&PersistentNode) -> R
+    {
+        self.upgrade().apply_persistent(f)
+    }
+
     /// Returns a hot NodeRef which may be modified, together with a reference to that node. May return self.
     pub fn heat(&self) -> (HotHandle, bool) {
         match self {
@@ -85,7 +92,7 @@ impl PersistentNode {
         self.node.fork()
     }
 
-    fn txid(&self) -> Counter {
+    pub fn txid(&self) -> Counter {
         self.txid
     }
 }

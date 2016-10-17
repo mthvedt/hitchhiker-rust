@@ -243,8 +243,9 @@ mod btree_get {
 		get_helper(n, k, |_| true)
 	}
 
-	pub fn get_recent(mut n: NodeRef, k: &[u8], trailing_txid: Counter) -> Option<ByteRc> {
-		get_helper(n, k, |_| true)
+	pub fn get_recent(n: NodeRef, k: &[u8], trailing_txid: Counter) -> Option<ByteRc> {
+		// TODO test!
+		get_helper(n, k, |nref| nref.apply_persistent(|pnode| trailing_txid.circle_lt_eq(pnode.txid())))
 	}
 }
 

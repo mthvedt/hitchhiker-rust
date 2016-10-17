@@ -41,12 +41,12 @@ pub trait CowByteMap: MutableByteMap {
 }
 
 mod nodestack {
-	use tree::btree::NodeHandle;
+	use tree::noderef::NodeRef;
 	use tree::memnode::*;
 
 	const MAX_DEPTH: u8 = 32;
 
-	pub type NodeCursor = (NodeHandle, u16);
+	pub type NodeCursor = (NodeRef, u16);
 
 	pub struct NodeStack {
 		entries: Vec<NodeCursor>,
@@ -60,7 +60,7 @@ mod nodestack {
 			}
 		}
 
-		pub fn push(&mut self, node: NodeHandle, child_index: u16) {
+		pub fn push(&mut self, node: NodeRef, child_index: u16) {
 			debug_assert!(self.entries.len() < MAX_DEPTH as usize);
 			self.entries.push((node, child_index));
 		}
@@ -69,8 +69,8 @@ mod nodestack {
 			self.entries.pop()
 		}
 
-		/// Returns the NodeHandle at position 0, or the given NodeHandle if this is empty.
-		pub fn head_or(&self, head_maybe: &NodeHandle) -> NodeHandle {
+		/// Returns the NodeRef at position 0, or the given NodeRef if this is empty.
+		pub fn head_or(&self, head_maybe: &NodeRef) -> NodeRef {
 			if self.entries.len() == 0 {
 				head_maybe.clone()
 			} else {
@@ -80,7 +80,7 @@ mod nodestack {
 		}
 	}
 
-	pub fn construct(n: NodeHandle, k: &[u8]) -> (NodeStack, bool) {
+	pub fn construct(n: NodeRef, k: &[u8]) -> (NodeStack, bool) {
 		// Perf note: because we always use the 'fattest node', the potential of polymorphic recursion
 		// doesn't help us.
 		let mut stack = NodeStack::new();
@@ -102,7 +102,7 @@ mod nodestack {
 						break;
 					} else {
 						// continue the loop
-						n = n.child_handle(idx);
+						n = n.apply(|node| node.child_ref(idx));
 					}
 				}
 			}
@@ -115,42 +115,40 @@ mod nodestack {
 mod btree_insert {
 	use data::*;
 
-	use tree::btree::NodeHandle;
 	use tree::btree::nodestack;
 	use tree::bucket::Bucket;
 	use tree::memnode::*;
-	use tree::noderef::*;
+	use tree::noderef::{HotHandle, FatNodeRef, NodeRef};
 
 	/// Precondition: self is the head node.
-	fn insert_helper_nosplit(top: &mut NodeHandle, nhot: HotHandle, stack: &mut nodestack::NodeStack) -> FatNodeRef {
+	// TODO: can we make this iterative? the issue is hot handles' lifetime syntactically depends on the parent handle,
+	// when it really depends on the lifetime of top.
+	fn insert_helper_nosplit(top: &mut NodeRef, nhot: HotHandle, stack: &mut nodestack::NodeStack) -> FatNodeRef {
 		if let Some((parent, parent_idx)) = stack.pop() {
-			let parent_handle = parent.to_fat_node();
-			let (mut parent_hot, was_copied) = parent_handle.heat();
+			let (mut parent_hot, was_copied) = parent.heat();
 			parent_hot.apply_mut(|hn| hn.reassign_child(parent_idx, nhot));
 
 			if was_copied {
 				insert_helper_nosplit(top, parent_hot, stack)
 			} else {
 				// If not, we reached the termination condition, and the head node is not modified
-				stack.head_or(&parent).to_fat_node()
+				stack.head_or(&parent).upgrade()
 			}
 		} else {
 			// Termination condition, and we recursed all the way back to the (hot) head node
-			let mut r = top.to_fat_node();
+			let mut r = top.upgrade();
 			r.reassign(nhot);
 			r
 		}
 	}
 
 	// TODO: figure out how to have a simple return thingy
-	fn insert_helper(top: &mut NodeHandle, nhot: HotHandle, insert_result: InsertResult,
+	fn insert_helper(top: &mut NodeRef, nhot: HotHandle, insert_result: InsertResult,
 		stack: &mut nodestack::NodeStack) -> FatNodeRef {
 		if let Some((parent, parent_idx)) = stack.pop() {
 			// Get the next node up the stack, loop while we have to modify nodes
 			// TODO: weak references?
-			let parent_handle = parent.to_fat_node();
-			// TODO: MemNodes shouldn't work this way. This is lasagna logic
-			let (mut parent_hot, was_copied) = parent_handle.heat();
+			let (mut parent_hot, was_copied) = parent.heat();
 			parent_hot.apply_mut(|hn| hn.reassign_child(parent_idx, nhot));
 
 			match insert_result {
@@ -161,7 +159,7 @@ mod btree_insert {
 						insert_helper_nosplit(top, parent_hot, stack)
 					} else {
 						// Termination condition, and we have not modified the head node
-						stack.head_or(&parent).to_fat_node()
+						stack.head_or(&parent).upgrade()
 					}
 				}
 				InsertResult::Flushed(split_bucket, newnode) => {
@@ -173,7 +171,7 @@ mod btree_insert {
 			}
 		} else {
 			// We have recursed all the way back to the head node.
-			let mut r = top.to_fat_node();
+			let mut r = top.upgrade();
 			r.reassign(nhot);
 
 			match insert_result {
@@ -191,7 +189,7 @@ mod btree_insert {
 	}
 
 	// TODO: flushed should probably return a FatNodeRef as its 2nd node return value.
-	pub fn insert<D: Datum>(top: &mut NodeHandle, k: &[u8], v: &D) -> FatNodeRef {
+	pub fn insert<D: Datum>(top: &mut NodeRef, k: &[u8], v: &D) -> FatNodeRef {
 		// TODO use an array stack. Minimize allocs
 		// Depth is 0-indexed
 		let (mut stack, exists) = nodestack::construct(top.clone(), k);
@@ -201,8 +199,7 @@ mod btree_insert {
 
 		// Prepare to insert
 		let (node, idx) = stack.pop().unwrap();
-		let _ntmp = node.to_fat_node();
-		let (mut nhot, _) = _ntmp.heat();
+		let (mut nhot, _) = node.heat();
 		let insert_result = nhot.apply_mut(|hn| hn.insert_at(idx, Bucket::new(k, v), None));
 
 		insert_helper(top, nhot, insert_result, &mut stack)
@@ -212,83 +209,26 @@ mod btree_insert {
 mod btree_get {
 	use data::*;
 
-	use tree::btree::NodeHandle;
 	use tree::memnode::*;
+	use tree::noderef::{HotHandle, NodeRef};
 
-	pub fn get(n: NodeHandle, k: &[u8]) -> Option<ByteRc> {
-		match n.apply(|node| node.find(k)) {
-			Ok(idx) => Some(n.apply(|node| node.value(idx).clone())),
-			Err(idx) => {
-				if n.apply(MemNode::is_leaf) {
-					None
-				} else {
-					let child = n.child_handle(idx);
-					get(child, k)
+	pub fn get(mut n: NodeRef, k: &[u8]) -> Option<ByteRc> {
+		loop {
+			match n.apply(|node| node.find(k)) {
+				Ok(idx) => {
+					return Some(n.apply(|node| node.value(idx).clone()))
 				}
-			},
-		}
-	}
-}
-
-/// A handle to a ready node which can be quickly dereferenced. The existence of this handle
-/// may pin resources.
-/// TODO: delete this class, use pointers to FatNodeRefs. Rc in debug, raw in release.
-#[derive(Clone)]
-pub enum NodeHandle {
- 	// TODO: something faster. Ideal situation is a head snapshot/job pointer and a raw pointer.
-	Hot(Weak<RefCell<MemNode>>),
-	// TODO: shouldn't expose PersistentNode inner like this.
-	Warm(Weak<PersistentNode>),
-}
-
-impl NodeHandle {
-	fn to_fat_node(&self) -> FatNodeRef {
-		match self {
-			&NodeHandle::Hot(ref w_) => FatNodeRef::Transient(w_.upgrade().unwrap()),
-			&NodeHandle::Warm(ref w_) => FatNodeRef::Persistent(w_.upgrade().unwrap()),
-		}
-	}
-
-	pub fn apply<F, R> (&self, f: F) -> R where F: for<'x> FnOnce(&'x MemNode) -> R,
-	{
-		match self {
-			&NodeHandle::Hot(ref w_rfc_hn) => {
-				// Stupid borrow checker tricks
-				let x = w_rfc_hn.upgrade().unwrap();
-				let r = f(x.deref().borrow().deref());
-				r
+				Err(idx) => {
+					if n.apply(MemNode::is_leaf) {
+						return None
+					} else {
+						n = n.apply(|node| node.child_ref(idx));
+					}
+				},
 			}
-			&NodeHandle::Warm(ref w_n) => f(&w_n.upgrade().unwrap().deref().deref().node),
 		}
 	}
-
-	fn child_handle(&self, idx: u16) -> NodeHandle {
-		self.apply(|hn| hn.child_ref(idx).handle())
-	}
 }
-
-// // The idea behind having Jobs for everything is we eventually want to put such into Futures.
-
-// /// A job for getting a key.
-// struct GetJob {
-// }
-
-// impl GetJob {
-// 	// TODO: can we make this iterative?
-// 	pub fn get<H>(&self, k: &[u8], h: Handle) -> Option<ByteRc> {
-// 		match self.apply(|n| n.find(k)) {
-// 			Ok(idx) => Some(self.apply(|n| n.value(idx))),
-// 			Err(idx) => {
-// 				if self.apply(MemNode::is_leaf) {
-// 					None
-// 				} else {
-// 					let child = self.child_handle(idx);
-// 					child.get(k)
-// 				}
-// 			},
-// 		}
-// 	}
-// }
 
 // A simple in-memory persistent b-tree.
 pub struct PersistentBTree {
@@ -315,14 +255,14 @@ impl ByteMap for PersistentBTree {
 
 	fn get<K: Key + ?Sized>(&mut self, k: &K) -> Option<Self::Get> {
 		match self.head.as_ref() {
-			Some(nref) => btree_get::get(nref.handle(), k.bytes()),
+			Some(strongref) => btree_get::get(strongref.noderef(), k.bytes()),
 			None => None,
 		}
 	}
 
 	fn check_invariants(&self) {
 		match self.head.as_ref() {
-			Some(nref) => nref.check_invariants(),
+			Some(strongref) => strongref.check_invariants(),
 			None => (),
 		}
 	}
@@ -333,8 +273,8 @@ impl MutableByteMap for PersistentBTree {
 		let newhead;
 
 		match self.head.as_ref() {
-			Some(noderef) => {
-				newhead = btree_insert::insert(&mut noderef.handle(), k.bytes(), v);
+			Some(strongref) => {
+				newhead = btree_insert::insert(&mut strongref.noderef(), k.bytes(), v);
 			}
 			None => {
 				newhead = FatNodeRef::new_transient(MemNode::new_from_one(Bucket::new(k.bytes(), v)))
@@ -383,9 +323,9 @@ impl CowByteMap for PersistentBTree {
 		let cloned_head;
 
 		match self.head.as_mut() {
-			Some(nref) => {
-				nref.cool(self.leading_txid);
-				cloned_head = Some(nref.shallow_clone());
+			Some(strongref) => {
+				strongref.cool(self.leading_txid);
+				cloned_head = Some(strongref.shallow_clone());
 			}
 			None => {
 				cloned_head = None;

@@ -1,6 +1,4 @@
-//! fatnode.rs
-//!
-//! 'Fat' pointers that can point to multiple kinds of nodes.
+//! Multiple related kinds of 'fat' tagged pointers to different kinds of nodes.
 
 use std::cell::{RefCell, RefMut};
 use std::rc::{Rc, Weak};
@@ -10,11 +8,35 @@ use std::ptr;
 
 use data::{ByteRc, Datum, Key};
 
-use tree::btree::NodeHandle;
 use tree::bucket::*;
 use tree::counter::*;
 use tree::memnode::*;
 use tree::util::*;
+
+/// A handle to a hot node which can be quickly dereferenced. Note that it's lifetimed--
+/// HotHandles are intended to be ephemeral.
+// TODO: HotHandle -> TransientRef
+pub enum HotHandle {
+    Existing(Weak<RefCell<MemNode>>),
+    New(Rc<RefCell<MemNode>>),
+}
+
+impl HotHandle {
+    /// Do something to the referenced MemNode.
+    pub fn apply_mut<F, R> (&mut self, f: F) -> R where F: FnOnce(&mut MemNode) -> R
+    {
+        match self {
+            // Same call, different objects. Necessary because of the monomorphism restriction.
+            &mut HotHandle::Existing(ref mut w_rfc_hn) => {
+                // borrow checker tricks
+                let mut strong = w_rfc_hn.upgrade().unwrap();
+                let r = f(strong.borrow_mut().deref_mut());
+                r
+            }
+            &mut HotHandle::New(ref mut rc_rfc_hn) => f(Rc::get_mut(rc_rfc_hn).unwrap().borrow_mut().deref_mut()),
+        }
+    }
+}
 
 /// A fat pointer to a Node or node address. Used externally by tree algorithms.
 /// These NodeRefs are 'weak' and must be reloaded after context switches.
@@ -24,6 +46,33 @@ pub enum NodeRef {
     Persistent(Weak<PersistentNode>),
 }
 
+impl NodeRef {
+    pub fn upgrade(&self) -> FatNodeRef {
+        match self {
+            &NodeRef::Transient(ref rc_rfc_hn) => FatNodeRef::Transient(rc_rfc_hn.upgrade().unwrap()),
+            &NodeRef::Persistent(ref rc_pn) => FatNodeRef::Persistent(rc_pn.upgrade().unwrap()),
+        }
+    }
+
+    pub fn apply<F, R> (&self, f: F) -> R where
+    F: Fn(&MemNode) -> R
+    {
+        self.upgrade().apply(f)
+    }
+
+    /// Returns a hot NodeRef which may be modified, together with a reference to that node. May return self.
+    pub fn heat(&self) -> (HotHandle, bool) {
+        match self {
+            &NodeRef::Transient(ref rc_rfc_hn) => (HotHandle::Existing(rc_rfc_hn.clone()), false),
+            &NodeRef::Persistent(ref rc_pn) => {
+                let newnode = rc_pn.upgrade().unwrap().deref().fork();
+                (HotHandle::New(Rc::new(RefCell::new(newnode))), true)
+            }
+        }
+    }
+}
+
+// TODO move to a different .rs file
 pub struct PersistentNode {
     // TODO fields should be private
     txid: Counter,
@@ -32,14 +81,14 @@ pub struct PersistentNode {
 }
 
 impl PersistentNode {
-    fn fork_hot(&self) -> MemNode {
+    fn fork(&self) -> MemNode {
         self.node.fork()
     }
 }
 
 /// A fat pointer to a Node. If hot, may pin underlying unique or shared resources.
 /// These are never invalidated after context switches, and used internally by MemNodes.
-// TODO: FatNodeRef -> HotNodeRef
+// TODO: FatNodeRef -> HotNodeRef? RcNodeRef? StrongNodeRef?
 // TODO: move all this shit into NodeRef, move FatNodeRef into MemNode
 // Doesn't implement Clone. Although cloneable, we want to disallow clones of the transient variant.
 pub enum FatNodeRef {
@@ -67,11 +116,10 @@ impl FatNodeRef {
         }
     }
 
-    // TODO: delete me.
-    pub fn handle(&self) -> NodeHandle {
+    pub fn noderef(&self) -> NodeRef {
         match self {
-            &FatNodeRef::Transient(ref rc_) => NodeHandle::Hot(Rc::downgrade(&rc_)),
-            &FatNodeRef::Persistent(ref rc_) => NodeHandle::Warm(Rc::downgrade(&rc_)),
+            &FatNodeRef::Transient(ref rc_) => NodeRef::Transient(Rc::downgrade(&rc_)),
+            &FatNodeRef::Persistent(ref rc_) => NodeRef::Persistent(Rc::downgrade(&rc_)),
         }
     }
 
@@ -89,32 +137,20 @@ impl FatNodeRef {
         match h {
             HotHandle::Existing(hn_ref) => {
                 // Safety check: A HotHandle::Existing may only be reassigned to itself.
-                if let &mut FatNodeRef::Transient(ref rc_rfc_hn) = self {
-                    let tgt = rc_rfc_hn.deref().as_ptr();
-                    let src = hn_ref.deref() as *const _;
-                    debug_assert!(ptr_eq(tgt, src),
-                        "Mismatch in node reassignment: target {:p}, source {:p}", tgt, src);
-                } else {
-                    debug_assert!(false, "Cannot assign an existing MemNode to a persistent FatNodeRef")
-                }
+                // (Safety check disabled because perf consequences)
+                // if let &mut FatNodeRef::Transient(ref rc_rfc_hn) = self {
+                //     let tgt = rc_rfc_hn.deref().as_ptr();
+                //     let src = hn_ref.deref() as *const _;
+                //     debug_assert!(ptr_eq(tgt, src),
+                //         "Mismatch in node reassignment: target {:p}, source {:p}", tgt, src);
+                // } else {
+                //     debug_assert!(false, "Cannot assign an existing MemNode to a persistent FatNodeRef")
+                // }
             }
-            HotHandle::New(h_nref, hn_rc_cell) => {
+            HotHandle::New(hn_rc_cell) => {
                 // TODO: can we do self = ?
                 let mut replacement = FatNodeRef::Transient(hn_rc_cell);
                 mem::swap(&mut replacement, self)
-            }
-        }
-    }
-
-    /* Thermodynamics */
-
-    /// Returns a hot NodeRef which may be modified, together with a reference to that node. May return self.
-    pub fn heat<'a>(&'a self) -> (HotHandle<'a>, bool) {
-        match self {
-            &FatNodeRef::Transient(ref rc_rfc_hn) => (HotHandle::Existing(rc_rfc_hn.deref().borrow_mut()), false),
-            &FatNodeRef::Persistent(ref rc_pn) => {
-                let newnode: MemNode = rc_pn.deref().node.fork();
-                (HotHandle::New(Some(self), Rc::new(RefCell::new(newnode))), true)
             }
         }
     }
@@ -226,8 +262,8 @@ impl FatNodeRef {
         if !is_transient && self.is_transient() {
             panic!("failed invariant: child of immutable node is hot");
         } else {
-            self.apply(|n| n.check_invariants_helper(parent_lower_bound, parent_upper_bound, self.is_transient(),
-                recurse));
+            self.noderef().apply(|n| n.check_invariants_helper(parent_lower_bound, parent_upper_bound,
+                self.is_transient(), recurse));
         }
     }
 }

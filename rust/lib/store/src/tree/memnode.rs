@@ -84,30 +84,6 @@ pub enum InsertResult {
 	Flushed(Bucket, MemNode),
 }
 
-/// A handle to a hot node which can be quickly dereferenced. Note that it's lifetimed--
-/// HotHandles are intended to be ephemeral.
-pub enum HotHandle<'a> {
-	Existing(RefMut<'a, MemNode>),
-	// The NodeRef is used for debug assertions. It is forbidden to reassign a NodeRef to a HotHandle
-	// that did not 'come from' that NodeRef.
-	// We use a Rc<RefCell> here so it's easier to pass into NodeRef without copying.
-	// Becaues RCs are thin pointers to a {refcount, T} pair, this has very little performance penalty
-	// and saves us a copy when we 'cool' a MemNode.
-	New(Option<&'a FatNodeRef>, Rc<RefCell<MemNode>>),
-}
-
-impl<'a> HotHandle<'a> {
-	/// Do something to the referenced MemNode.
-	pub fn apply_mut<F, R> (&mut self, f: F) -> R where F: FnOnce(&mut MemNode) -> R
-	{
-		match self {
-			// Same call, different objects. Necessary because of the monomorphism restriction.
-			&mut HotHandle::Existing(ref mut rfm_hn) => f(rfm_hn.deref_mut()),
-			&mut HotHandle::New(_, ref mut rc_rfc_hn) => f(Rc::get_mut(rc_rfc_hn).unwrap().borrow_mut().deref_mut()),
-		}
-	}
-}
-
 pub struct MemNode {
 	/// Invariant: between (NODE_CAPACITY - 1) / 2 and NODE_CAPACITY - 1 unless we are the top node,
 	/// in which case this is between 0 and NODE_CAPACITY - 1.
@@ -225,8 +201,8 @@ impl MemNode {
 	}
 
 	// TODO: return weak instead
-	pub fn child_ref(&self, idx: u16) -> &FatNodeRef {
-		self.child_ptr(idx).deref()
+	pub fn child_ref(&self, idx: u16) -> NodeRef {
+		self.child_ptr(idx).deref().noderef().clone()
 	}
 
 	/* Basic helpers */
@@ -645,7 +621,8 @@ impl MemNode {
 						upper_bound = Some(self.key(i));
 					}
 
-					self.child_ref(i).apply(|n| n.check_invariants_helper(lower_bound, upper_bound, is_hot, recurse));
+					self.children[i as usize].deref().apply(
+						|n| n.check_invariants_helper(lower_bound, upper_bound, is_hot, recurse));
 				}
 			}
 		}

@@ -43,7 +43,6 @@ pub trait CowByteMap: MutableByteMap {
 mod nodestack {
 	use tree::btree::NodeHandle;
 	use tree::memnode::*;
-	use tree::noderef::*;
 
 	const MAX_DEPTH: u8 = 32;
 
@@ -210,6 +209,27 @@ mod btree_insert {
 	}
 }
 
+mod btree_get {
+	use data::*;
+
+	use tree::btree::NodeHandle;
+	use tree::memnode::*;
+
+	pub fn get(n: NodeHandle, k: &[u8]) -> Option<ByteRc> {
+		match n.apply(|node| node.find(k)) {
+			Ok(idx) => Some(n.apply(|node| node.value(idx).clone())),
+			Err(idx) => {
+				if n.apply(MemNode::is_leaf) {
+					None
+				} else {
+					let child = n.child_handle(idx);
+					get(child, k)
+				}
+			},
+		}
+	}
+}
+
 /// A handle to a ready node which can be quickly dereferenced. The existence of this handle
 /// may pin resources.
 /// TODO: delete this class, use pointers to FatNodeRefs. Rc in debug, raw in release.
@@ -244,23 +264,6 @@ impl NodeHandle {
 
 	fn child_handle(&self, idx: u16) -> NodeHandle {
 		self.apply(|hn| hn.child_ref(idx).handle())
-	}
-
-	/* CRUD */
-
-	// TODO: can we make this iterative?
-	pub fn get(&self, k: &[u8]) -> Option<ByteRc> {
-		match self.apply(|n| n.find(k)) {
-			Ok(idx) => Some(self.apply(|n| n.value(idx).clone())),
-			Err(idx) => {
-				if self.apply(MemNode::is_leaf) {
-					None
-				} else {
-					let child = self.child_handle(idx);
-					child.get(k)
-				}
-			},
-		}
 	}
 }
 
@@ -312,7 +315,7 @@ impl ByteMap for PersistentBTree {
 
 	fn get<K: Key + ?Sized>(&mut self, k: &K) -> Option<Self::Get> {
 		match self.head.as_ref() {
-			Some(nref) => nref.handle().get(k.bytes()),
+			Some(nref) => btree_get::get(nref.handle(), k.bytes()),
 			None => None,
 		}
 	}

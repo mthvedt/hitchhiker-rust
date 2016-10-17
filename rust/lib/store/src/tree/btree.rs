@@ -41,11 +41,11 @@ pub trait CowByteMap: MutableByteMap {
 }
 
 mod nodestack {
-	const MAX_DEPTH: u8 = 32;
-
 	use tree::btree::NodeHandle;
 	use tree::memnode::*;
 	use tree::noderef::*;
+
+	const MAX_DEPTH: u8 = 32;
 
 	pub type NodeCursor = (NodeHandle, u16);
 
@@ -81,32 +81,132 @@ mod nodestack {
 		}
 	}
 
-	// This was made into a tail recursive function as a result of a historical fight with the borrow checker.
-	// TODO: can we make this iterative?
-	// TODO: actually this should not be a property of an internal class.
-	fn construct_helper(r: &NodeHandle, k: &[u8], stack: &mut NodeStack) -> bool {
-		match r.apply(|n| n.find(k)) {
-			Ok(idx) => {
-				stack.push(r.clone(), idx);
-				true
-			}
-			Err(idx) => {
-				stack.push(r.clone(), idx);
+	pub fn construct(n: NodeHandle, k: &[u8]) -> (NodeStack, bool) {
+		// Perf note: because we always use the 'fattest node', the potential of polymorphic recursion
+		// doesn't help us.
+		let mut stack = NodeStack::new();
+		let found;
+		let mut n = n.clone();
 
-				if r.apply(MemNode::is_leaf) {
-					false
-				} else {
-					let child = r.child_handle(idx);
-					construct_helper(&child, k, stack)
+		loop {
+			match n.apply(|node| node.find(k)) {
+				Ok(idx) => {
+					stack.push(n.clone(), idx);
+					found = true;
+					break;
+				}
+				Err(idx) => {
+					stack.push(n.clone(), idx);
+
+					if n.apply(MemNode::is_leaf) {
+						found = false;
+						break;
+					} else {
+						// continue the loop
+						n = n.child_handle(idx);
+					}
+				}
+			}
+		};
+
+		(stack, found)
+	}
+}
+
+mod btree_insert {
+	use data::*;
+
+	use tree::btree::NodeHandle;
+	use tree::btree::nodestack;
+	use tree::bucket::Bucket;
+	use tree::memnode::*;
+	use tree::noderef::*;
+
+	/// Precondition: self is the head node.
+	fn insert_helper_nosplit(top: &mut NodeHandle, nhot: HotHandle, stack: &mut nodestack::NodeStack) -> FatNodeRef {
+		if let Some((parent, parent_idx)) = stack.pop() {
+			let parent_handle = parent.to_fat_node();
+			let (mut parent_hot, was_copied) = parent_handle.heat();
+			parent_hot.apply_mut(|hn| hn.reassign_child(parent_idx, nhot));
+
+			if was_copied {
+				insert_helper_nosplit(top, parent_hot, stack)
+			} else {
+				// If not, we reached the termination condition, and the head node is not modified
+				stack.head_or(&parent).to_fat_node()
+			}
+		} else {
+			// Termination condition, and we recursed all the way back to the (hot) head node
+			let mut r = top.to_fat_node();
+			r.reassign(nhot);
+			r
+		}
+	}
+
+	// TODO: figure out how to have a simple return thingy
+	fn insert_helper(top: &mut NodeHandle, nhot: HotHandle, insert_result: InsertResult,
+		stack: &mut nodestack::NodeStack) -> FatNodeRef {
+		if let Some((parent, parent_idx)) = stack.pop() {
+			// Get the next node up the stack, loop while we have to modify nodes
+			// TODO: weak references?
+			let parent_handle = parent.to_fat_node();
+			// TODO: MemNodes shouldn't work this way. This is lasagna logic
+			let (mut parent_hot, was_copied) = parent_handle.heat();
+			parent_hot.apply_mut(|hn| hn.reassign_child(parent_idx, nhot));
+
+			match insert_result {
+				InsertResult::Ok => {
+					if was_copied {
+						// This hot parent was modified. Flushing will not be necessary,
+						// but we have to continue looping until we no longer need to modify hot parents.
+						insert_helper_nosplit(top, parent_hot, stack)
+					} else {
+						// Termination condition, and we have not modified the head node
+						stack.head_or(&parent).to_fat_node()
+					}
+				}
+				InsertResult::Flushed(split_bucket, newnode) => {
+					// This might trigger another flush.
+					let insert_result = parent_hot.apply_mut(
+						|hn| hn.insert_at(parent_idx, split_bucket, Some(FatNodeRef::new_transient(newnode))));
+					insert_helper(top, parent_hot, insert_result, stack)
+				}
+			}
+		} else {
+			// We have recursed all the way back to the head node.
+			let mut r = top.to_fat_node();
+			r.reassign(nhot);
+
+			match insert_result {
+				InsertResult::Ok => {
+					// Termination condition, and we have recursed all the way back to the (hot) head node
+					r
+				}
+				InsertResult::Flushed(split_bucket, newnode) => {
+					// Need to create a new head node, and return it
+					FatNodeRef::new_transient(
+						MemNode::new_from_two(r, split_bucket, FatNodeRef::new_transient(newnode)))
 				}
 			}
 		}
 	}
 
-	pub fn construct(nr: &NodeHandle, k: &[u8]) -> (NodeStack, bool) {
-		let mut stack = NodeStack::new();
-		let r = construct_helper(nr, k, &mut stack);
-		(stack, r)
+	// TODO: flushed should probably return a FatNodeRef as its 2nd node return value.
+	pub fn insert<D: Datum>(top: &mut NodeHandle, k: &[u8], v: &D) -> FatNodeRef {
+		// TODO use an array stack. Minimize allocs
+		// Depth is 0-indexed
+		let (mut stack, exists) = nodestack::construct(top.clone(), k);
+		if exists {
+			panic!("not implemented")
+		}
+
+		// Prepare to insert
+		let (node, idx) = stack.pop().unwrap();
+		let _ntmp = node.to_fat_node();
+		let (mut nhot, _) = _ntmp.heat();
+		let insert_result = nhot.apply_mut(|hn| hn.insert_at(idx, Bucket::new(k, v), None));
+
+		insert_helper(top, nhot, insert_result, &mut stack)
 	}
 }
 
@@ -147,92 +247,6 @@ impl NodeHandle {
 	}
 
 	/* CRUD */
-
-	/// Precondition: self is the head node.
-	fn insert_helper_nosplit(&mut self, nhot: HotHandle, stack: &mut nodestack::NodeStack) -> FatNodeRef {
-		if let Some((parent, parent_idx)) = stack.pop() {
-			let parent_handle = parent.to_fat_node();
-			let (mut parent_hot, was_copied) = parent_handle.heat();
-			parent_hot.apply_mut(|hn| hn.reassign_child(parent_idx, nhot));
-
-			if was_copied {
-				self.insert_helper_nosplit(parent_hot, stack)
-			} else {
-				// If not, we reached the termination condition, and the head node is not modified
-				stack.head_or(&parent).to_fat_node()
-			}
-		} else {
-			// Termination condition, and we recursed all the way back to the (hot) head node
-			let mut r = self.to_fat_node();
-			r.reassign(nhot);
-			r
-		}
-	}
-
-	// TODO: figure out how to have a simple return thingy
-	fn insert_helper(&mut self, nhot: HotHandle, insert_result: InsertResult, stack: &mut nodestack::NodeStack) -> FatNodeRef {
-		if let Some((parent, parent_idx)) = stack.pop() {
-			// Get the next node up the stack, loop while we have to modify nodes
-			// TODO: weak references?
-			let parent_handle = parent.to_fat_node();
-			// TODO: MemNodes shouldn't work this way. This is lasagna logic
-			let (mut parent_hot, was_copied) = parent_handle.heat();
-			parent_hot.apply_mut(|hn| hn.reassign_child(parent_idx, nhot));
-
-			match insert_result {
-				InsertResult::Ok => {
-					if was_copied {
-						// This hot parent was modified. Flushing will not be necessary,
-						// but we have to continue looping until we no longer need to modify hot parents.
-						self.insert_helper_nosplit(parent_hot, stack)
-					} else {
-						// Termination condition, and we have not modified the head node
-						stack.head_or(&parent).to_fat_node()
-					}
-				}
-				InsertResult::Flushed(split_bucket, newnode) => {
-					// This might trigger another flush.
-					let insert_result = parent_hot.apply_mut(
-						|hn| hn.insert_at(parent_idx, split_bucket, Some(FatNodeRef::new_transient(newnode))));
-					self.insert_helper(parent_hot, insert_result, stack)
-				}
-			}
-		} else {
-			// We have recursed all the way back to the head node.
-			let mut r = self.to_fat_node();
-			r.reassign(nhot);
-
-			match insert_result {
-				InsertResult::Ok => {
-					// Termination condition, and we have recursed all the way back to the (hot) head node
-					r
-				}
-				InsertResult::Flushed(split_bucket, newnode) => {
-					// Need to create a new head node, and return it
-					FatNodeRef::new_transient(
-						MemNode::new_from_two(r, split_bucket, FatNodeRef::new_transient(newnode)))
-				}
-			}
-		}
-	}
-
-	// TODO: flushed should probably return a FatNodeRef as its 2nd node return value.
-	pub fn insert<D: Datum>(&mut self, k: &[u8], v: &D) -> FatNodeRef {
-		// TODO use an array stack. Minimize allocs
-		// Depth is 0-indexed
-		let (mut stack, exists) = nodestack::construct(self, k);
-		if exists {
-			panic!("not implemented")
-		}
-
-		// Prepare to insert
-		let (node, idx) = stack.pop().unwrap();
-		let _ntmp = node.to_fat_node();
-		let (mut nhot, _) = _ntmp.heat();
-		let insert_result = nhot.apply_mut(|hn| hn.insert_at(idx, Bucket::new(k, v), None));
-
-		self.insert_helper(nhot, insert_result, &mut stack)
-	}
 
 	// TODO: can we make this iterative?
 	pub fn get(&self, k: &[u8]) -> Option<ByteRc> {
@@ -317,7 +331,7 @@ impl MutableByteMap for PersistentBTree {
 
 		match self.head.as_ref() {
 			Some(noderef) => {
-				newhead = noderef.handle().insert(k.bytes(), v);
+				newhead = btree_insert::insert(&mut noderef.handle(), k.bytes(), v);
 			}
 			None => {
 				newhead = FatNodeRef::new_transient(MemNode::new_from_one(Bucket::new(k.bytes(), v)))

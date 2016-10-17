@@ -11,8 +11,6 @@ use tree::counter::*;
 use tree::memnode::*;
 use tree::noderef::*;
 
-const MAX_DEPTH: u8 = 32;
-
 // TODO: move to module level doc the below.
 // A key is anything that can be (quickly, efficiently) converted to raw bytes.
 // A value is a Datum, a set of bytes that can be streamed.
@@ -42,37 +40,73 @@ pub trait CowByteMap: MutableByteMap {
 	fn snap(&mut self) -> Self::Snap;
 }
 
-type NodeCursor = (NodeHandle, u16);
+mod nodestack {
+	const MAX_DEPTH: u8 = 32;
 
-struct NodeStack {
-	entries: Vec<NodeCursor>,
-}
+	use tree::btree::NodeHandle;
+	use tree::memnode::*;
+	use tree::noderef::*;
 
-impl NodeStack {
-	pub fn new() -> NodeStack {
-		NodeStack {
-			// master_node: topnode,
-			entries: Vec::with_capacity(MAX_DEPTH as usize),
+	pub type NodeCursor = (NodeHandle, u16);
+
+	pub struct NodeStack {
+		entries: Vec<NodeCursor>,
+	}
+
+	impl NodeStack {
+		pub fn new() -> NodeStack {
+			NodeStack {
+				// master_node: topnode,
+				entries: Vec::with_capacity(MAX_DEPTH as usize),
+			}
+		}
+
+		pub fn push(&mut self, node: NodeHandle, child_index: u16) {
+			debug_assert!(self.entries.len() < MAX_DEPTH as usize);
+			self.entries.push((node, child_index));
+		}
+
+		pub fn pop(&mut self) -> Option<NodeCursor> {
+			self.entries.pop()
+		}
+
+		/// Returns the NodeHandle at position 0, or the given NodeHandle if this is empty.
+		pub fn head_or(&self, head_maybe: &NodeHandle) -> NodeHandle {
+			if self.entries.len() == 0 {
+				head_maybe.clone()
+			} else {
+				let (ref h, ref _x) = self.entries[0];
+				h.clone()
+			}
 		}
 	}
 
-	fn push(&mut self, node: NodeHandle, child_index: u16) {
-		debug_assert!(self.entries.len() < MAX_DEPTH as usize);
-		self.entries.push((node, child_index));
-	}
+	// This was made into a tail recursive function as a result of a historical fight with the borrow checker.
+	// TODO: can we make this iterative?
+	// TODO: actually this should not be a property of an internal class.
+	fn construct_helper(r: &NodeHandle, k: &[u8], stack: &mut NodeStack) -> bool {
+		match r.apply(|n| n.find(k)) {
+			Ok(idx) => {
+				stack.push(r.clone(), idx);
+				true
+			}
+			Err(idx) => {
+				stack.push(r.clone(), idx);
 
-	fn pop(&mut self) -> Option<NodeCursor> {
-		self.entries.pop()
-	}
-
-	/// Returns the NodeHandle at position 0, or the given NodeHandle if this is empty.
-	fn head_or(&self, head_maybe: &NodeHandle) -> NodeHandle {
-		if self.entries.len() == 0 {
-			head_maybe.clone()
-		} else {
-			let (ref h, ref _x) = self.entries[0];
-			h.clone()
+				if r.apply(MemNode::is_leaf) {
+					false
+				} else {
+					let child = r.child_handle(idx);
+					construct_helper(&child, k, stack)
+				}
+			}
 		}
+	}
+
+	pub fn construct(nr: &NodeHandle, k: &[u8]) -> (NodeStack, bool) {
+		let mut stack = NodeStack::new();
+		let r = construct_helper(nr, k, &mut stack);
+		(stack, r)
 	}
 }
 
@@ -114,36 +148,8 @@ impl NodeHandle {
 
 	/* CRUD */
 
-	// This was made into a tail recursive function as a result of a historical fight with the borrow checker.
-	// TODO: can we make this iterative?
-	// TODO: actually this should not be a property of an internal class.
-	fn find_node_chain_helper(&self, k: &[u8], stack: &mut NodeStack) -> bool {
-		match self.apply(|n| n.find(k)) {
-			Ok(idx) => {
-				stack.push(self.clone(), idx);
-				true
-			}
-			Err(idx) => {
-				stack.push(self.clone(), idx);
-
-				if self.apply(MemNode::is_leaf) {
-					false
-				} else {
-					let child = self.child_handle(idx);
-					child.find_node_chain_helper(k, stack)
-				}
-			}
-		}
-	}
-
-	fn find_node_chain(&self, k: &[u8]) -> (NodeStack, bool) {
-		let mut stack = NodeStack::new();
-		let r = self.find_node_chain_helper(k, &mut stack);
-		(stack, r)
-	}
-
 	/// Precondition: self is the head node.
-	fn insert_helper_nosplit(&mut self, nhot: HotHandle, stack: &mut NodeStack) -> FatNodeRef {
+	fn insert_helper_nosplit(&mut self, nhot: HotHandle, stack: &mut nodestack::NodeStack) -> FatNodeRef {
 		if let Some((parent, parent_idx)) = stack.pop() {
 			let parent_handle = parent.to_fat_node();
 			let (mut parent_hot, was_copied) = parent_handle.heat();
@@ -164,7 +170,7 @@ impl NodeHandle {
 	}
 
 	// TODO: figure out how to have a simple return thingy
-	fn insert_helper(&mut self, nhot: HotHandle, insert_result: InsertResult, stack: &mut NodeStack) -> FatNodeRef {
+	fn insert_helper(&mut self, nhot: HotHandle, insert_result: InsertResult, stack: &mut nodestack::NodeStack) -> FatNodeRef {
 		if let Some((parent, parent_idx)) = stack.pop() {
 			// Get the next node up the stack, loop while we have to modify nodes
 			// TODO: weak references?
@@ -214,7 +220,7 @@ impl NodeHandle {
 	pub fn insert<D: Datum>(&mut self, k: &[u8], v: &D) -> FatNodeRef {
 		// TODO use an array stack. Minimize allocs
 		// Depth is 0-indexed
-		let (mut stack, exists) = self.find_node_chain(k);
+		let (mut stack, exists) = nodestack::construct(self, k);
 		if exists {
 			panic!("not implemented")
 		}

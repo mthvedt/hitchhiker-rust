@@ -24,7 +24,7 @@ impl Counter {
     }
 
     pub fn circle_lt(self, other: Counter) -> bool {
-        return other.data.wrapping_sub(self.data) - 1 < u64::max_value() / 2 - 1;
+        return other.data.wrapping_sub(self.data).wrapping_sub(1) < u64::max_value() / 2 - 1;
     }
 
     pub fn circle_lt_eq(self, other: Counter) -> bool {

@@ -61,26 +61,58 @@ fn smoke_test_snapshot<T: FunctionalByteMap>(t: &mut T) {
 	test_get_str(t, "foo", Some("bar"));
 	t.check_invariants();
 
-	let mut t2 = t.snap();
+	let mut t0 = t.snap();
 	test_get_str(t, "foo", Some("bar"));
-	test_get_str(&mut t2, "foo", Some("bar"));
+	test_get_str(&mut t0, "foo", Some("bar"));
 	t.check_invariants();
-	t2.check_invariants();
+	t0.check_invariants();
 
 	t.insert("fop".as_bytes(), &"baz".into_datum());
 	test_get_str(t, "foo", Some("bar"));
-	test_get_str(&mut t2, "foo", Some("bar"));
+	test_get_str(&mut t0, "foo", Some("bar"));
 	test_get_str(t, "fop", Some("baz"));
-	test_get_str(&mut t2, "fop", None);
+	test_get_str(&mut t0, "fop", None);
 	t.check_invariants();
-	t2.check_invariants();
+	t0.check_invariants();
 }
 
+fn smoke_test_diffs<T: FunctionalByteMap>(t: &mut T) {
+	t.insert("foo0".as_bytes(), &"bar0".into_datum());
+	let t0 = t.snap();
+	t.insert("foo1".as_bytes(), &"bar1".into_datum());
+	let t1 = t.snap();
+	t.insert("foo2".as_bytes(), &"bar2".into_datum());
+	let t2 = t.snap();
+	t.insert("foo3".as_bytes(), &"bar3".into_datum());
+
+	let c1 = t1.txid();
+	let mut snap12 = t2.diff(c1);
+	test_get_str(&mut snap12, "foo0", None);
+	test_get_str(&mut snap12, "foo1", None);
+	test_get_str(&mut snap12, "foo2", Some("bar2"));
+	test_get_str(&mut snap12, "foo3", None);
+
+	let c0 = t0.txid();
+	let mut snap02 = t2.diff(c0);
+	test_get_str(&mut snap02, "foo0", None);
+	test_get_str(&mut snap02, "foo1", Some("bar1"));
+	test_get_str(&mut snap02, "foo2", Some("bar2"));
+	test_get_str(&mut snap02, "foo3", None);
+
+	let mut snap01 = t1.diff(c0);
+	test_get_str(&mut snap01, "foo0", None);
+	test_get_str(&mut snap01, "foo1", Some("bar1"));
+	test_get_str(&mut snap01, "foo2", None);
+	test_get_str(&mut snap01, "foo3", None);
+}
+
+// TODO: maybe these should just be normal tests? are we going with only one type of tree or multiple?
 deftests! {
 	PersistentBTree => {
 		pbtree_smoke_test_insert, smoke_test_insert,
 		pbtree_smoke_test_get, smoke_test_get,
 		// pbtree_smoke_test_delete, smoke_test_delete,
 		pbtree_smoke_test_snapshot, smoke_test_snapshot,
+		pbtree_smoke_test_diffs, smoke_test_diffs,
 	},
 }

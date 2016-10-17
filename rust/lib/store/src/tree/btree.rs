@@ -20,7 +20,7 @@ pub trait ByteMap {
 	type Get: Borrow<Self::GetDatum>;
 
 	/// This is mutable because gets may introduce read conflicts, and hence mutate the underlying datastructure.
-	// TODO this does not need to be mutable.
+	// TODO this does not need to be mutable. In particular, interior mutability is a thing
 	fn get<K: Key + ?Sized>(&mut self, k: &K) -> Option<Self::Get>;
 
 	/// Debug method to check this data structures's invariants.
@@ -224,6 +224,10 @@ mod btree_get {
 	fn get_helper<F>(mut n: NodeRef, k: &[u8], filter: F) -> Option<ByteRc>
 	where F: Fn(&NodeRef) -> bool {
 		loop {
+			if !filter(&n) {
+				return None
+			}
+
 			match n.apply(|node| node.find(k)) {
 				Ok(idx) => {
 					return Some(n.apply(|node| node.value(idx).clone()))
@@ -232,6 +236,7 @@ mod btree_get {
 					if n.apply(MemNode::is_leaf) {
 						return None
 					} else {
+						// Continue the loop
 						n = n.apply(|node| node.child_ref(idx));
 					}
 				},
@@ -243,9 +248,10 @@ mod btree_get {
 		get_helper(n, k, |_| true)
 	}
 
+	/// Searches the tree, ignoring any transactions equal or older in time than the given txid.
 	pub fn get_recent(n: NodeRef, k: &[u8], trailing_txid: Counter) -> Option<ByteRc> {
 		// TODO test!
-		get_helper(n, k, |nref| nref.apply_persistent(|pnode| trailing_txid.circle_lt_eq(pnode.txid())))
+		get_helper(n, k, |nref| nref.apply_persistent(|pnode| trailing_txid.circle_lt(pnode.txid())))
 	}
 }
 

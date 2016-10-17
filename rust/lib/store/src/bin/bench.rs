@@ -389,6 +389,12 @@ defbench! {
 	}
 }
 
+// defbench! {
+// 	bench_diffs, t: FunctionalByteMap, b, T, V, {
+
+// 	}
+// }
+
 fn main() {
 	// TODO: use cargo to default to release, but enable both modes
 	// debug_assert!(false, "This target should be run in release mode");

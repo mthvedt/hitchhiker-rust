@@ -87,7 +87,7 @@ fn smoke_test_diffs<T: FunctionalByteMap>(t: &mut T) {
 
 	let c1 = t1.txid();
 	let mut snap12 = t2.diff(c1);
-	test_get_str(&mut snap12, "foo0", None);
+	test_get_str(&mut snap12, "foo0", None); // TODO: failing here. Whoops, it turns out buckets need ptrs.
 	test_get_str(&mut snap12, "foo1", None);
 	test_get_str(&mut snap12, "foo2", Some("bar2"));
 	test_get_str(&mut snap12, "foo3", None);

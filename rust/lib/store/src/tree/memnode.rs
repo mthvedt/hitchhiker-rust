@@ -2,15 +2,11 @@
 //!
 //! An in-memory, modifiable node.
 
-use std::cell::{RefCell, RefMut};
-use std::rc::Rc;
 use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::ptr;
 
-use data::{ByteRc, Datum, Key};
-
-use tree::bucket::*;
+use tree::bucketref::*;
 use tree::counter::*;
 use tree::noderef::*;
 use tree::util::*;
@@ -81,7 +77,7 @@ impl<T> Clone for MemPtr<T> where T: Clone {
 /// into separate nodes.
 pub enum InsertResult {
 	Ok,
-	Flushed(Bucket, MemNode),
+	Flushed(BucketRef, MemNode),
 }
 
 pub struct MemNode {
@@ -93,7 +89,7 @@ pub struct MemNode {
 	/// Invariant: the buckets in the interval [0, bucket_count) are populated,
 	/// all others are not.
 	// TODO: We don't need to use nullable pointers; we can use uninitialized data instead.
-    buckets: [MemPtr<Bucket>; NODE_CAPACITY as usize - 1],
+    buckets: [MemPtr<BucketRef>; NODE_CAPACITY as usize - 1],
 	/// Invariant: If this is a leaf, all children are empty. Otherwise, child_count == bucket_count = 1.
     children: [MemPtr<FatNodeRef>; NODE_CAPACITY as usize],
 }
@@ -116,7 +112,7 @@ impl MemNode {
 		}
 	}
 
-	pub fn new_from_one(b: Bucket) -> MemNode {
+	pub fn new_from_one(b: BucketRef) -> MemNode {
 		let mut r = Self::empty();
 
 		r.buckets[0] = MemPtr::wrap(b);
@@ -125,7 +121,7 @@ impl MemNode {
 		r
 	}
 
-	pub fn new_from_two(n1: FatNodeRef, b1: Bucket, n2: FatNodeRef) -> MemNode {
+	pub fn new_from_two(n1: FatNodeRef, b1: BucketRef, n2: FatNodeRef) -> MemNode {
 		let mut r = Self::empty();
 
 		r.buckets[0] = MemPtr::wrap(b1);
@@ -137,9 +133,13 @@ impl MemNode {
 	}
 
 	/// Immutes this MemNode, recursively immuting its children.
-	pub fn cool(&mut self, txid: Counter) {
+	pub fn immute(&mut self, txid: Counter) {
 		for i in 0..self.child_count() as usize {
-			self.children[i].cool(txid);
+			self.children[i].immute(txid);
+		}
+
+		for i in 0..self.bucket_count() as usize {
+			self.buckets[i].immute(txid);
 		}
 	}
 
@@ -151,7 +151,7 @@ impl MemNode {
 		r.bucket_count = self.bucket_count;
 
 		for i in 0..self.bucket_count() as usize {
-			r.buckets[i] = self.buckets[i].clone();
+			r.buckets[i] = MemPtr::wrap(self.buckets[i].shallow_clone());
 		}
 
 		for i in 0..self.child_count() as usize {
@@ -174,18 +174,18 @@ impl MemNode {
 		}
 	}
 
-	fn bucket_ptr(&self, idx: u16) -> &MemPtr<Bucket> {
+	fn bucket_ptr(&self, idx: u16) -> &MemPtr<BucketRef> {
 		&self.buckets[idx as usize]
 	}
 
 	fn key(&self, idx: u16) -> &[u8] {
-		self.bucket_ptr(idx).deref().k.bytes()
+		self.bucket_ptr(idx).deref().key()
 	}
 
 	/// Gets the value associated at a particular index.
 	// TODO: should this be generic on node?
-	pub fn value(&self, idx: u16) -> &ByteRc {
-		&self.bucket_ptr(idx).deref().v
+	pub fn bucket(&self, idx: u16) -> &BucketRef {
+		&self.bucket_ptr(idx).deref()
 	}
 
 	// fn bucket_ptr(&self, idx: u16) -> &BucketPtr {
@@ -224,7 +224,7 @@ impl MemNode {
 	pub fn find(&self, k: &[u8]) -> Result<u16, u16> {
 		// TODO: we can make this faster with a subslice.
 		self.buckets[0..(self.bucket_count() as usize)]
-		.binary_search_by(|bp| bp.deref().k.bytes().cmp(k))
+		.binary_search_by(|bp| bp.key().cmp(k))
 		.map(|x| x as u16)
 		.map_err(|x| x as u16)
 	}
@@ -242,7 +242,7 @@ impl MemNode {
 	/// Note that the bucket should be this node's new parent bucket, and the new node should inherit the old bucket.
 
 	// TODO: figure out how not to copy MemNode. Box it?
-	pub fn split(&mut self) -> (Bucket, MemNode) {
+	pub fn split(&mut self) -> (BucketRef, MemNode) {
 		debug_assert!(self.needs_split());
 
 		let bucket_count = self.bucket_count as usize;
@@ -279,10 +279,10 @@ impl MemNode {
 	}
 
 	// TODO: can we avoid passing the new node on the stack?
-	fn insert_unchecked(&mut self, idx: u16, b: Bucket, right_child: Option<FatNodeRef>) {
+	fn insert_unchecked(&mut self, idx: u16, b: BucketRef, right_child: Option<FatNodeRef>) {
 		rotate_in(&mut MemPtr::wrap(b), &mut self.buckets[(idx as usize)..(self.bucket_count as usize + 1)]);
 		match right_child {
-			Some(mut nptr) => {
+			Some(nptr) => {
 				// TODO: debug assertions about nptr
 				rotate_in(&mut MemPtr::wrap(nptr),
 					&mut self.children[(idx as usize + 1)..(self.bucket_count as usize + 2)]);
@@ -296,7 +296,7 @@ impl MemNode {
 	/// or merely greater than bucket[idx].key if not.
 	/// The values in right_child are *greater* than b.key, and less than bucket[idx + 1].key.
 	// TODO: FatNodeRef shouldnt be pub
-	pub fn insert_at(&mut self, idx: u16, b: Bucket, right_child: Option<FatNodeRef>) -> InsertResult {
+	pub fn insert_at(&mut self, idx: u16, b: BucketRef, right_child: Option<FatNodeRef>) -> InsertResult {
 		debug_assert!(self.is_leaf() == right_child.is_none());
 
 		if self.needs_split() {

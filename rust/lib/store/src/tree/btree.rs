@@ -1,12 +1,8 @@
 use std::borrow::Borrow;
-use std::cell::{RefCell};
-use std::mem;
-use std::ops::Deref;
-use std::rc::Weak;
 
 use data::*;
 
-use tree::bucket::*;
+use tree::bucketref::*;
 use tree::counter::*;
 use tree::memnode::*;
 use tree::noderef::*;
@@ -124,7 +120,7 @@ mod btree_insert {
 	use data::*;
 
 	use tree::btree::nodestack;
-	use tree::bucket::Bucket;
+	use tree::bucketref::BucketRef;
 	use tree::memnode::*;
 	use tree::noderef::{HotHandle, FatNodeRef, NodeRef};
 
@@ -208,7 +204,7 @@ mod btree_insert {
 		// Prepare to insert
 		let (node, idx) = stack.pop().unwrap();
 		let (mut nhot, _) = node.heat();
-		let insert_result = nhot.apply_mut(|hn| hn.insert_at(idx, Bucket::new(k, v), None));
+		let insert_result = nhot.apply_mut(|hn| hn.insert_at(idx, BucketRef::new_transient(k, v), None));
 
 		insert_helper(top, nhot, insert_result, &mut stack)
 	}
@@ -217,20 +213,30 @@ mod btree_insert {
 mod btree_get {
 	use data::*;
 
+	use tree::bucketref::*;
 	use tree::counter::*;
 	use tree::memnode::*;
-	use tree::noderef::{HotHandle, NodeRef};
+	use tree::noderef::NodeRef;
 
-	fn get_helper<F>(mut n: NodeRef, k: &[u8], filter: F) -> Option<ByteRc>
-	where F: Fn(&NodeRef) -> bool {
+	fn get_helper<KF, VF>(mut n: NodeRef, k: &[u8], keyfilter: KF, bucketfilter: VF) -> Option<ByteRc> where
+	KF: Fn(&NodeRef) -> bool,
+	VF: Fn(&BucketRef) -> bool
+	{
 		loop {
-			if !filter(&n) {
+			if !keyfilter(&n) {
 				return None
 			}
 
 			match n.apply(|node| node.find(k)) {
 				Ok(idx) => {
-					return Some(n.apply(|node| node.value(idx).clone()))
+					// Hopefully this optimizes!
+					let filter_value = n.apply(|node| bucketfilter(node.bucket(idx)));
+
+					return if filter_value {
+						Some(n.apply(|node| node.bucket(idx).value().clone()))
+					} else {
+						None
+					}
 				}
 				Err(idx) => {
 					if n.apply(MemNode::is_leaf) {
@@ -245,13 +251,15 @@ mod btree_get {
 	}
 
 	pub fn get(n: NodeRef, k: &[u8]) -> Option<ByteRc> {
-		get_helper(n, k, |_| true)
+		get_helper(n, k, |_| true, |_| true)
 	}
 
 	/// Searches the tree, ignoring any transactions equal or older in time than the given txid.
 	pub fn get_recent(n: NodeRef, k: &[u8], trailing_txid: Counter) -> Option<ByteRc> {
-		// TODO test!
-		get_helper(n, k, |nref| nref.apply_persistent(|pnode| trailing_txid.circle_lt(pnode.txid())))
+		let nodefilter = |nref: &NodeRef| nref.apply_persistent(|pnode| trailing_txid.circle_lt(pnode.txid()));
+		let bucketfilter = |bref: &BucketRef| trailing_txid.circle_lt(bref.txid());
+
+		get_helper(n, k, nodefilter, bucketfilter)
 	}
 }
 
@@ -290,7 +298,7 @@ impl PersistentBTree {
 
 		match self.head.as_mut() {
 			Some(strongref) => {
-				strongref.cool(self.leading_txid);
+				strongref.immute(self.leading_txid);
 				cloned_head = Some(strongref.shallow_clone());
 			}
 			None => {
@@ -335,7 +343,7 @@ impl MutableByteMap for PersistentBTree {
 				newhead = btree_insert::insert(&mut strongref.noderef(), k.bytes(), v);
 			}
 			None => {
-				newhead = FatNodeRef::new_transient(MemNode::new_from_one(Bucket::new(k.bytes(), v)))
+				newhead = FatNodeRef::new_transient(MemNode::new_from_one(BucketRef::new_transient(k.bytes(), v)))
 			}
 		}
 
@@ -415,7 +423,7 @@ impl FunctionalByteMap for PersistentBTree {
 	fn snap(&mut self) -> Self::Snap {
 		let clone = self.shallow_clone();
 		// We might bump the leading txid even if the transaction does nothing. This is by design.
-		self.leading_txid.inc();
+		self.leading_txid = self.leading_txid.inc();
 
 		PersistentSnap {
 			v: clone,

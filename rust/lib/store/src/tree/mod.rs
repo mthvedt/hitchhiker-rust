@@ -7,6 +7,7 @@
 // extern crate quickcheck;
 
 mod bucket;
+mod bucketref;
 
 mod counter;
 pub use self::counter::Counter;

@@ -1,17 +1,12 @@
 //! Multiple related kinds of 'fat' tagged pointers to different kinds of nodes.
 
-use std::cell::{RefCell, RefMut};
+use std::cell::RefCell;
 use std::rc::{Rc, Weak};
 use std::mem;
 use std::ops::{Deref, DerefMut};
-use std::ptr;
 
-use data::{ByteRc, Datum, Key};
-
-use tree::bucket::*;
 use tree::counter::*;
 use tree::memnode::*;
-use tree::util::*;
 
 /// A handle to a hot node which can be quickly dereferenced. Note that it's lifetimed--
 /// HotHandles are intended to be ephemeral.
@@ -29,7 +24,7 @@ impl HotHandle {
             // Same call, different objects. Necessary because of the monomorphism restriction.
             &mut HotHandle::Existing(ref mut w_rfc_hn) => {
                 // borrow checker tricks
-                let mut strong = w_rfc_hn.upgrade().unwrap();
+                let strong = w_rfc_hn.upgrade().unwrap();
                 let r = f(strong.borrow_mut().deref_mut());
                 r
             }
@@ -147,7 +142,7 @@ impl FatNodeRef {
     // TODO: better implementations for this
     pub fn reassign(&mut self, h: HotHandle) {
         match h {
-            HotHandle::Existing(hn_ref) => {
+            HotHandle::Existing(_) => {
                 // TODO: impl a safety check?
 
                 // Safety check: A HotHandle::Existing may only be reassigned to itself.
@@ -170,7 +165,7 @@ impl FatNodeRef {
     }
 
     /// Immutes this NodeRef, recursively immuting its children.
-    pub fn cool(&mut self, txid: Counter) {
+    pub fn immute(&mut self, txid: Counter) {
         // Bunch of footwork so we can modify ourselves in place without breaking mut safety.
         // Who knows if this optimizes correctly?
         let mut oldself = unsafe { mem::uninitialized() };
@@ -182,7 +177,7 @@ impl FatNodeRef {
         match oldself {
             FatNodeRef::Transient(rc_cell_hn) => {
                 let mut hn = Rc::try_unwrap(rc_cell_hn).ok().unwrap().into_inner();
-                hn.cool(txid);
+                hn.immute(txid);
                 newself = FatNodeRef::Persistent(Rc::new(PersistentNode {
                     txid: txid,
                     node: hn,

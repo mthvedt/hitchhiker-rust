@@ -1,8 +1,8 @@
 use std::mem;
 
-pub fn ptr_eq<T: ?Sized>(a: *const T, b: *const T) -> bool {
-	a == b
-}
+// pub fn ptr_eq<T: ?Sized>(a: *const T, b: *const T) -> bool {
+// 	a == b
+// }
 
 /*
 Safe array rotation functions. In the long run, we want to replace most usages with memmoves

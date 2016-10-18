@@ -1,4 +1,5 @@
 use std;
+use std::fmt;
 
 use data::*;
 
@@ -40,5 +41,11 @@ impl Datum for Counter {
 
     fn write_bytes<W: DataWrite>(&self, w: W) -> W::Result {
         w.write(&self.bytes())
+    }
+}
+
+impl fmt::Display for Counter {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.data)
     }
 }

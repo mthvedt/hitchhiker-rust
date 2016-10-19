@@ -9,13 +9,23 @@ The Thunderhead data store is a persistent hitchhiker B-tree, supporting the fol
 Yak shave
 =========
 
-
+Need BucketRefs.
 
 Master TODO list
 ================
 
 - Cursors
 - Hitchhiker model?
+
+(In any order)
+- Commit model.
+- Persistence.
+- Futures model.
+- Rudimentary locks.
+- Within tree references.
+
+Commit model Qs
+===============
 - Merge based commit OR concurrent writer commit. Or something. Pushdown rollbacks?
 - - Option: Merge commit
 - - - Advantage: Commit is just about destorying memory.
@@ -24,10 +34,16 @@ Master TODO list
 - - Option: Pushdown rollbacks
 - - - TODO: advantages and disadvantages.
 - - - Advantage: don't need to figure out hitchhiker model first.
-- Rudimentary locks.
-- Within tree references.
-- Persistence.
-- Event model.
+
+Hitchhiker design
+=================
+
+'Base tree' of 256 nodes as follows:
+Level 0 indices, an array of 256
+Level 1 indices, key + inline value or value pointer + child pointer (if applicable)
+
+'Hitchhiker overlay' as follows:
+BTree node in same format as base tree...
 
 Design
 ======

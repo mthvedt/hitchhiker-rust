@@ -51,6 +51,8 @@ use std::rc::{Rc, Weak};
 ///
 /// NB. this can lead to applications effectively leaking memory if a
 /// short subslice of a long `RcSlice` is held.
+
+#[derive(Clone)]
 pub struct RcSlice<T> {
     data: *const [T],
     counts: Rc<Box<[T]>>,
@@ -61,6 +63,8 @@ pub struct RcSlice<T> {
 /// This is to `RcSlice` as `std::rc::Weak` is to `std::rc::Rc`, and
 /// allows one to have cyclic references without stopping memory from
 /// being deallocated.
+
+#[derive(Clone)]
 pub struct WeakSlice<T> {
     data: *const [T],
     counts: Weak<Box<[T]>>,
@@ -126,15 +130,6 @@ impl<T> RcSlice<T> {
     pub fn slice_from(self, lo: usize) -> RcSlice<T> {
         let hi = self.len();
         self.slice(lo, hi)
-    }
-}
-
-impl<T> Clone for RcSlice<T> {
-    fn clone(&self) -> RcSlice<T> {
-        RcSlice {
-            data: self.data,
-            counts: self.counts.clone()
-        }
     }
 }
 

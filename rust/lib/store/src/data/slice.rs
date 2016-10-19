@@ -1,4 +1,4 @@
-use data::rcslice::RcSlice;
+use data::rcslice::{RcSlice, WeakSlice};
 
 use std::borrow::Borrow;
 
@@ -55,11 +55,31 @@ impl ByteRc {
             data: RcSlice::new(v.box_copy()),
         }
     }
+
+    pub fn downgrade(&self) -> ByteWeak {
+        ByteWeak {
+            data: self.data.downgrade(),
+        }
+    }
 }
 
 impl Borrow<[u8]> for ByteRc {
     fn borrow(&self) -> &[u8] {
         self.data.borrow()
+    }
+}
+
+#[derive(Clone)]
+pub struct ByteWeak {
+    data: WeakSlice<u8>,
+}
+
+impl ByteWeak {
+    pub fn upgrade(&self) -> ByteRc {
+        ByteRc {
+            // Should never fail to upgrade for our purposes.
+            data: self.data.upgrade().unwrap(),
+        }
     }
 }
 

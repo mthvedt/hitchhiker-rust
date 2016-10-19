@@ -162,11 +162,11 @@ impl MemNode {
 	}
 
 	/* Fast accessors */
-	fn bucket_count(&self) -> u16 {
+	pub fn bucket_count(&self) -> u16 {
 		self.bucket_count
 	}
 
-	fn child_count(&self) -> u16 {
+	pub fn child_count(&self) -> u16 {
 		if self.is_leaf() {
 			0
 		} else {
@@ -179,13 +179,13 @@ impl MemNode {
 	}
 
 	fn key(&self, idx: u16) -> &[u8] {
-		self.bucket_ptr(idx).deref().key()
+		self.bucket_ptr(idx).key()
 	}
 
 	/// Gets the value associated at a particular index.
 	// TODO: should this be generic on node?
-	pub fn bucket(&self, idx: u16) -> &BucketRef {
-		&self.bucket_ptr(idx).deref()
+	pub fn bucket_ref(&self, idx: u16) -> WeakBucketRef {
+		self.bucket_ptr(idx).downgrade()
 	}
 
 	// fn bucket_ptr(&self, idx: u16) -> &BucketPtr {

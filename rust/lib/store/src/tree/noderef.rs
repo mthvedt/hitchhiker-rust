@@ -168,6 +168,7 @@ impl FatNodeRef {
     pub fn immute(&mut self, txid: Counter) {
         // Bunch of footwork so we can modify ourselves in place without breaking mut safety.
         // Who knows if this optimizes correctly?
+        // TODO: use mem::replace
         let mut oldself = unsafe { mem::uninitialized() };
         let mut newself;
         mem::swap(self, &mut oldself);

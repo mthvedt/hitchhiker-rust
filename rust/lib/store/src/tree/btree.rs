@@ -56,7 +56,26 @@ pub trait FunctionalByteMap: MutableByteMap {
 	fn snap(&mut self) -> Self::Snap;
 }
 
+pub trait Cursor {
+	// TODO: these should be data streams.
+	/// The type of a data stream.
+	type GetDatum: Datum;
+
+	/// The type returned by the get method.
+	type Get: Borrow<Self::GetDatum>;
+
+	fn next_key(&self) -> ByteRc;
+
+	fn next_value(&self) -> Self::Get;
+
+	fn advance(&mut self) -> bool;
+}
+
+// TODO: this does not need to be a mod
 mod nodestack {
+	use std::mem;
+
+	use tree::bucketref::*;
 	use tree::noderef::NodeRef;
 	use tree::memnode::*;
 
@@ -85,6 +104,28 @@ mod nodestack {
 			self.entries.pop()
 		}
 
+		pub fn peek(&self) -> Option<&NodeCursor> {
+			if self.is_empty() {
+				None
+			} else {
+				Some(&self.entries[self.entries.len() - 1])
+			}
+		}
+
+		/// Peeks mutably at the top of the stack. Useful because pop-and-push optimizes poorly.
+		pub fn peek_mut(&mut self) -> Option<&mut NodeCursor> {
+			if self.is_empty() {
+				None
+			} else {
+				let idx = self.entries.len() - 1; // borrow check
+				Some(&mut self.entries[idx])
+			}
+		}
+
+		pub fn is_empty(&self) -> bool {
+			self.entries.is_empty()
+		}
+
 		/// Returns the NodeRef at position 0, or the given NodeRef if this is empty.
 		pub fn head_or(&self, head_maybe: &NodeRef) -> NodeRef {
 			if self.entries.len() == 0 {
@@ -94,44 +135,138 @@ mod nodestack {
 				h.clone()
 			}
 		}
-	}
 
-	pub fn construct(n: NodeRef, k: &[u8]) -> (NodeStack, bool) {
-		// Perf note: because we always use the 'fattest node', the potential of polymorphic recursion
-		// doesn't help us.
-		let mut stack = NodeStack::new();
-		let found;
-		let mut n = n.clone();
+		/// Finds the NodeStack pointing to the given key. True if the key was found exactly.
+		/// If the key was not found, the NodeStack points to the first key greater than the given node.
+		/// In this case the NodeStack may not point to a valid node and may need revalidation.
+		pub fn construct(n: NodeRef, k: &[u8]) -> (NodeStack, bool) {
+			// Perf note: because we always use the 'fattest node', the potential of polymorphic recursion
+			// doesn't help us.
+			let mut stack = NodeStack::new();
+			let found;
+			let mut n = n.clone();
 
-		loop {
-			match n.apply(|node| node.find(k)) {
-				Ok(idx) => {
-					stack.push(n.clone(), idx);
-					found = true;
-					break;
-				}
-				Err(idx) => {
-					stack.push(n.clone(), idx);
-
-					if n.apply(MemNode::is_leaf) {
-						found = false;
+			loop {
+				match n.apply(|node| node.find(k)) {
+					Ok(idx) => {
+						stack.push(n.clone(), idx);
+						found = true;
 						break;
-					} else {
-						// continue the loop
-						n = n.apply(|node| node.child_ref(idx));
+					}
+					Err(idx) => {
+						stack.push(n.clone(), idx);
+
+						if n.apply(MemNode::is_leaf) {
+							// At this point, it's possible for idx to be >= n.bucket_count
+							found = false;
+							break;
+						} else {
+							// continue the loop
+							n = n.apply(|node| node.child_ref(idx));
+						}
 					}
 				}
-			}
-		};
+			};
 
-		(stack, found)
+			(stack, found)
+		}
+
+		/// Advances this NodeStack.
+		/// Precondition: the stack is not empty.
+		pub fn advance(&mut self) -> Option<WeakBucketRef> {
+			let is_leaf;
+
+			{ // Borrow checker block
+				// Asserts we are not empty.
+				let mut cursorref = self.peek_mut().unwrap();
+				is_leaf = cursorref.0.apply(MemNode::is_leaf);
+
+				// This is why we have the borrow checker block. If we pop-and-push, LLVM optimizes it poorly
+				if is_leaf {
+					cursorref.1 = 1;
+				}
+			}
+
+			if is_leaf {
+				// If a leaf, increment by one, then revalidate.
+				return self.ascend_maybe();
+			} else {
+				return self.descend();
+			}
+		}
+
+		/// Left-descends down the nodestack until we reach the first left bucket on the next leaf node.
+		/// Precondition: we are not at a leaf node, and we are not empty.
+		fn descend(&mut self) -> Option<WeakBucketRef> {
+			let mut nref = { // borrow checker block
+				// Asserts we are not empty.
+				let mut cursorref = self.peek_mut().unwrap();
+				debug_assert!(!cursorref.0.apply(MemNode::is_leaf));
+
+				// If we just visited bucket n, we visit child n+1 and find that child's leftmost descendant.
+				cursorref.0.apply(|node| node.child_ref(cursorref.1 + 1))
+			};
+
+			loop {
+				debug_assert!(nref.apply(|node| node.child_count() > 0));
+
+				if nref.apply(MemNode::is_leaf) {
+					let r = Some(nref.apply(|node| node.bucket_ref(0)));
+					self.push(nref, 0);
+					return r
+				}
+
+				let nref2 = nref.apply(|node| node.child_ref(0));
+				self.push(nref, 0);
+				nref = nref2
+			}
+		}
+
+		/// Ascend until we are pointing at a valid bucket. This is called after any operation
+		/// may point the cursor past a valid leaf bucket.
+		/// (So, if we are at a leaf node with 4 buckets, we need to ascend if the top index == 4.)
+		/// Precondition: we are at a leaf node, and we are not empty.
+		pub fn ascend_maybe(&mut self) -> Option<WeakBucketRef> {
+			{ // borrow checker block
+				// Asserts we are not empty
+				let mut topcursor = self.peek_mut().unwrap();
+				debug_assert!(topcursor.0.apply(MemNode::is_leaf));
+
+				// We have no need to ascend
+				if topcursor.1 < topcursor.0.apply(|node| node.bucket_count()) {
+					return Some(topcursor.0.apply(|node| node.bucket_ref(topcursor.1)));
+				}
+			}
+
+			// Otherwise, ascend
+			loop {
+				self.pop();
+
+				if self.is_empty() {
+					// End of the cursor!
+					return None;
+				}
+
+				let mut topcursor = self.peek_mut().unwrap();
+
+				if topcursor.1 < topcursor.0.apply(|node| node.bucket_count()) {
+					// This is a branch bucket. The next call to advance() should left-descend to the next
+					// leaf bucket (at 1 beyond the current index).
+					return Some(topcursor.0.apply(|node| node.bucket_ref(topcursor.1)));
+				}
+
+				// Otherwise, we have exhausted the branch buckets of this node. Continue the loop.
+			}
+		}
 	}
 }
+
+pub use self::nodestack::NodeStack;
 
 mod btree_insert {
 	use data::*;
 
-	use tree::btree::nodestack;
+	use tree::btree::NodeStack;
 	use tree::bucketref::BucketRef;
 	use tree::memnode::*;
 	use tree::noderef::{HotHandle, FatNodeRef, NodeRef};
@@ -139,7 +274,7 @@ mod btree_insert {
 	/// Precondition: self is the head node.
 	// TODO: can we make this iterative? the issue is hot handles' lifetime syntactically depends on the parent handle,
 	// when it really depends on the lifetime of top.
-	fn insert_helper_nosplit(top: &mut NodeRef, nhot: HotHandle, stack: &mut nodestack::NodeStack) -> FatNodeRef {
+	fn insert_helper_nosplit(top: &mut NodeRef, nhot: HotHandle, stack: &mut NodeStack) -> FatNodeRef {
 		if let Some((parent, parent_idx)) = stack.pop() {
 			let (mut parent_hot, was_copied) = parent.heat();
 			parent_hot.apply_mut(|hn| hn.reassign_child(parent_idx, nhot));
@@ -160,7 +295,7 @@ mod btree_insert {
 
 	// TODO: figure out how to have a simple return thingy
 	fn insert_helper(top: &mut NodeRef, nhot: HotHandle, insert_result: InsertResult,
-		stack: &mut nodestack::NodeStack) -> FatNodeRef {
+		stack: &mut NodeStack) -> FatNodeRef {
 		if let Some((parent, parent_idx)) = stack.pop() {
 			// Get the next node up the stack, loop while we have to modify nodes
 			// TODO: weak references?
@@ -208,7 +343,7 @@ mod btree_insert {
 	pub fn insert<D: Datum>(top: &mut NodeRef, k: &[u8], v: &D) -> FatNodeRef {
 		// TODO use an array stack. Minimize allocs
 		// Depth is 0-indexed
-		let (mut stack, exists) = nodestack::construct(top.clone(), k);
+		let (mut stack, exists) = NodeStack::construct(top.clone(), k);
 		if exists {
 			panic!("not implemented")
 		}
@@ -233,7 +368,7 @@ mod btree_get {
 		loop {
 			match n.apply(|node| node.find(k)) {
 				Ok(idx) => {
-					return Some(n.apply(|node| node.bucket(idx).value().clone()))
+					return Some(n.apply(|node| node.bucket_ref(idx).value()))
 				}
 				Err(idx) => {
 					if n.apply(MemNode::is_leaf) {
@@ -256,10 +391,10 @@ mod btree_get {
 
 			match n.apply(|node| node.find(k)) {
 				Ok(idx) => {
-					let tx_test = n.apply(|node| trailing_txid.circle_lt(node.bucket(idx).txid()));
+					let tx_test = n.apply(|node| trailing_txid.circle_lt(node.bucket_ref(idx).txid()));
 
 					return if tx_test {
-						Some(n.apply(|node| node.bucket(idx).value().clone()))
+						Some(n.apply(|node| node.bucket_ref(idx).value()))
 					} else {
 						None
 					}
@@ -273,6 +408,33 @@ mod btree_get {
 					}
 				},
 			}
+		}
+	}
+}
+
+pub struct BTreeCursor {
+	stack: NodeStack,
+	current_bucket: Option<WeakBucketRef>,
+}
+
+impl BTreeCursor {
+	fn new(head: NodeRef, k: &[u8]) -> BTreeCursor {
+		let (mut stack, exact) = NodeStack::construct(head, k);
+		let current_bucket;
+
+		if !exact {
+			current_bucket = stack.ascend_maybe();
+		} else {
+			if let Some(cursor) = stack.peek_mut() {
+				current_bucket = Some(cursor.0.apply(|node| node.bucket_ref(cursor.1)));
+			} else {
+				current_bucket = None;
+			}
+		}
+
+		BTreeCursor {
+			stack: stack,
+			current_bucket: current_bucket,
 		}
 	}
 }
@@ -333,6 +495,20 @@ impl PersistentBTree {
 			leading_txid: self.leading_txid,
 		}
 	}
+
+	fn start_cursor(k: &[u8]) -> BTreeCursor {
+		panic!("todo")
+	}
+
+	/// Steps the given cursor forward one (key, value) pair.
+	/// The cursor is emptied once it reaches the end.
+	fn advance(cursor: &BTreeCursor) {
+		panic!("todo")
+	}
+
+	// fn retreat_with_bound(n: &NodeStack) -> bool {
+
+	// }
 }
 
 impl ByteMap for PersistentBTree {

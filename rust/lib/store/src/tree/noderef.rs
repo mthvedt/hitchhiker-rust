@@ -20,15 +20,15 @@ impl HotHandle {
     /// Do something to the referenced MemNode.
     pub fn apply_mut<F, R> (&mut self, f: F) -> R where F: FnOnce(&mut MemNode) -> R
     {
-        match self {
+        match *self {
             // Same call, different objects. Necessary because of the monomorphism restriction.
-            &mut HotHandle::Existing(ref mut w_rfc_hn) => {
+            HotHandle::Existing(ref mut w_rfc_hn) => {
                 // borrow checker tricks
                 let strong = w_rfc_hn.upgrade().unwrap();
                 let r = f(strong.borrow_mut().deref_mut());
                 r
             }
-            &mut HotHandle::New(ref mut rc_rfc_hn) => f(Rc::get_mut(rc_rfc_hn).unwrap().borrow_mut().deref_mut()),
+            HotHandle::New(ref mut rc_rfc_hn) => f(Rc::get_mut(rc_rfc_hn).unwrap().borrow_mut().deref_mut()),
         }
     }
 }
@@ -43,9 +43,9 @@ pub enum NodeRef {
 
 impl NodeRef {
     pub fn upgrade(&self) -> FatNodeRef {
-        match self {
-            &NodeRef::Transient(ref rc_rfc_hn) => FatNodeRef::Transient(rc_rfc_hn.upgrade().unwrap()),
-            &NodeRef::Persistent(ref rc_pn) => FatNodeRef::Persistent(rc_pn.upgrade().unwrap()),
+        match *self {
+            NodeRef::Transient(ref rc_rfc_hn) => FatNodeRef::Transient(rc_rfc_hn.upgrade().unwrap()),
+            NodeRef::Persistent(ref rc_pn) => FatNodeRef::Persistent(rc_pn.upgrade().unwrap()),
         }
     }
 
@@ -64,9 +64,9 @@ impl NodeRef {
 
     /// Returns a hot NodeRef which may be modified, together with a reference to that node. May return self.
     pub fn heat(&self) -> (HotHandle, bool) {
-        match self {
-            &NodeRef::Transient(ref rc_rfc_hn) => (HotHandle::Existing(rc_rfc_hn.clone()), false),
-            &NodeRef::Persistent(ref rc_pn) => {
+        match *self {
+            NodeRef::Transient(ref rc_rfc_hn) => (HotHandle::Existing(rc_rfc_hn.clone()), false),
+            NodeRef::Persistent(ref rc_pn) => {
                 let newnode = rc_pn.upgrade().unwrap().deref().fork();
                 (HotHandle::New(Rc::new(RefCell::new(newnode))), true)
             }
@@ -115,25 +115,25 @@ impl FatNodeRef {
     pub fn apply<F, R>(&self, f: F) -> R where
     F: FnOnce(&MemNode) -> R
     {
-        match self {
-            &FatNodeRef::Transient(ref rc_rfc_hn) => f(rc_rfc_hn.deref().borrow().deref()),
-            &FatNodeRef::Persistent(ref rc_pn) => f(&rc_pn.deref().node),
+        match *self {
+            FatNodeRef::Transient(ref rc_rfc_hn) => f(rc_rfc_hn.deref().borrow().deref()),
+            FatNodeRef::Persistent(ref rc_pn) => f(&rc_pn.deref().node),
         }
     }
 
     pub fn apply_persistent<F, R>(&self, f: F) -> R where
     F: FnOnce(&PersistentNode) -> R
     {
-        match self {
-            &FatNodeRef::Transient(_) => panic!("node is not persistent"),
-            &FatNodeRef::Persistent(ref rc_pn) => f(&rc_pn.deref()),
+        match *self {
+            FatNodeRef::Transient(_) => panic!("node is not persistent"),
+            FatNodeRef::Persistent(ref rc_pn) => f(&rc_pn.deref()),
         }
     }
 
     pub fn noderef(&self) -> NodeRef {
-        match self {
-            &FatNodeRef::Transient(ref rc_) => NodeRef::Transient(Rc::downgrade(&rc_)),
-            &FatNodeRef::Persistent(ref rc_) => NodeRef::Persistent(Rc::downgrade(&rc_)),
+        match *self {
+            FatNodeRef::Transient(ref rc_) => NodeRef::Transient(Rc::downgrade(&rc_)),
+            FatNodeRef::Persistent(ref rc_) => NodeRef::Persistent(Rc::downgrade(&rc_)),
         }
     }
 
@@ -255,9 +255,9 @@ impl FatNodeRef {
     // }
 
     fn is_transient(&self) -> bool {
-        match self {
-            &FatNodeRef::Transient(_) => true,
-            &FatNodeRef::Persistent(_) => false,
+        match *self {
+            FatNodeRef::Transient(_) => true,
+            FatNodeRef::Persistent(_) => false,
         }
     }
 

@@ -11,8 +11,13 @@ use tree::noderef::*;
 // A key is anything that can be (quickly, efficiently) converted to raw bytes.
 // A value is a Datum, a set of bytes that can be streamed.
 
+/// A map that maps byte keys to data streams.
 pub trait ByteMap {
+	// TODO: these should be data streams.
+	/// The type of a data stream.
 	type GetDatum: Datum;
+
+	/// The type returned by the get method.
 	type Get: Borrow<Self::GetDatum>;
 
 	/// This is mutable because gets may introduce read conflicts, and hence mutate the underlying datastructure.
@@ -24,20 +29,27 @@ pub trait ByteMap {
 	fn check_invariants(&self);
 }
 
+/// A map also supporting insert and delete.
 pub trait MutableByteMap: ByteMap {
 	fn insert<K: Key + ?Sized, V: Datum>(&mut self, k: &K, v: &V) -> ();
 
 	fn delete<K: Key + ?Sized>(&mut self, k: &K) -> bool;
 }
 
+/// A snapshot map. Each snapshot has a transaction counter.
 pub trait ByteMapSnapshot: ByteMap {
 	type Diff: ByteMap;
 
+	/// This snapshot's transaction counter.
 	fn txid(&self) -> Counter;
 
+	/// Gets a difference snapshot from this snapshot, containing all data in this snapshot
+	/// committed after the given transaction counter.
 	fn diff(&self, past: Counter) -> Self::Diff;
 }
 
+/// A byte map supporting snapshots.
+// TODO name
 pub trait FunctionalByteMap: MutableByteMap {
 	type Snap: ByteMapSnapshot;
 
@@ -213,26 +225,40 @@ mod btree_insert {
 mod btree_get {
 	use data::*;
 
-	use tree::bucketref::*;
 	use tree::counter::*;
 	use tree::memnode::*;
 	use tree::noderef::NodeRef;
 
-	fn get_helper<KF, VF>(mut n: NodeRef, k: &[u8], keyfilter: KF, bucketfilter: VF) -> Option<ByteRc> where
-	KF: Fn(&NodeRef) -> bool,
-	VF: Fn(&BucketRef) -> bool
-	{
+	pub fn get(mut n: NodeRef, k: &[u8]) -> Option<ByteRc> {
 		loop {
-			if !keyfilter(&n) {
+			match n.apply(|node| node.find(k)) {
+				Ok(idx) => {
+					return Some(n.apply(|node| node.bucket(idx).value().clone()))
+				}
+				Err(idx) => {
+					if n.apply(MemNode::is_leaf) {
+						return None
+					} else {
+						// Continue the loop
+						n = n.apply(|node| node.child_ref(idx));
+					}
+				},
+			}
+		}
+	}
+
+	/// Searches the tree, ignoring any transactions equal or older in time than the given txid.
+	pub fn get_recent(mut n: NodeRef, k: &[u8], trailing_txid: Counter) -> Option<ByteRc> {
+		loop {
+			if !n.apply_persistent(|pnode| trailing_txid.circle_lt(pnode.txid())) {
 				return None
 			}
 
 			match n.apply(|node| node.find(k)) {
 				Ok(idx) => {
-					// Hopefully this optimizes!
-					let filter_value = n.apply(|node| bucketfilter(node.bucket(idx)));
+					let tx_test = n.apply(|node| trailing_txid.circle_lt(node.bucket(idx).txid()));
 
-					return if filter_value {
+					return if tx_test {
 						Some(n.apply(|node| node.bucket(idx).value().clone()))
 					} else {
 						None
@@ -248,18 +274,6 @@ mod btree_get {
 				},
 			}
 		}
-	}
-
-	pub fn get(n: NodeRef, k: &[u8]) -> Option<ByteRc> {
-		get_helper(n, k, |_| true, |_| true)
-	}
-
-	/// Searches the tree, ignoring any transactions equal or older in time than the given txid.
-	pub fn get_recent(n: NodeRef, k: &[u8], trailing_txid: Counter) -> Option<ByteRc> {
-		let nodefilter = |nref: &NodeRef| nref.apply_persistent(|pnode| trailing_txid.circle_lt(pnode.txid()));
-		let bucketfilter = |bref: &BucketRef| trailing_txid.circle_lt(bref.txid());
-
-		get_helper(n, k, nodefilter, bucketfilter)
 	}
 }
 

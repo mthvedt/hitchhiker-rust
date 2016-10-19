@@ -6,7 +6,6 @@
 // #[macro_use]
 // extern crate quickcheck;
 
-mod bucket;
 mod bucketref;
 
 mod counter;

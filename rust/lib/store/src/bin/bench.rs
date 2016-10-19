@@ -352,6 +352,7 @@ defbench! {
 
 // }
 
+// Benchmark that makes one snapshot each time something is inserted.
 defbench! {
 	bench_snapshots_frequent, t: FunctionalByteMap, b, T, V, {
 		let mut r = b.rand();
@@ -366,6 +367,7 @@ defbench! {
 				// Snap number i contains keys 1..i
 				snapvec.push(t.snap());
 
+				// Random verification
 				V::verify(|| "map get mismatch", || {
 					let idx = r.next_u32() as usize % ks.len();
 					if idx <= i {
@@ -389,11 +391,70 @@ defbench! {
 	}
 }
 
-// defbench! {
-// 	bench_diffs, t: FunctionalByteMap, b, T, V, {
+// TODO: why use macros anyway?
 
-// 	}
-// }
+// Benchmark that calls get on random diff snapshots. Approximately 3/4 of gets are misses.
+defbench! {
+	bench_diff_get, t: FunctionalByteMap, b, T, V, {
+		let mut r = b.rand();
+
+		let ks = random_byte_strings(0xBCA2E7D6);
+		let vs = random_byte_strings(0xA8541B4F);
+		let mut snapvec = Vec::with_capacity(ks.len());
+		let mut random_diff_counters = Vec::with_capacity(ks.len());
+		let mut diffvec = Vec::with_capacity(ks.len());
+		let mut random_get_indices = Vec::with_capacity(ks.len());
+		let mut random_get_keys = Vec::with_capacity(ks.len());
+
+		for i in 0..ks.len() {
+			t.insert(&ks[i], &vs[i].into_datum());
+			// Snap number i contains keys 0..i inclusive
+			let snap = t.snap();
+			// Push snap first to help type inference.
+			snapvec.push(snap);
+
+			// randomly choose a tx to make a diff snapshot
+			let random_diff_counter = snapvec[r.next_u32() as usize % (i + 1)].txid();
+			let diff = snapvec[snapvec.len() - 1].diff(random_diff_counter);
+
+			random_diff_counters.push(random_diff_counter);
+			diffvec.push(diff);
+
+			// Make the random get index a key that was committed at or before the current diff.
+			// It has about a 1/2 chance of showing up in the actual diff.
+			let random_get_index = r.next_u32() as usize % ks.len();
+			random_get_indices.push(random_get_index);
+			random_get_keys.push(&ks[random_get_index]);
+		}
+
+		b.bench(u64::try_from(ks.len()).unwrap(), || {
+			for i in 0..ks.len() {
+				black_box(diffvec[i].get(random_get_keys[i]));
+
+				V::verify(|| "diff mismatch", || {
+					let random_get_index = random_get_indices[i];
+					let r = diffvec[i].get(random_get_keys[i]);
+
+					// Slightly tricky.
+					// Our snapshot diff is bounded by snapshots (x, y) where x is the snapshot
+					// with counter random_diff_counters[i], and y is the snapshot at snap[i]
+
+					// println!("{} {} {} {}", i, random_get_index, random_diff_counters[i], snapvec[random_get_index].txid());
+					if random_get_index > i {
+						// Is out of the maximum bound of our snapshot
+						r.is_none()
+					} else if snapvec[random_get_index].txid().circle_lt_eq(random_diff_counters[i]) {
+						// a little confusing. the snapshot at random_get_index is the first snapshot that contains the key
+						// at random_get_index. if the diff doesn't contain that snapshot's txid, it shouldn't contain that key.
+						r.is_none()
+					} else {
+						r.map_or(false, |r| r.borrow().box_copy().deref() == &vs[random_get_index])
+					}
+				});
+			}
+		})
+	}
+}
 
 fn main() {
 	// TODO: use cargo to default to release, but enable both modes
@@ -404,6 +465,7 @@ fn main() {
 			PersistentBTree,
 		] => [
 			bench_snapshots_frequent,
+			bench_diff_get,
 		],
 		[DummyTestable,] => [bench_ref_std_map,],
 		[

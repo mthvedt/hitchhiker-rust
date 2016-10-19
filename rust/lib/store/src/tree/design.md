@@ -9,33 +9,12 @@ The Thunderhead data store is a persistent hitchhiker B-tree, supporting the fol
 Yak shave
 =========
 
-- Decide if and why we needed MemNodes! Advantage: it's already written, container types are easily swapped.
 
-- Impl a trait for mutable Nodes with common pointer types. We don't need to create a node trait,
-but we need this because:
-- - We need nice, small objects for MemNode return values, and objects can't have associated types.
-- - We might have multiple MemNode types with the same data layout (e.g. leaf and non-leaf).
-- - - For the above, consider having a dynamically sized child array instead.
-
-- Implement MemNode, a BTree node with tweakable parameters.
-(Why? We wanted a BTree memory node with multiple formats... Any reason for that? Anyone? Bueller?
-The idea was that committed and uncommitted in-memory nodes would have different formats but share the memnode layout...
-This is probably wrong!
-
-It all started with the observation that for cold nodes, we want to store node info in the node address.
-For hot nodes we have no particular desire. Uncommitted nodes can address other uncommitted nodes or cold nodes.
-Transient nodes can address any one of the three.)
-
-- Impl a node trait. (Optional)
-- Implement FatNodeRef, give it ALL THE POWAH of a node. How? Through the Operations pattern, maybe.
-Or just a switch enum... there's really only a few kinds of nodes.
-- - We will probably need the Operations pattern anyway.
-- Impl a node header with the snapshot information we need. Node pointers have the node header stored on their person.
 
 Master TODO list
 ================
 
-- Snapshot diffs.
+- Cursors
 - Hitchhiker model?
 - Merge based commit OR concurrent writer commit. Or something. Pushdown rollbacks?
 - - Option: Merge commit

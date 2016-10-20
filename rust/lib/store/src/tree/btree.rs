@@ -40,10 +40,14 @@ pub trait NavigableByteMap: ByteMap {
 	type Cursor: Cursor;
 
 	fn cursor(&self, k: &[u8]) -> Self::Cursor;
+
+	fn start_cursor(&self) -> Self::Cursor {
+		self.cursor(&[])
+	}
 }
 
 /// A snapshot map. Each snapshot has a transaction counter.
-pub trait ByteMapSnapshot: ByteMap {
+pub trait ByteMapSnapshot: NavigableByteMap {
 	type Diff: NavigableByteMap;
 
 	/// This snapshot's transaction counter.
@@ -70,19 +74,15 @@ pub trait Cursor {
 	/// The type returned by the get method.
 	type Get: Borrow<Self::GetDatum>;
 
-	fn has_next(&self) -> bool;
+	fn key(&self) -> Option<ByteRc>;
 
-	fn next_key(&self) -> ByteRc;
-
-	fn next_value(&self) -> Self::Get;
+	fn value(&self) -> Option<Self::Get>;
 
 	fn advance(&mut self) -> bool;
 }
 
 // TODO: this does not need to be a mod
 mod nodestack {
-	use std::mem;
-
 	use tree::bucketref::*;
 	use tree::noderef::NodeRef;
 	use tree::memnode::*;
@@ -191,7 +191,7 @@ mod nodestack {
 
 				// This is why we have the borrow checker block. If we pop-and-push, LLVM optimizes it poorly
 				if is_leaf {
-					cursorref.1 = 1;
+					cursorref.1 += 1;
 				}
 			}
 
@@ -206,13 +206,17 @@ mod nodestack {
 		/// Left-descends down the nodestack until we reach the first left bucket on the next leaf node.
 		/// Precondition: we are not at a leaf node, and we are not empty.
 		fn descend(&mut self) -> Option<WeakBucketRef> {
-			let mut nref = { // borrow checker block
+			let mut nref;
+
+			{ // borrow checker block
 				// Asserts we are not empty.
-				let mut cursorref = self.peek_mut().unwrap();
+				let cursorref = self.peek_mut().unwrap();
 				debug_assert!(!cursorref.0.apply(MemNode::is_leaf));
 
 				// If we just visited bucket n, we visit child n+1 and find that child's leftmost descendant.
-				cursorref.0.apply(|node| node.child_ref(cursorref.1 + 1))
+				nref = cursorref.0.apply(|node| node.child_ref(cursorref.1 + 1));
+				// The next time we revisit this node, look at bucket n+1.
+				cursorref.1 += 1;
 			};
 
 			loop {
@@ -237,7 +241,7 @@ mod nodestack {
 		pub fn ascend_maybe(&mut self) -> Option<WeakBucketRef> {
 			{ // borrow checker block
 				// Asserts we are not empty
-				let mut topcursor = self.peek_mut().unwrap();
+				let topcursor = self.peek_mut().unwrap();
 				debug_assert!(topcursor.0.apply(MemNode::is_leaf));
 
 				// We have no need to ascend
@@ -255,7 +259,7 @@ mod nodestack {
 					return None;
 				}
 
-				let mut topcursor = self.peek_mut().unwrap();
+				let topcursor = self.peek_mut().unwrap();
 
 				if topcursor.1 < topcursor.0.apply(|node| node.bucket_count()) {
 					// This is a branch bucket. The next call to advance() should left-descend to the next
@@ -427,22 +431,12 @@ pub struct BTreeCursor {
 
 impl BTreeCursor {
 	fn construct(head: NodeRef, k: &[u8]) -> BTreeCursor {
-		let (mut stack, exact) = NodeStack::construct(head, k);
-		let current_bucket;
-
-		if !exact {
-			current_bucket = stack.ascend_maybe();
-		} else {
-			if let Some(cursor) = stack.peek_mut() {
-				current_bucket = Some(cursor.0.apply(|node| node.bucket_ref(cursor.1)));
-			} else {
-				current_bucket = None;
-			}
-		}
+		let (mut stack, _) = NodeStack::construct(head, k);
+		let bucket = stack.ascend_maybe();
 
 		BTreeCursor {
 			stack: stack,
-			current_bucket: current_bucket,
+			current_bucket: bucket,
 		}
 	}
 
@@ -462,16 +456,12 @@ impl Cursor for BTreeCursor {
 	/// The type returned by the get method.
 	type Get = ByteRc;
 
-	fn has_next(&self) -> bool {
-		self.current_bucket.is_some()
+	fn key(&self) -> Option<ByteRc> {
+		self.current_bucket.as_ref().map(WeakBucketRef::key)
 	}
 
-	fn next_key(&self) -> ByteRc {
-		self.current_bucket.as_ref().unwrap().key()
-	}
-
-	fn next_value(&self) -> Self::Get {
-		self.current_bucket.as_ref().unwrap().value()
+	fn value(&self) -> Option<Self::Get> {
+		self.current_bucket.as_ref().map(WeakBucketRef::value)
 	}
 
 	fn advance(&mut self) -> bool {

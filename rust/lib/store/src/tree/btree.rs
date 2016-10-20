@@ -36,9 +36,15 @@ pub trait MutableByteMap: ByteMap {
 	fn delete<K: Key + ?Sized>(&mut self, k: &K) -> bool;
 }
 
+pub trait NavigableByteMap: ByteMap {
+	type Cursor: Cursor;
+
+	fn cursor(&self, k: &[u8]) -> Self::Cursor;
+}
+
 /// A snapshot map. Each snapshot has a transaction counter.
 pub trait ByteMapSnapshot: ByteMap {
-	type Diff: ByteMap;
+	type Diff: NavigableByteMap;
 
 	/// This snapshot's transaction counter.
 	fn txid(&self) -> Counter;
@@ -64,6 +70,8 @@ pub trait Cursor {
 	/// The type returned by the get method.
 	type Get: Borrow<Self::GetDatum>;
 
+	fn has_next(&self) -> bool;
+
 	fn next_key(&self) -> ByteRc;
 
 	fn next_value(&self) -> Self::Get;
@@ -88,7 +96,7 @@ mod nodestack {
 	}
 
 	impl NodeStack {
-		pub fn new() -> NodeStack {
+		pub fn empty() -> NodeStack {
 			NodeStack {
 				// master_node: topnode,
 				entries: Vec::with_capacity(MAX_DEPTH as usize),
@@ -142,7 +150,7 @@ mod nodestack {
 		pub fn construct(n: NodeRef, k: &[u8]) -> (NodeStack, bool) {
 			// Perf note: because we always use the 'fattest node', the potential of polymorphic recursion
 			// doesn't help us.
-			let mut stack = NodeStack::new();
+			let mut stack = NodeStack::empty();
 			let found;
 			let mut n = n.clone();
 
@@ -418,7 +426,7 @@ pub struct BTreeCursor {
 }
 
 impl BTreeCursor {
-	fn new(head: NodeRef, k: &[u8]) -> BTreeCursor {
+	fn construct(head: NodeRef, k: &[u8]) -> BTreeCursor {
 		let (mut stack, exact) = NodeStack::construct(head, k);
 		let current_bucket;
 
@@ -436,6 +444,40 @@ impl BTreeCursor {
 			stack: stack,
 			current_bucket: current_bucket,
 		}
+	}
+
+	fn empty() -> BTreeCursor {
+		BTreeCursor {
+			stack: NodeStack::empty(),
+			current_bucket: None,
+		}
+	}
+}
+
+impl Cursor for BTreeCursor {
+	// TODO: these should be data streams.
+	/// The type of a data stream.
+	type GetDatum = ByteRc;
+
+	/// The type returned by the get method.
+	type Get = ByteRc;
+
+	fn has_next(&self) -> bool {
+		self.current_bucket.is_some()
+	}
+
+	fn next_key(&self) -> ByteRc {
+		self.current_bucket.as_ref().unwrap().key()
+	}
+
+	fn next_value(&self) -> Self::Get {
+		self.current_bucket.as_ref().unwrap().value()
+	}
+
+	fn advance(&mut self) -> bool {
+		self.current_bucket = self.stack.advance();
+
+		self.current_bucket.is_some()
 	}
 }
 
@@ -496,19 +538,12 @@ impl PersistentBTree {
 		}
 	}
 
-	fn start_cursor(k: &[u8]) -> BTreeCursor {
-		panic!("todo")
+	fn cursor(&self, k: &[u8]) -> BTreeCursor {
+		match self.head.as_ref() {
+			Some(strongref) => BTreeCursor::construct(strongref.noderef(), k),
+			None => BTreeCursor::empty(),
+		}
 	}
-
-	/// Steps the given cursor forward one (key, value) pair.
-	/// The cursor is emptied once it reaches the end.
-	fn advance(cursor: &BTreeCursor) {
-		panic!("todo")
-	}
-
-	// fn retreat_with_bound(n: &NodeStack) -> bool {
-
-	// }
 }
 
 impl ByteMap for PersistentBTree {
@@ -572,6 +607,14 @@ impl ByteMap for PersistentDiff {
 	}
 }
 
+impl NavigableByteMap for PersistentDiff {
+	type Cursor = BTreeCursor;
+
+	fn cursor(&self, k: &[u8]) -> Self::Cursor {
+		panic!("not yet implemented")
+	}
+}
+
 // PersistentBTrees can serve as snapshots, as long as we don't try to write to a persistent node.
 pub struct PersistentSnap {
 	v: PersistentBTree,
@@ -603,6 +646,14 @@ impl ByteMapSnapshot for PersistentSnap {
 			v: self.v.persistent_clone(),
 			rear_counter: past,
 		}
+	}
+}
+
+impl NavigableByteMap for PersistentSnap {
+	type Cursor = BTreeCursor;
+
+	fn cursor(&self, k: &[u8]) -> Self::Cursor {
+		self.v.cursor(k)
 	}
 }
 

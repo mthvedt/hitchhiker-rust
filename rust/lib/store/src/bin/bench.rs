@@ -456,6 +456,57 @@ defbench! {
 	}
 }
 
+defbench! {
+	bench_cursor_scan, t: FunctionalByteMap, b, T, V, {
+		let ks = random_byte_strings(0xBCA2E7D6);
+		let vs = random_byte_strings(0xA8541B4F);
+		let mut m = HashMap::new();
+
+		for i in 0..ks.len() {
+			t.insert(&ks[i], &vs[i]);
+			m.insert(ks[i].as_ref(), vs[i].as_ref());
+		}
+
+		let snap = t.snap();
+		let mut cursor = snap.start_cursor();
+		let mut i = 0;
+		let mut most_recent_key: Option<ByteRc> = None;
+
+		b.bench(u64::try_from(ks.len()).unwrap(), || {
+			loop {
+				if cursor.key().is_none() {
+					break;
+				}
+
+				black_box(&cursor.key().unwrap());
+				black_box(&cursor.value().unwrap());
+
+				V::verify(|| "n/a", || {
+					i += 1;
+					true
+				});
+				V::verify(|| "cursor out of order", || {
+					let k = cursor.key();
+					let r = match most_recent_key {
+						Some(ref k2) => k.as_ref().unwrap().bytes() >= k2.bytes(),
+						None => true,
+					};
+					most_recent_key = k;
+					r
+				});
+				V::verify(|| "cursor mismatch", || {
+					m.get(cursor.key().unwrap().bytes()).unwrap() ==
+					&cursor.value().unwrap().borrow().box_copy().deref()
+				});
+
+				cursor.advance();
+			}
+		});
+
+		V::verify(|| "wrong number of items in cursor", || i == ks.len())
+	}
+}
+
 fn main() {
 	// TODO: use cargo to default to release, but enable both modes
 	// debug_assert!(false, "This target should be run in release mode");
@@ -465,6 +516,7 @@ fn main() {
 			PersistentBTree,
 		] => [
 			bench_snapshots_frequent,
+			bench_cursor_scan,
 			bench_diff_get,
 		],
 		[DummyTestable,] => [bench_ref_std_map,],

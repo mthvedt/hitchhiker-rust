@@ -1,15 +1,16 @@
 use std::borrow::Borrow;
 use std::mem;
 
-use data::{ByteRc, ByteWeak, Datum};
+use data::{RcBytes, WeakBytes, Datum};
 
 use tree::counter::*;
 
 #[derive(Clone)]
-// TODO ByteRc -> RcBytes
+// TODO RcBytes -> RcBytes
+/// Public so we do not have a private type in a public interface.
 pub struct Bucket {
-    k: ByteRc,
-    v: ByteRc,
+    k: RcBytes,
+    v: RcBytes,
 }
 
 impl Bucket {
@@ -30,8 +31,8 @@ pub enum BucketRef {
 impl BucketRef {
     pub fn new_transient<V: Datum>(k: &[u8], v: &V) -> BucketRef {
         BucketRef::Transient(Bucket {
-            k: ByteRc::from_key(k),
-            v: ByteRc::from_value(v),
+            k: RcBytes::from_key(k),
+            v: RcBytes::from_value(v),
         })
     }
 
@@ -42,7 +43,7 @@ impl BucketRef {
         }
     }
 
-    pub fn value(&self) -> &ByteRc {
+    pub fn value(&self) -> &RcBytes {
         match *self {
             BucketRef::Transient(ref b) => &b.v,
             BucketRef::Persistent(ref b, _) => &b.v,
@@ -95,11 +96,11 @@ impl BucketRef {
 }
 
 #[derive(Clone)]
-// Todo ByteWeak -> WeakBytes
+// Todo WeakBytes -> WeakBytes
 /// Public for API purposes.
 pub struct WeakBucket {
-    k: ByteWeak,
-    v: ByteWeak,
+    k: WeakBytes,
+    v: WeakBytes,
 }
 
 pub enum WeakBucketRef {
@@ -108,14 +109,14 @@ pub enum WeakBucketRef {
 }
 
 impl WeakBucketRef {
-    pub fn key(&self) -> ByteRc {
+    pub fn key(&self) -> RcBytes {
         match *self {
             WeakBucketRef::Transient(ref b) => b.k.upgrade(),
             WeakBucketRef::Persistent(ref b, _) => b.k.upgrade(),
         }
     }
 
-    pub fn value(&self) -> ByteRc {
+    pub fn value(&self) -> RcBytes {
         match *self {
             WeakBucketRef::Transient(ref b) => b.v.upgrade(),
             WeakBucketRef::Persistent(ref b, _) => b.v.upgrade(),

@@ -1,5 +1,6 @@
-/// Make an array, populating each element according to a lambda of one int.
+//! Utility fns and macros.
 
+/// Make an array, populating each element according to the given constructor, which should be a lambda of one int.
 #[macro_export]
 macro_rules! make_array {
     ($constructor: expr, $n: expr) => {

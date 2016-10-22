@@ -1,90 +1,5 @@
-use data::rcslice::{RcSlice, WeakSlice};
-
-use std::borrow::Borrow;
-
 use super::traits::*;
-// TODO rename this lib
-// TODO is value a good name for datum?
-#[derive(PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct ByteBox {
-    data: Box<[u8]>,
-}
 
-impl ByteBox {
-    // TODO: a 'ToBox' trait for Key
-    pub fn new<B: Borrow<[u8]>>(bytes: B) -> ByteBox {
-        ByteBox {
-            // TODO size check
-            data: SliceDatum::new(bytes.borrow()).box_copy(),
-        }
-    }
-
-    pub fn from_key<K: Key + ?Sized>(k: &K) -> ByteBox {
-        Self::new(k.bytes())
-    }
-
-    pub fn from_value<V: Datum>(v: &V) -> ByteBox {
-        ByteBox {
-            data: v.box_copy(),
-        }
-    }
-}
-
-impl Borrow<[u8]> for ByteBox {
-    fn borrow(&self) -> &[u8] {
-        self.data.borrow()
-    }
-}
-
-#[derive(Clone)]
-pub struct ByteRc {
-    data: RcSlice<u8>,
-}
-
-impl ByteRc {
-    pub fn new<B: Borrow<[u8]>>(bytes: B) -> ByteRc {
-        Self::from_value(&SliceDatum::new(bytes.borrow()))
-    }
-
-    pub fn from_key<K: Key + ?Sized>(k: &K) -> ByteRc {
-        Self::new(k.bytes())
-    }
-
-    pub fn from_value<V: Datum>(v: &V) -> ByteRc {
-        ByteRc {
-            data: RcSlice::new(v.box_copy()),
-        }
-    }
-
-    pub fn downgrade(&self) -> ByteWeak {
-        ByteWeak {
-            data: self.data.downgrade(),
-        }
-    }
-}
-
-impl Borrow<[u8]> for ByteRc {
-    fn borrow(&self) -> &[u8] {
-        self.data.borrow()
-    }
-}
-
-#[derive(Clone)]
-pub struct ByteWeak {
-    data: WeakSlice<u8>,
-}
-
-impl ByteWeak {
-    pub fn upgrade(&self) -> ByteRc {
-        ByteRc {
-            // Should never fail to upgrade for our purposes.
-            data: self.data.upgrade().unwrap(),
-        }
-    }
-}
-
-// TODO what should be public here?
-// TODO impl Key not Datum
 #[derive(PartialEq, Eq, Hash)]
 pub struct SliceDatum<'a> {
     data: &'a [u8],
@@ -98,7 +13,6 @@ impl<'a> SliceDatum<'a> {
     }
 }
 
-// TODO do we need these traits still?
 /// Necessary because the type of &[u8].into_iter() is &u8, not u8.
 pub struct SliceDatumIterator<'a> {
     wrapped: <&'a [u8] as IntoIterator>::IntoIter,

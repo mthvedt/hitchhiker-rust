@@ -60,6 +60,38 @@ macro_rules! deftests {
     };
 }
 
+/// Convenience wrapper around a box of bytes.
+#[derive(PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ByteBox {
+    data: Box<[u8]>,
+}
+
+impl ByteBox {
+    // TODO: a 'ToBox' trait for Key
+    fn new<B: Borrow<[u8]>>(bytes: B) -> ByteBox {
+        ByteBox {
+            // TODO size check
+            data: SliceDatum::new(bytes.borrow()).box_copy(),
+        }
+    }
+
+    fn from_key<K: Key + ?Sized>(k: &K) -> ByteBox {
+        Self::new(k.bytes())
+    }
+
+    fn from_value<V: Datum>(v: &V) -> ByteBox {
+        ByteBox {
+            data: v.box_copy(),
+        }
+    }
+}
+
+impl Borrow<[u8]> for ByteBox {
+    fn borrow(&self) -> &[u8] {
+        self.data.borrow()
+    }
+}
+
 /// A ByteMap impl that boxes references into a HashMap. Of course boxing references is a little slow,
 /// but it's "fair" in the sense a real DB will need to allocate and copy *something*.
 /// We also have benchmarks for raw byte string references in the bench/ binary.

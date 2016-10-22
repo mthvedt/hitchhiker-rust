@@ -470,7 +470,7 @@ defbench! {
 		let snap = t.snap();
 		let mut cursor = snap.start_cursor();
 		let mut i = 0;
-		let mut most_recent_key: Option<ByteRc> = None;
+		let mut most_recent_key: Option<RcBytes> = None;
 
 		b.bench(u64::try_from(ks.len()).unwrap(), || {
 			loop {

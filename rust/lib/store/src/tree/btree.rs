@@ -74,7 +74,7 @@ pub trait Cursor {
 	/// The type returned by the get method.
 	type Get: Borrow<Self::GetDatum>;
 
-	fn key(&self) -> Option<ByteRc>;
+	fn key(&self) -> Option<RcBytes>;
 
 	fn value(&self) -> Option<Self::Get>;
 
@@ -376,7 +376,7 @@ mod btree_get {
 	use tree::memnode::*;
 	use tree::noderef::NodeRef;
 
-	pub fn get(mut n: NodeRef, k: &[u8]) -> Option<ByteRc> {
+	pub fn get(mut n: NodeRef, k: &[u8]) -> Option<RcBytes> {
 		loop {
 			match n.apply(|node| node.find(k)) {
 				Ok(idx) => {
@@ -395,7 +395,7 @@ mod btree_get {
 	}
 
 	/// Searches the tree, ignoring any transactions equal or older in time than the given txid.
-	pub fn get_recent(mut n: NodeRef, k: &[u8], trailing_txid: Counter) -> Option<ByteRc> {
+	pub fn get_recent(mut n: NodeRef, k: &[u8], trailing_txid: Counter) -> Option<RcBytes> {
 		loop {
 			if !n.apply_persistent(|pnode| trailing_txid.circle_lt(pnode.txid())) {
 				return None
@@ -451,12 +451,12 @@ impl BTreeCursor {
 impl Cursor for BTreeCursor {
 	// TODO: these should be data streams.
 	/// The type of a data stream.
-	type GetDatum = ByteRc;
+	type GetDatum = RcBytes;
 
 	/// The type returned by the get method.
-	type Get = ByteRc;
+	type Get = RcBytes;
 
-	fn key(&self) -> Option<ByteRc> {
+	fn key(&self) -> Option<RcBytes> {
 		self.current_bucket.as_ref().map(WeakBucketRef::key)
 	}
 
@@ -496,7 +496,7 @@ impl PersistentBTree {
 	}
 
 	/// Internal method for snapshot diffs.
-	fn get_recent<K: Key + ?Sized>(&mut self, k: &K, trailing_txid: Counter) -> Option<ByteRc> {
+	fn get_recent<K: Key + ?Sized>(&mut self, k: &K, trailing_txid: Counter) -> Option<RcBytes> {
 		self.head.as_ref().and_then(|strongref| btree_get::get_recent(strongref.noderef(), k.bytes(), trailing_txid))
 	}
 
@@ -537,8 +537,8 @@ impl PersistentBTree {
 }
 
 impl ByteMap for PersistentBTree {
-	type GetDatum = ByteRc;
-	type Get = ByteRc;
+	type GetDatum = RcBytes;
+	type Get = RcBytes;
 
 	fn get<K: Key + ?Sized>(&mut self, k: &K) -> Option<Self::Get> {
 		self.head.as_ref().and_then(|strongref| btree_get::get(strongref.noderef(), k.bytes()))

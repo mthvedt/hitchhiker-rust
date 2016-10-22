@@ -19,6 +19,7 @@ use super::slice::*;
 // 	fn into_box(self) -> Box<[u8]>;
 // }
 
+// TODO: key is obsolete. Need to use arena bytes model.
 pub trait Key {
 	fn bytes(&self) -> &[u8];
 }
@@ -35,9 +36,7 @@ pub trait DataWrite {
     fn write(self, buf: &[u8]) -> Self::Result;
 }
 
-// TODO rename Datum to Value?
-// TODO data isn't right. What we really want is to 'open a channel'
-// into the persistent store.
+// TODO obsolete. Need to use arena bytes model or direct disk access model.
 pub trait Datum {
 	fn len(&self) -> usize;
 	// TODO should yield future; both the in and out can be a stream.
@@ -66,12 +65,11 @@ impl<K> Datum for K where K: Key {
 	}
 }
 
-// TODO can we make this an anon type?
+// TODO obsolete
 struct ByteDataWrite<'a> {
 	v: &'a mut [u8],
 }
 
-// TODO need to work on api for datawrite...
 impl<'a> DataWrite for ByteDataWrite<'a> {
 	type Result = ();
 
@@ -82,6 +80,7 @@ impl<'a> DataWrite for ByteDataWrite<'a> {
 	}
 }
 
+// TODO: we shouldn't need this.
 pub trait IntoDatum {
 	/// The datum type. In general, this will be bounded by the IntoDatum's lifetime.
 	type D: Datum;

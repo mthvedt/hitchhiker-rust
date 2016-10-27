@@ -22,11 +22,10 @@ pub mod bench;
 // TODO do we have data macros?
 #[macro_use]
 mod data;
-mod memory;
 mod traits;
+mod tdfuture;
 pub mod tree;
 
 // TODO: cleaner separation of interfaces
 pub use data::*;
-pub use memory::*;
 pub use traits::*;

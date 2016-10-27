@@ -22,7 +22,8 @@ pub trait ByteMap {
 
 	/// This is mutable because gets may introduce read conflicts, and hence mutate the underlying datastructure.
 	// TODO this does not need to be mutable. In particular, interior mutability is a thing
-	fn get<K: Key + ?Sized>(&mut self, k: &K) -> Option<Self::Get>;
+
+	fn get<K: Key+ ?Sized>(&mut self, k: &K) -> Option<Self::Get>;
 
 	/// Debug method to check this data structures's invariants.
 	// TODO: isolate.

@@ -21,14 +21,12 @@ TODO: determine if key is entirely obsolete! When is it a good idea?
 Master TODO list
 ================
 
-- Code cleanup.
-- Futures model?
-
 A disk model should provide futures for getting and saving. Need to do some thinking about this.
 It needs to be external.
 
 - Fixup interior node polymorphism.
-- Transaction and alloc model?
+- Think about tx and alloc model. Needs to come BEFORE futures model.
+- Futures model?
 
 A transaction allows us to alloc arbitrary bytes, as well as arena-alloc various typed things.
 Publically, we can alloc space for keys and values to be inserted into the tree without copying.

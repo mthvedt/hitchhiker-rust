@@ -11,10 +11,13 @@
 // TODO: isolate feature(test)
 #![feature(test)]
 
+extern crate typed_arena;
 extern crate futures;
 
 // Used for bench. TODO: separate crates...
 extern crate rand;
+
+pub mod alloc;
 
 // TODO consider better way to hide these macros...
 #[macro_use]

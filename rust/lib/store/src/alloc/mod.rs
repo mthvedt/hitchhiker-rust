@@ -9,18 +9,21 @@ use std::rc::{Rc, Weak};
 
 use typed_arena::Arena;
 
-/// Something for which weak handles can be acquired. Weak handles have no defined behavior,
-/// but they may optionally implement behavior to help verify runtime invariants.
-pub trait WeakAcquire {
-    type Handle: WeakHandle;
+/// A model trait providing CheckPtrs. This comes in safe and unsafe versions.
+// TODO: a whole pointer safety model?
+pub trait CheckModel {
+    /// The WeakPtr type.
+    type Ptr: CheckPtr;
 
-    fn acquire(&self) -> Self::Handle;
+    /// Get a WeakPtr to the given value from this WeakModel.
+    fn ptr<X>(x: &X) -> Self::Ptr;
 }
 
-/// A weak handle to something.
-pub trait WeakHandle: 'static + Send + Sized {
-    /// A no-op, but optionally panics if the given WeakAcquire doesn't match this one.
-    fn alloc_assert<W: WeakAcquire>(&self, w: &W);
+/// A pointer to something that cannot be dereferenced. It can optionally be implemented
+/// to help check pointer equality, to enforce runtime invariants.
+pub trait CheckPtr: 'static + Send + Sized {
+    /// A no-op, but optionally panics if the given object doesn't match the one this handle refers to.
+    fn assert_eq<X>(&self, x: &X);
 }
 
 /// An allocated T that belongs to an instance of an Alloc. You must hold a reference to the Alloc
@@ -28,9 +31,9 @@ pub trait WeakHandle: 'static + Send + Sized {
 ///
 /// TODO: Scoped pointers are a little fat when T is a slice. This only affects the bytes situation
 /// since we don't use unsized slices otherwise. (Not yet anyway.)
-pub struct Scoped<A: WeakAcquire, T: ?Sized> {
-    /// Alloc handle. Shared among all instances of Scoped that use the same instance of an Alloc.
-    handle: A::Handle,
+pub struct Scoped<M: CheckModel, T: ?Sized> {
+    /// Ptr handle, referring to the Alloc that created this Scoped.
+    ptr: M::Ptr,
 
     /// The data in this Scoped.
     bytes: *mut T,
@@ -40,29 +43,35 @@ pub struct Scoped<A: WeakAcquire, T: ?Sized> {
 ///
 /// TODO: If/once we have multiple kinds of WeakAcquire, we might consider making this generic
 /// on one particular kind of WeakAcquire, to make it easier for owning code to swap implementations.
-pub trait Alloc<T: 'static + Send>: Sized + WeakAcquire {
+pub trait Alloc<M: CheckModel, T> {
     /// Outside users should probably use one of the provided fns.
-    fn alloc(&mut self, t: T) -> Scoped<Self, T>;
+    fn alloc(&mut self, t: T) -> Scoped<M, T>;
 }
 
 /// An allocator for raw bytes, backed by a quick-free Arena.
 ///
 /// Refactor point: Right now we only use byte allocators. This might change.
-pub trait ByteAlloc: Sized + WeakAcquire {
+pub trait ByteAlloc<M: CheckModel> {
     /// Alloc some raw, uninitialized bytes.
-    fn alloc_raw(&mut self, size: usize) -> Scoped<Self, [u8]>;
+    fn alloc_raw(&mut self, size: usize) -> Scoped<M, [u8]>;
 }
 
-impl<A: WeakAcquire, T: ?Sized> Scoped<A, T> {
-    fn new(a: &A, t: *mut T) -> Self {
+impl<M: CheckModel, T: ?Sized> Scoped<M, T> {
+    fn new<X>(owner: &X, t: *mut T) -> Self {
         Scoped {
-            handle: a.acquire(),
+            ptr: M::ptr(owner),
             bytes: t,
         }
     }
 
-    fn get(&self, alloc: &A) -> &T {
-        self.handle.alloc_assert(alloc);
+    /// Remaps this Scoped to point to the given allocator. Not usually called by client code,
+    /// but useful for nested allocator implementations.
+    fn remap<X>(&mut self, new_owner: &X) {
+        self.ptr = M::ptr(new_owner);
+    }
+
+    fn get<X>(&self, owner: &X) -> &T {
+        self.ptr.assert_eq(owner);
 
         unsafe {
             &*self.bytes
@@ -70,8 +79,8 @@ impl<A: WeakAcquire, T: ?Sized> Scoped<A, T> {
     }
 
     // This is safe because we expose at most one &mut inner borrow while &mut self is borrowed.
-    fn get_mut(&mut self, alloc: &A) -> &mut T {
-        self.handle.alloc_assert(alloc);
+    fn get_mut<X>(&mut self, owner: &X) -> &mut T {
+        self.ptr.assert_eq(owner);
 
         unsafe {
             &mut *self.bytes
@@ -80,57 +89,52 @@ impl<A: WeakAcquire, T: ?Sized> Scoped<A, T> {
 }
 
 /// Helper for SafeAlloc.
-pub struct SafeHandle {
+pub struct SafeCheckPtr {
     inner: usize,
 }
 
-impl SafeHandle {
+impl SafeCheckPtr {
     fn new<X>(x: &X) -> Self {
-        SafeHandle {
+        SafeCheckPtr {
             inner: x as *const _ as usize,
         }
     }
 }
 
-impl WeakHandle for SafeHandle {
-    fn alloc_assert<W: WeakAcquire>(&self, w: &W) {
-        assert!(self.inner == w as *const _ as usize);
+impl CheckPtr for SafeCheckPtr {
+    fn assert_eq<X>(&self, x: &X) {
+        assert!(self.inner == x as *const _ as usize);
+    }
+}
+
+/// A CheckModel that uses safe pointers.
+pub struct SafeCheckModel;
+
+impl CheckModel for SafeCheckModel  {
+    type Ptr = SafeCheckPtr;
+
+    fn ptr<X>(x: &X) -> Self::Ptr {
+        SafeCheckPtr::new(x)
     }
 }
 
 /// A allocator with runtime checks enabled, returned by safe_alloc.
-pub struct SafeArenaAlloc<T: 'static + Send> {
+pub struct ArenaAlloc<T> {
     inner: Arena<T>,
 }
 
-impl<T: 'static + Send> WeakAcquire for SafeArenaAlloc<T> {
-    type Handle = SafeHandle;
-
-    fn acquire(&self) -> SafeHandle {
-        SafeHandle::new(self)
-    }
-}
-
-impl<T: 'static + Send> Alloc<T> for SafeArenaAlloc<T> {
-    fn alloc(&mut self, t: T) -> Scoped<Self, T> {
+impl<M: CheckModel, T> Alloc<M, T> for ArenaAlloc<T> {
+    fn alloc(&mut self, t: T) -> Scoped<M, T> {
         Scoped::new(self, self.inner.alloc(t) as *mut _)
     }
 }
 
-pub struct SafeByteArenaAlloc {
+pub struct ByteArenaAlloc {
     inner: Arena<u8>,
 }
 
-impl WeakAcquire for SafeByteArenaAlloc {
-    type Handle = SafeHandle;
-
-    fn acquire(&self) -> SafeHandle {
-        SafeHandle::new(self)
-    }
-}
-
-impl ByteAlloc for SafeByteArenaAlloc {
-    fn alloc_raw(&mut self, size: usize) -> Scoped<Self, [u8]> {
+impl<M: CheckModel> ByteAlloc<M> for ByteArenaAlloc {
+    fn alloc_raw(&mut self, size: usize) -> Scoped<M, [u8]> {
         unsafe {
             Scoped::new(self, self.inner.alloc_uninitialized(size))
         }

@@ -4,7 +4,8 @@ version = "0.1.0"
 authors = ["Mike Thvedt <mike.thvedt@gmail.com>"]
 
 [dependencies]
-futures = "0.1"
+futures = "0.1.2"
+typed-arena = "1.2.0"
 
 # TODO: these used by testlib. Need better isolation.
 # adamantium = "0.0.1"

@@ -1,4 +1,4 @@
-use std::mem;
+use std::{mem, ptr};
 
 use futures::{Async, Future, Poll};
 
@@ -49,30 +49,19 @@ impl<S: SpinLambda> Future for SpinResultFuture<S> {
 	type Error = S::Error;
 
 	fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-		let mut oldself = unsafe { mem::uninitialized() };
-		let mut newself;
-		let r;
+		let mut oldself = SpinResultFuture::Consumed;
 		mem::swap(self, &mut oldself);
 
 		match oldself {
-			SpinResultFuture::Ok(item) => {
-				newself = SpinResultFuture::Consumed;
-				r = Ok(Async::Ready(item));
-			},
-			SpinResultFuture::Err(err) => {
-				newself = SpinResultFuture::Consumed;
-				r = Err(err);
-			}
+			SpinResultFuture::Ok(item) => Ok(Async::Ready(item)),
+			SpinResultFuture::Err(err) => Err(err),
 			SpinResultFuture::Spin(mut f) => {
-				r = f.poll();
-				newself = SpinResultFuture::Spin(f);
+				let r = f.poll();
+				*self = SpinResultFuture::Spin(f);
+				r
 			}
 			SpinResultFuture::Consumed => panic!("Cannot poll a complete future twice"),
 		}
-
-		mem::swap(self, &mut newself);
-		mem::forget(newself);
-		r
 	}
 }
 

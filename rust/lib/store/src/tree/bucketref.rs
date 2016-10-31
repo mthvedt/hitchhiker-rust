@@ -59,25 +59,13 @@ impl BucketRef {
 
     /// Makes this BucketRef immutable, if it wasn't already.
     pub fn immute(&mut self, txid: Counter) {
-        // TODO: use mem::replace
-        let mut oldself = unsafe { mem::uninitialized() };
-        let mut newself;
-        // Now self is uninit
-        mem::swap(self, &mut oldself);
-
-        // Can't figure out how to do this more elegantly... hopefully it will optimize
-        match oldself {
-            BucketRef::Transient(b) => {
-                newself = BucketRef::Persistent(b, txid);
-            }
-            BucketRef::Persistent(b, txid) => {
-                newself = BucketRef::Persistent(b, txid);
-            }
-        }
+        let mut newself = match *self {
+            BucketRef::Transient(ref b) => BucketRef::Persistent(b.clone(), txid),
+            BucketRef::Persistent(ref b, old_txid) => BucketRef::Persistent(b.clone(), old_txid),
+        };
 
         // Now newself is uninit
         mem::swap(&mut newself, self);
-        mem::forget(newself);
     }
 
     pub fn shallow_clone(&self) -> BucketRef {

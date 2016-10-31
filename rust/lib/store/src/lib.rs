@@ -37,8 +37,8 @@ pub mod bench;
 // TODO do we have data macros?
 #[macro_use]
 mod data;
-mod traits;
 mod tdfuture;
+mod traits;
 pub mod tree;
 
 // TODO: cleaner separation of interfaces

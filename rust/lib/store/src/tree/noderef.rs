@@ -166,28 +166,23 @@ impl FatNodeRef {
 
     /// Immutes this NodeRef, recursively immuting its children.
     pub fn immute(&mut self, txid: Counter) {
-        // Bunch of footwork so we can modify ourselves in place without breaking mut safety.
-        // Who knows if this optimizes correctly?
-        // TODO: use mem::replace
+        // we need to move out of self
         let mut oldself = unsafe { mem::uninitialized() };
-        let mut newself;
         mem::swap(self, &mut oldself);
-        // now self is uninitialized
+        // now self is uninitialized. from now on, we can't ever panic
 
         // destroys oldself
-        match oldself {
+        let mut newself = match oldself {
             FatNodeRef::Transient(rc_cell_hn) => {
                 let mut hn = Rc::try_unwrap(rc_cell_hn).ok().unwrap().into_inner();
                 hn.immute(txid);
-                newself = FatNodeRef::Persistent(Rc::new(PersistentNode {
+                FatNodeRef::Persistent(Rc::new(PersistentNode {
                     txid: txid,
                     node: hn,
-                }));
+                }))
             }
-            FatNodeRef::Persistent(_x) => {
-                newself = FatNodeRef::Persistent(_x);
-            }
-        }
+            FatNodeRef::Persistent(_x) => FatNodeRef::Persistent(_x),
+        };
 
         mem::swap(self, &mut newself);
         // now newself is uninitialized

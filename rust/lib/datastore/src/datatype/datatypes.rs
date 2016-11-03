@@ -1,5 +1,6 @@
 /// 32-bit markers for datatypes, one for each.
-enum DatatypeId {
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub enum DatatypeId {
     // Basic types : 0..
 
     // Complex types: 001..

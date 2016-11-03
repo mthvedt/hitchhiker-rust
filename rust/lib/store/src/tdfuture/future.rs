@@ -1,11 +1,53 @@
-use std::mem;
-
 use futures::{Async, Future, Poll};
 
 pub enum FutureResult<F: Future> {
     Ok(F::Item),
     Err(F::Error),
     Wait(F),
+}
+
+impl<F: Future> FutureResult<F> {
+    pub fn map<FM: FutureMap<Input = F::Item>>(self, mut futuremap: FM) -> FutureResult<MapFuture<F, FM>> {
+        match self {
+            FutureResult::Ok(item) => FutureResult::Ok(futuremap.apply(item)),
+            FutureResult::Err(e) => FutureResult::Err(e),
+            FutureResult::Wait(f) => FutureResult::Wait(MapFuture::new(f, futuremap)),
+        }
+    }
+}
+
+pub trait FutureMap {
+    type Input;
+    type Output;
+
+    fn apply(&mut self, i: Self::Input) -> Self::Output;
+}
+
+pub struct MapFuture<F: Future, FM: FutureMap<Input = F::Item>> {
+    first: F,
+    second: FM,
+}
+
+impl<F: Future, FM: FutureMap<Input = F::Item>> MapFuture<F, FM> {
+    pub fn new(future: F, futuremap: FM) -> Self {
+        MapFuture {
+            first: future,
+            second: futuremap,
+        }
+    }
+}
+
+impl<F: Future, FM: FutureMap<Input = F::Item>> Future for MapFuture<F, FM> {
+    type Item = FM::Output;
+    type Error = F::Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        match self.first.poll() {
+            Ok(Async::Ready(x)) => Ok(Async::Ready(self.second.apply(x))),
+            Ok(Async::NotReady) => Ok(Async::NotReady),
+            Err(e) => Err(e),
+        }
+    }
 }
 
 // enum FutureResultInt<Item, Error> {

@@ -1,12 +1,4 @@
-//! tdfuture is the futures apparatus for Thunderhead. It provides a few mechanisms
-//! for better managing futures in Thunderhead.
-
-// /// A TdTask is a continuation: it accepts an input value or an error value,
-// /// and returns no result. Unlike first-class continuations, a TdTask can only
-// /// be run once by default.
-// trait TdLink<Input> {
-//     fn execute
-// }
+///! Pseudo-HKTs in Rust. See `PHKT`.
 
 /// A pseudo higher-kinded type in Rust.
 ///
@@ -15,7 +7,15 @@
 /// The usefulness of PHKTs is in writing extension traits. For instance, we can write the following:
 ///
 /// ```
-/// trait Functor<U>: HKT<U> {
+/// # #[macro_use]
+/// # extern crate thunderhead_store;
+///
+/// # use thunderhead_store::tdfuture::phkt;
+/// # use thunderhead_store::tdfuture::phkt::*;
+///
+/// # fn main() {
+///
+/// trait Functor<U>: PHKT<U> {
 ///     fn map<F>(&self, f: F) -> Self::T where F: Fn(&Self::C) -> U;
 /// }
 ///
@@ -28,16 +28,19 @@
 ///         result
 ///     }
 /// }
+///
+/// # }
 /// ```
 ///
 /// We now have a Functor<U> for any Vec<T>.
-
-trait PHKT<U> {
+pub trait PHKT<U> {
     type C;
     type T;
 }
 
-macro_rules! derive_hkt {
+/// Shortcut to impl a PHKT<U> for a generic type.
+#[macro_export]
+macro_rules! derive_phkt {
     ($t:ident) => {
         impl<T, U> PHKT<U> for $t<T> {
             type C = T;
@@ -45,3 +48,5 @@ macro_rules! derive_hkt {
         }
     }
 }
+
+derive_phkt!(Vec);

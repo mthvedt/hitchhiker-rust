@@ -1,4 +1,4 @@
-use std::{mem, ptr};
+use std::mem;
 
 use futures::{Async, Future, Poll};
 

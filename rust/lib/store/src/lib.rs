@@ -34,13 +34,17 @@ pub mod alloc;
 // TODO consider better way to hide these macros...
 #[macro_use]
 pub mod bench;
+
 // TODO do we have data macros?
+// TODO: cleaner separation of interfaces
 #[macro_use]
 mod data;
-mod tdfuture;
+pub use data::*;
+
+pub mod tdfuture;
+
 mod traits;
+pub use traits::*;
+
 pub mod tree;
 
-// TODO: cleaner separation of interfaces
-pub use data::*;
-pub use traits::*;

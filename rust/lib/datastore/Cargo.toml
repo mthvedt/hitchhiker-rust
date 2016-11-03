@@ -1,0 +1,14 @@
+[package]
+name = "thunderhead-datastore"
+version = "0.1.0"
+authors = ["Mike Thvedt <mike.thvedt@gmail.com>"]
+
+[dependencies]
+thunderhead-store = { path = "../store" }
+
+futures = "0.1.2"
+
+[profile.release]
+# TODO: should have a profiling profile instead of debug = true.
+debug = true
+lto = true

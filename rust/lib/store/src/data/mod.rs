@@ -4,6 +4,9 @@
 mod rcslice;
 
 // Public modules
+mod range;
+pub use self::range::Range;
+
 mod rcbytes;
 pub use self::rcbytes::*;
 

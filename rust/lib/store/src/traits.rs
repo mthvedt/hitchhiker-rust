@@ -6,7 +6,11 @@ use tdfuture::FutureResult;
 use futures::Future;
 use futures::stream::Stream;
 
-pub trait KvRanged {
+pub trait KvCommon {
+
+    /// The max size of a value in this KVSource
+    fn max_value_size(&self) -> u64;
+
     type Subtree;
 
     fn subtree(&mut self, k: Box<[u8]>) -> Self::Subtree;
@@ -16,9 +20,10 @@ pub trait KvRanged {
     fn subrange(&mut self, range: Range) -> Self::Subrange;
 }
 
-pub trait KvSource {
+pub trait KvSource: KvCommon {
 	type GetValue: Scoped<[u8]>;
     type Error;
+
 
     /// Get a value from this KvSource.
 
@@ -34,7 +39,7 @@ pub trait KvSource {
     fn get_range<K: Scoped<[u8]>>(&mut self, range: Range) -> Self::GetRange;
 }
 
-pub trait KvSink {
+pub trait KvSink: KvCommon {
     type PutSmall: Future<Item = (), Error = Self::Error>;
     type Error;
 

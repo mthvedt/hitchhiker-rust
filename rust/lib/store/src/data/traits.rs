@@ -68,39 +68,6 @@ impl<K> Datum for K where K: Key {
 	}
 }
 
-/// An implementation of Write that writes to a buffer exactly once.
-///
-/// TODO: we should support writing more than once.
-pub struct WrappingByteBuffer<'a> {
-	v: &'a mut [u8],
-}
-
-impl<'a> WrappingByteBuffer<'a> {
-	pub fn wrap(wrapped: &'a mut [u8]) -> WrappingByteBuffer<'a> {
-		WrappingByteBuffer {
-			v: wrapped,
-		}
-	}
-}
-
-impl<'a> Write for WrappingByteBuffer<'a> {
-    fn write(&mut self, input: &[u8]) -> io::Result<usize> {
-    	assert!(input.len() == self.v.len(),
-    		"input len {} and buffer len {} do not match", input.len(), self.v.len());
-
-    	unsafe {
-    		ptr::copy(&input[0], &mut self.v[0], input.len());
-    	}
-
-    	Ok(input.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-    	Ok(())
-    }
-}
-
-// TODO obsolete
 struct ByteDataWrite<'a> {
 	v: &'a mut [u8],
 }

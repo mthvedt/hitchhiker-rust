@@ -1,5 +1,5 @@
 /// 32-bit markers for datatypes, one for each.
-#[derive(Clone, Copy, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Deserialize, Debug, Eq, PartialEq, Serialize)]
 pub enum DatatypeId {
     // Basic types : 0..
 

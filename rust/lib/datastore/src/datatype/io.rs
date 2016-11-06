@@ -1,5 +1,6 @@
 use std::borrow::{Borrow, BorrowMut};
-use std::io::Write;
+use std::io;
+use std::io::{ErrorKind, Write};
 use std::marker::PhantomData;
 
 use bincode::SizeLimit;
@@ -14,7 +15,7 @@ use datatype::datatypes::DatatypeId;
 use thunderhead_store::{KvSource, KvSink};
 use thunderhead_store::alloc::Scoped;
 use thunderhead_store::util::{ByteReader, ByteWriter};
-use thunderhead_store::tdfuture::{FutureMap, FutureResult, MapFuture};
+use thunderhead_store::tdfuture::{FutureMap, FutureResult, FutureResultFuture, MapFuture};
 
 /// A Lens is a bidirectional map from one type to another.
 ///
@@ -22,11 +23,11 @@ use thunderhead_store::tdfuture::{FutureMap, FutureResult, MapFuture};
 trait Lens<S> {
     type Target;
 
-    type ReadResult: Future<Item = Self::Target>;
+    type ReadResult: Future<Item = Self::Target, Error = io::Error>;
 
     fn read(&self, source: &mut S) -> FutureResult<Self::ReadResult>;
 
-    type WriteResult: Future<Item = ()>;
+    type WriteResult: Future<Item = (), Error = io::Error>;
 
     fn write(&self, target: Self::Target, sink: &mut S) -> FutureResult<Self::WriteResult>;
 }
@@ -60,7 +61,7 @@ trait SimpleLens: Clone + Sized {
 }
 
 /// A datatype header.
-#[derive(Clone, Copy, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct DatatypeHeader {
     pub id: DatatypeId,
     pub version: u32,
@@ -78,6 +79,25 @@ struct SerialLensRWValue<T: Serialize + Deserialize> {
 struct SerialLens<T: Serialize + Deserialize> {
     header: DatatypeHeader,
     _phantom: PhantomData<T>,
+}
+
+
+impl<T: Serialize + Deserialize> SerialLens<T> {
+    pub fn new(header: DatatypeHeader) -> Self {
+        SerialLens {
+            header: header.clone(),
+            _phantom: PhantomData,
+        }
+    }
+
+    fn read_header<B: AsRef<[u8]>>(&self, source: B) -> DatatypeHeader {
+        // TODO: size check
+        let len = source.as_ref().len() as u64;
+        let mut reader = ByteReader::wrap(source.as_ref());
+        // TODO: error handling
+        let rw_value: SerialLensRWValue<T> = deserialize_from(&mut reader, SizeLimit::Bounded(len)).ok().unwrap();
+        rw_value.header
+    }
 }
 
 impl<T: Serialize + Deserialize> Clone for SerialLens<T> {
@@ -138,9 +158,10 @@ struct SimpleDataLensRead<L: SimpleLens, B: Scoped<[u8]>> {
 impl<L: SimpleLens, B: Scoped<[u8]>> FutureMap for SimpleDataLensRead<L, B> {
     type Input = B;
     type Output = L::Target;
+    type Error = io::Error;
 
-    fn apply(&mut self, i: Self::Input) -> Self::Output {
-        self.lens.read(i.get().unwrap())
+    fn apply(&mut self, i: Self::Input) -> Result<Self::Output, io::Error> {
+        Ok(self.lens.read(i.get().unwrap()))
     }
 }
 
@@ -150,8 +171,7 @@ impl<S: KvSource + KvSink, L: SimpleLens> Lens<S> for SimpleLensReified<S, L> {
     type ReadResult = MapFuture<S::Get, SimpleDataLensRead<L, S::GetValue>>;
 
     fn read(&self, source: &mut S) -> FutureResult<Self::ReadResult> {
-        let key = [];
-        source.get(key).map(SimpleDataLensRead {
+        source.get([]).map(SimpleDataLensRead {
             lens: self.inner.clone(),
             _p: PhantomData,
         })
@@ -196,27 +216,114 @@ impl<S: KvSource + KvSink, L: SimpleLens> Lens<S> for SimpleLensReified<S, L> {
 //     }
 // }
 
-struct LensWithHeaderReified<S, L: LensWithHeader<S>> {
-    inner: L,
-    _phantom: PhantomData<S>,
-
+struct HeaderVerify<B: Scoped<[u8]>> {
+    header: DatatypeHeader,
+    _phantom: PhantomData<B>,
 }
 
-// TODO: impl lens for LensWithHeaderReified
-
-trait LensWithHeader<S>: Clone {
-    type Sublens: Lens<S>;
-
-    fn header(&self) -> DatatypeHeader;
-
-    /// Reify this into a DataLens.
-    /// (LensWithHeader doesn't impl DataLens for coherency reasons.)
-    fn to_lens(&self) -> LensWithHeaderReified<S, Self> {
-        LensWithHeaderReified {
-            inner: self.clone(),
+impl<B: Scoped<[u8]>> HeaderVerify<B> {
+    fn new(header: DatatypeHeader) -> Self {
+        HeaderVerify {
+            header: header,
             _phantom: PhantomData,
         }
     }
+}
 
-    fn sublens(&self) -> Self::Sublens;
+impl<B: Scoped<[u8]>> FutureMap for HeaderVerify<B> {
+    type Input = B;
+    type Output = ();
+    type Error = io::Error;
+
+    fn apply(&mut self, i: Self::Input) -> Result<Self::Output, Self::Error> {
+        let inner_lens: SerialLens<()> = SerialLens::new(self.header);
+        let h = inner_lens.read_header(i.get().unwrap());
+        if h == self.header {
+            Ok(())
+        } else {
+            Err(io::Error::new(ErrorKind::InvalidData,
+                format!("header mismatch: expected {:?} read {:?}", self.header, h)))
+        }
+    }
+}
+
+// TODO: macros for 'get' futures
+struct GetNone<A, B> {
+    _phantom: PhantomData<(A, B)>,
+}
+
+impl<A, B> GetNone<A, B> {
+    fn new() -> Self {
+        GetNone {
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<A, B> FutureMap for GetNone<A, B> {
+    type Input = (A, B);
+    type Output = ();
+    type Error = io::Error;
+
+    fn apply(&mut self, i: Self::Input) -> Result<Self::Output, Self::Error> {
+        Ok(())
+    }
+}
+
+struct GetSecond<A, B> {
+    _phantom: PhantomData<(A, B)>,
+}
+
+impl<A, B> GetSecond<A, B> {
+    fn new() -> Self {
+        GetSecond {
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<A, B> FutureMap for GetSecond<A, B> {
+    type Input = (A, B);
+    type Output = B;
+    type Error = io::Error;
+
+    fn apply(&mut self, i: Self::Input) -> Result<Self::Output, Self::Error> {
+        Ok(i.1)
+    }
+}
+
+struct LensWithHeader<S, L: Lens<S>> {
+    header: DatatypeHeader,
+    inner: L,
+    _phantom: PhantomData<S>,
+}
+
+impl<S: KvSource + KvSink, L: Lens<S>> Lens<S> for LensWithHeader<S, L> {
+    type Target = L::Target;
+
+    // TODO: we probably want a 'FastJoin' or something that doesn't use inefficient space/copying like futures-rs Join.
+    type ReadResult = MapFuture<
+    Join<FutureResultFuture<MapFuture<S::Get, HeaderVerify<S::GetValue>>>, FutureResultFuture<L::ReadResult>>,
+    GetSecond<(), L::Target>
+    >;
+
+    fn read(&self, source: &mut S) -> FutureResult<Self::ReadResult> {
+        let first = source.get([]).map(HeaderVerify::new(self.header)).to_future();
+        let second = self.inner.read(source).to_future();
+        FutureResult::Wait(MapFuture::new(first.join(second), GetSecond::new()))
+
+
+
+    }
+
+    type WriteResult = MapFuture<
+    Join<FutureResultFuture<S::PutSmall>, FutureResultFuture<L::WriteResult>>,
+    GetNone<(), ()>>;
+
+    fn write(&self, target: Self::Target, sink: &mut S) -> FutureResult<Self::WriteResult> {
+        let header_lens: SerialLens<()> = SerialLens::new(self.header);
+        let first = header_lens.to_lens().write((), sink).to_future();
+        let second = self.inner.write(target, sink).to_future();
+        FutureResult::Wait(MapFuture::new(first.join(second), GetNone::new()))
+    }
 }

@@ -18,9 +18,13 @@ pub enum FutureResult<F: Future> {
 }
 
 impl<F: Future> FutureResult<F> {
-    pub fn map<FM: FutureMap<Input = F::Item>>(self, mut futuremap: FM) -> FutureResult<MapFuture<F, FM>> {
+    pub fn map<FM: FutureMap<Input = F::Item, Error = F::Error>>(self, mut futuremap: FM) ->
+    FutureResult<MapFuture<F, FM>> {
         match self {
-            FutureResult::Ok(item) => FutureResult::Ok(futuremap.apply(item)),
+            FutureResult::Ok(x) => match futuremap.apply(x) {
+                Ok(y) => FutureResult::Ok(y),
+                Err(e) => FutureResult::Err(e),
+            },
             FutureResult::Err(e) => FutureResult::Err(e),
             FutureResult::Wait(f) => FutureResult::Wait(MapFuture::new(f, futuremap)),
         }
@@ -72,16 +76,17 @@ impl<F: Future> Future for FutureResultFuture<F> {
 pub trait FutureMap {
     type Input;
     type Output;
+    type Error;
 
-    fn apply(&mut self, i: Self::Input) -> Self::Output;
+    fn apply(&mut self, i: Self::Input) -> Result<Self::Output, Self::Error>;
 }
 
-pub struct MapFuture<F: Future, FM: FutureMap<Input = F::Item>> {
+pub struct MapFuture<F: Future, FM: FutureMap<Input = F::Item, Error = F::Error>> {
     first: F,
     second: FM,
 }
 
-impl<F: Future, FM: FutureMap<Input = F::Item>> MapFuture<F, FM> {
+impl<F: Future, FM: FutureMap<Input = F::Item, Error = F::Error>> MapFuture<F, FM> {
     pub fn new(future: F, futuremap: FM) -> Self {
         MapFuture {
             first: future,
@@ -90,13 +95,16 @@ impl<F: Future, FM: FutureMap<Input = F::Item>> MapFuture<F, FM> {
     }
 }
 
-impl<F: Future, FM: FutureMap<Input = F::Item>> Future for MapFuture<F, FM> {
+impl<F: Future, FM: FutureMap<Input = F::Item, Error = F::Error>> Future for MapFuture<F, FM> {
     type Item = FM::Output;
     type Error = F::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         match self.first.poll() {
-            Ok(Async::Ready(x)) => Ok(Async::Ready(self.second.apply(x))),
+            Ok(Async::Ready(x)) => match self.second.apply(x) {
+                Ok(y) => Ok(Async::Ready(y)),
+                Err(e) => Err(e),
+            },
             Ok(Async::NotReady) => Ok(Async::NotReady),
             Err(e) => Err(e),
         }

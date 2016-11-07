@@ -3,9 +3,6 @@ use std::borrow::{Borrow, BorrowMut};
 /// A reference type whose lifetime may be tied to external circumstances. For example,
 /// Scoped is used for objects allocated from Arenas (not yet implemented), or pinned
 /// to cached items that may be evicted.
-///
-/// It doesn't have to be this way: any Borrow, for example, is also Scoped. Scoped is for
-/// objects which are like Borrow, but possibly more restricted on when they can be borrowed.
 pub trait Scoped<T: ?Sized> {
 	/// Gets the referent object, if possible.
     fn get(&self) -> Option<&T>;

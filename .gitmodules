@@ -1,6 +1,0 @@
-[submodule "rocksdb-c"]
-	path = rust/extern/rocksdb-c/remote
-	url = https://github.com/facebook/rocksdb.git
-[submodule "rocksdb-rs"]
-	path = rust/extern/rocksdb-rs
-	url = https://github.com/spacejam/rust-rocksdb

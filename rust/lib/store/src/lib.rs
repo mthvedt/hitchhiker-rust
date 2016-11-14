@@ -23,11 +23,14 @@
 // TODO: isolate feature(test)
 #![feature(test)]
 
-extern crate typed_arena;
 extern crate futures;
+extern crate typed_arena;
 
 // Used for bench. TODO: separate crates...
 extern crate rand;
+
+#[cfg(test)]
+extern crate bytebuffer;
 
 pub mod alloc;
 
@@ -42,6 +45,9 @@ mod data;
 pub use data::*;
 
 pub mod tdfuture;
+
+#[cfg(test)]
+mod testlib;
 
 mod traits;
 pub use traits::*;

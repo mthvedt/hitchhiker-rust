@@ -9,7 +9,7 @@ use tree::btree::*;
 pub trait Testable {
 	fn name() -> String;
 	fn setup() -> Self;
-	fn teardown(mut self) -> ();
+	fn teardown(self) -> ();
 }
 
 impl Testable for PersistentBTree {

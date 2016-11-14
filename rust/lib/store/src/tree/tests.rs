@@ -43,27 +43,27 @@ fn smoke_test_get<T: MutableByteMap>(t: &mut T) {
 	t.check_invariants();
 }
 
-fn smoke_test_delete<T: MutableByteMap>(t: &mut T) {
-	t.insert("foo".as_bytes(), &"bar".into_datum());
-	t.insert("sna".as_bytes(), &"foo".into_datum());
-	t.insert("fop".as_bytes(), &"baz".into_datum());
-	test_get_str(t, "foo", Some("bar"));
-	test_get_str(t, "sna", Some("foo"));
-	test_get_str(t, "fop", Some("baz"));
-	t.check_invariants();
+// fn smoke_test_delete<T: MutableByteMap>(t: &mut T) {
+// 	t.insert("foo".as_bytes(), &"bar".into_datum());
+// 	t.insert("sna".as_bytes(), &"foo".into_datum());
+// 	t.insert("fop".as_bytes(), &"baz".into_datum());
+// 	test_get_str(t, "foo", Some("bar"));
+// 	test_get_str(t, "sna", Some("foo"));
+// 	test_get_str(t, "fop", Some("baz"));
+// 	t.check_invariants();
 
-	t.delete("sna".as_bytes());
-	test_get_str(t, "foo", Some("bar"));
-	test_get_str(t, "sna", None);
-	test_get_str(t, "fop", Some("baz"));
-	t.check_invariants();
+// 	t.delete("sna".as_bytes());
+// 	test_get_str(t, "foo", Some("bar"));
+// 	test_get_str(t, "sna", None);
+// 	test_get_str(t, "fop", Some("baz"));
+// 	t.check_invariants();
 
-	t.delete("fop".as_bytes());
-	test_get_str(t, "foo", Some("bar"));
-	test_get_str(t, "sna", None);
-	test_get_str(t, "fop", None);
-	t.check_invariants();
-}
+// 	t.delete("fop".as_bytes());
+// 	test_get_str(t, "foo", Some("bar"));
+// 	test_get_str(t, "sna", None);
+// 	test_get_str(t, "fop", None);
+// 	t.check_invariants();
+// }
 
 fn smoke_test_snapshot<T: FunctionalByteMap>(t: &mut T) {
 	t.insert("foo".as_bytes(), &"bar".into_datum());
@@ -149,9 +149,9 @@ fn smoke_test_cursors<T: FunctionalByteMap>(t: &mut T) {
 	// TODO: test deletion
 }
 
-fn smoke_test_diff_cursors<T: FunctionalByteMap>(t: &mut T) {
-	// TODO
-}
+// fn smoke_test_diff_cursors<T: FunctionalByteMap>(t: &mut T) {
+// 	// TODO
+// }
 
 // TODO: maybe these should just be normal tests? are we going with only one type of tree or multiple?
 deftests! {
@@ -162,6 +162,6 @@ deftests! {
 		pbtree_smoke_test_snapshot, smoke_test_snapshot,
 		pbtree_smoke_test_diffs, smoke_test_diffs,
 		pbtree_smoke_test_cursors, smoke_test_cursors,
-		pbtree_smoke_test_diff_cursors, smoke_test_diff_cursors,
+		// pbtree_smoke_test_diff_cursors, smoke_test_diff_cursors,
 	},
 }

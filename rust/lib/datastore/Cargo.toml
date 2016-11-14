@@ -8,9 +8,14 @@ thunderhead-store = { path = "../store" }
 
 bincode = "0.6.0"
 futures = "0.1.2"
+js = { git = "https://github.com/servo/rust-mozjs" }
 serde = "0.8.17"
 serde_derive = "0.8.3"
 serde_json = "0.8.3"
+
+[dev-dependencies]
+quickcheck = "0.4"
+quickcheck_macros = "0.4"
 
 [profile.release]
 # TODO: should have a profiling profile instead of debug = true.

@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use std::mem::{drop, forget, replace, swap, transmute, uninitialized};
 
 use futures::{Async, Future, Poll};
@@ -21,6 +23,7 @@ trait FutureChainLink {
     type InputError;
     type OutputError;
 
+    /// When called, poller.link_pointer must point to self.
     fn poll_with_state(&mut self, poller: &mut ChainState) -> Poll<Self::Output, Self::OutputError>;
 
     fn continue_with_state(&mut self, i: Result<Self::Input, Self::InputError>, poller: &mut ChainState)
@@ -28,8 +31,6 @@ trait FutureChainLink {
 
     fn drop_unexecuted(&mut self);
 }
-
-    use std::marker::PhantomData;
 
 struct IntermediateChainLink<Input, InputError, BlockingFuture, InputTwo, InputErrorTwo, Cont, NextLink> where
 Cont: FnOnce(Result<Input, InputError>) -> FutureResult<BlockingFuture>,
@@ -61,7 +62,7 @@ NextLink: FutureChainLink<Input = InputTwo, InputError = InputErrorTwo>,
         }
 
         match blocking_future.poll() {
-            Ok(Async::Ready(i)) => unsafe {
+            Ok(Async::Ready(i)) => {
                 drop(blocking_future);
                 self.next_link.continue_with_state(Ok(i), state)
             },
@@ -71,7 +72,7 @@ NextLink: FutureChainLink<Input = InputTwo, InputError = InputErrorTwo>,
 
                 Ok(Async::NotReady)
             },
-            Err(e) => unsafe {
+            Err(e) => {
                 drop(blocking_future);
                 self.next_link.continue_with_state(Err(e), state)
             }
@@ -147,7 +148,6 @@ BlockingFuture: Future<Item = Output, Error = OutputError>,
             blocking_future = &mut *p;
         }
 
-        // TODO return something!
         blocking_future.poll()
     }
 

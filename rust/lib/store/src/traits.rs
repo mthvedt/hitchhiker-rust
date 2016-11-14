@@ -1,12 +1,7 @@
-use std::io;
-
 use alloc::Scoped;
 use data::Range;
 
-use tdfuture::FutureResult;
-
-use futures::Future;
-use futures::stream::Stream;
+use tdfuture::Waiter;
 
 // TODO: need a TdError mechanism.
 
@@ -15,12 +10,11 @@ use futures::stream::Stream;
 /// In particular, it starts demanding manual constraints for GetValue everywhere, even though
 /// those constraints should be inferable.
 pub trait Source<T: ?Sized> {
-	type GetValue: Scoped<T>;
-    type Get: Future<Item = Self::GetValue, Error = io::Error>;
+	type Get: Scoped<T>;
 
     // TODO: should we pass in context? why or why not?
     /// Get a value from this KvSource.
-    fn get<K: Scoped<[u8]>>(&mut self, k: K) -> FutureResult<Self::Get>;
+    fn get<K: Scoped<[u8]>, R: Waiter<Option<Self::Get>>>(&mut self, k: K, r: R);
 
     // TODO: StreamResult?
     // type GetMany: Stream<Item = Self::GetValue, Error = io::Error>;
@@ -41,9 +35,10 @@ pub trait Source<T: ?Sized> {
 }
 
 pub trait Sink<T: ?Sized>: Source<T> {
-    type PutSmall: Future<Item = (), Error = io::Error>;
-
     /// The max size of a value in this KVSource
+
+    // TODO: this should be a constant? At the very least, max_value_size should be a property
+    // of a Lens.
     fn max_value_size(&self) -> u64;
 
     /// Put a small value in the KvSink. For large values, one should use an insert stream (not implemented).
@@ -52,7 +47,7 @@ pub trait Sink<T: ?Sized>: Source<T> {
     /// fit in an in-memory slice.
     ///
     /// Not that we don't have put_many or put_range. This use case should be handled
-    fn put_small<K: Scoped<[u8]>, V: Scoped<T>>(&mut self, k: K, v: V) -> FutureResult<Self::PutSmall>;
+    fn put_small<K: Scoped<[u8]>, V: Scoped<T>, R: Waiter<()>>(&mut self, k: K, v: V, r: R);
 }
 
 pub trait KvSource: Source<[u8]> {}

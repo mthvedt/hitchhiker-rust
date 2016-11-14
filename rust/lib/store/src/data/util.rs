@@ -19,12 +19,15 @@ macro_rules! make_array {
     }
 }
 
+// TODO: move this stuff to a 'byte' lib. Code guideline is util libs should be private
 pub struct ByteReader<'a> {
     bytes: &'a [u8],
     ptr: usize,
 }
 
 impl<'a> ByteReader<'a> {
+    /// Wraps the given slice in a ByteReader. This ByteReader reads the underlying bytes,
+    /// starting at position 0.
     pub fn wrap(bytes: &'a [u8]) -> Self {
         ByteReader {
             bytes: bytes,
@@ -44,23 +47,24 @@ impl<'a> Read for ByteReader<'a> {
     }
 }
 
-/// An implementation of Write that writes to a buffer exactly once.
-///
-/// TODO: we should support writing more than once.
+/// An implementation of Write that writes to a mutable byte buffer.
 pub struct ByteWriter<'a> {
     v: &'a mut [u8],
     ptr: usize,
 }
 
 impl<'a> ByteWriter<'a> {
-    pub fn wrap(wrapped: &'a mut [u8]) -> ByteWriter<'a> {
+    /// Wraps the given slice in a ByteWriter. This ByteWriter writes to the underlying bytes,
+    /// starting at position 0.
+    pub fn wrap(underlying: &'a mut [u8]) -> ByteWriter<'a> {
         ByteWriter {
-            v: wrapped,
+            v: underlying,
             ptr: 0,
         }
     }
 
-    pub fn len(&self) -> usize {
+    /// The number of bytes written to so far.
+    pub fn len_written(&self) -> usize {
         self.ptr
     }
 }
@@ -68,7 +72,7 @@ impl<'a> ByteWriter<'a> {
 impl<'a> Write for ByteWriter<'a> {
     fn write(&mut self, input: &[u8]) -> io::Result<usize> {
         if input.len() > self.v.len() - self.ptr {
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "exceeded bounds of byte buffer"));
+            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "exceeded bounds of buffer in ByteWriter"));
         }
 
         unsafe {

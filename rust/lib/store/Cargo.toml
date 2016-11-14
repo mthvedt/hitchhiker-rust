@@ -1,4 +1,6 @@
 [package]
+# TODO: change name to td-store
+
 name = "thunderhead-store"
 version = "0.1.0"
 authors = ["Mike Thvedt <mike.thvedt@gmail.com>"]
@@ -14,6 +16,8 @@ rand = "0.3"
 time = "0.1"
 
 [dev-dependencies]
+
+bytebuffer = "0.2"
 
 # TODO: scrub quickcheck.
 

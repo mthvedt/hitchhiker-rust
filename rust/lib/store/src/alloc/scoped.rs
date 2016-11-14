@@ -16,6 +16,10 @@ pub trait ScopedMut<T: ?Sized>: Scoped<T> {
     fn get_mut(&mut self) -> Option<&mut T>;
 }
 
+pub trait ScopedValue<T>: ScopedMut<T> {
+    fn unwrap(self) -> Option<T>;
+}
+
 impl<B: ?Sized, T: ?Sized> Scoped<T> for B where B: Borrow<T> {
     fn get(&self) -> Option<&T> {
     	Some(self.borrow())

@@ -1,7 +1,4 @@
 use std::borrow::{Borrow, BorrowMut};
-use std::io;
-use std::io::Write;
-use std::ptr;
 
 use super::slice::*;
 

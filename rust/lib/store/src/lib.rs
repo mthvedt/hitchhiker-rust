@@ -54,3 +54,8 @@ pub use traits::*;
 
 pub mod tree;
 
+#[cfg(test)]
+extern crate test;
+
+#[cfg(bench)]
+extern crate test;

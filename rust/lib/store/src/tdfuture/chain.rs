@@ -409,16 +409,20 @@ pub enum ChainState<T>
 mod tests {
     use super::*;
 
+    use test::{Bencher, black_box};
+
+    fn fact<C: Chain<u64> + 'static>(i: u64, rest: C) -> ChainState<C::Output> {
+        black_box(i);
+
+        if i == 1 {
+            rest.recv_ok(i)
+        } else {
+            fact(i - 1, rest.prepend(move |j, rest| rest.recv_ok(j * i)).indir())
+        }
+    }
+
     #[test]
     fn test_factorial() {
-        fn fact<C: Chain<u64> + 'static>(i: u64, rest: C) -> ChainState<C::Output> {
-            if i == 1 {
-                rest.recv_ok(i)
-            } else {
-                fact(i - 1, rest.prepend(move |j, rest| rest.recv_ok(j * i)).indir())
-            }
-        }
-
         let c = EmptyChain::new();
         let o = fact(5, c);
         match o {
@@ -426,5 +430,36 @@ mod tests {
             ChainState::Ok(t) => assert!(t == 120),
             ChainState::Err(e) => panic!(),
         }
+    }
+
+    #[bench]
+    fn bench_normal_factorial(b: &mut Bencher) {
+        b.iter(|| {
+            fn fact(i: u64) -> u64 {
+                black_box(i);
+
+                if i == 1 {
+                    1
+                } else {
+                    i * fact(i - 1)
+                }
+            }
+
+            black_box(fact(20));
+        })
+    }
+
+    #[bench]
+    fn bench_rust_factorial(b: &mut Bencher) {
+        b.iter(|| {
+            let c = EmptyChain::new();
+            let o = fact(20, c);
+
+            match o {
+                ChainState::Wait(_) => panic!(),
+                ChainState::Ok(t) => black_box(t),
+                ChainState::Err(e) => panic!(),
+            };
+        })
     }
 }

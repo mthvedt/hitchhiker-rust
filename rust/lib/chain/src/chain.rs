@@ -45,7 +45,7 @@ pub trait Chain<Input>: Sized {
     //     ChainPair::new(c, self)
     // }
 
-    fn indir(self) -> Indir<Input, Self::Output> where Self: 'static {
+    fn indir<'a>(self) -> Indir<'a, Input, Self::Output> where Self: 'a {
         Indir::new(self)
     }
 
@@ -71,19 +71,21 @@ impl<T> Chain<T> for EmptyChain {
 
 // TODO: name
 // TODO: impl is slow
-pub struct Indir<I, O> {
+pub struct Indir<'a, I, O> {
     // type is Box<C> where C is a 'hidden' type
     inner: *mut u8,
     exec_f: fn(*mut u8, I) -> O,
     drop_box_f: fn(*mut u8),
+    _p: PhantomData<&'a u8>,
 }
 
-impl<I, O> Indir<I, O> {
-    fn new<C: Chain<I, Output = O> + 'static>(c: C) -> Self {
+impl<'a, I, O> Indir<'a, I, O> {
+    fn new<C: Chain<I, Output = O> + 'a>(c: C) -> Self {
         Indir {
             inner: Box::into_raw(Box::new(c)) as *mut _,
             exec_f: Self::exec_f::<C>,
             drop_box_f: Self::drop_box_f::<C>,
+            _p: PhantomData,
         }
     }
 
@@ -108,7 +110,7 @@ impl<I, O> Indir<I, O> {
     }
 }
 
-impl<I, O> Chain<I> for Indir<I, O> {
+impl<'a, I, O> Chain<I> for Indir<'a, I, O> {
     type Output = O;
 
     fn exec(mut self, i: I) -> O {
@@ -117,12 +119,19 @@ impl<I, O> Chain<I> for Indir<I, O> {
         r
     }
 
-    fn indir(self) -> Indir<I, O> {
-        self
+    fn indir<'b>(self) -> Indir<'b, I, O> where Self: 'b {
+        // This is safe because everything in Self must outlive 'b.
+        // We manually copy instead of implementing Clone.
+        Indir {
+            inner: self.inner,
+            exec_f: self.exec_f,
+            drop_box_f: self.drop_box_f,
+            _p: PhantomData,
+        }
     }
 }
 
-impl<I, O> Drop for Indir<I, O> {
+impl<'a, I, O> Drop for Indir<'a, I, O> {
     fn drop(&mut self) {
         (self.drop_box_f)(self.inner);
         mem::drop(self.exec_f);
@@ -220,7 +229,7 @@ mod tests {
 
     #[bench]
     fn bench_factorial_chain(b: &mut Bencher) {
-        fn fact<C: Chain<u64> + 'static>(i: u64, rest: C) -> C::Output {
+        fn fact<C: Chain<u64>>(i: u64, rest: C) -> C::Output {
             black_box(i);
 
             if i == 1 {

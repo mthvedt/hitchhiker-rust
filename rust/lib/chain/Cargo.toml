@@ -1,0 +1,17 @@
+[package]
+# TODO name
+name = "chain"
+version = "0.1.0"
+authors = ["Mike Thvedt <mike.thvedt@gmail.com>"]
+
+[dependencies]
+bincode = "0.6.0"
+futures = "0.1.2"
+
+[dev-dependencies]
+quickcheck = "0.4"
+quickcheck_macros = "0.4"
+
+[profile.release]
+# TODO lto = true in a library crate?
+# lto = true

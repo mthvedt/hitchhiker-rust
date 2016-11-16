@@ -1,58 +1,65 @@
-//!
-//!
-//! # Perf notes
-//!
-//! Every nontrivial ChainState involves an alloc and copy. For large or frequently interrupted chains,
-//! this is a source of inefficiency.
-//!
-//! It is possible but tedious to implement ChainState with only O(amortized max size)
-//! allocations for the entire state; using a large allocation buffer, the overhead becomes trivial.
-//! Basically, this is done by keeping a stack representing the chain continuation--but allocating the stack
-//! on the heap.
-//! See the unfinished work in alloc/stack.
-//!
-//! # CS notes
-//!
-//! The astute computer scientist will note that Chains are continuations. If we implement clone for ChainState,
-//! we recover the shift/reset mechanism from Scheme or the ContT monad from Haskell.
-//! Continuation-passing code is way too complex for our use case, however, so this case is not implemented.
-
 use std::marker::PhantomData;
 use std::mem;
 use std::ptr;
 
-/// A Chain is a computation that takes in an input and yields an output,
-/// where the input may be a Future. Chains may be linked together, hence the name.
-/// Chains do nothing until converted into a ChainState and executed as a Future.
+/*
+A plan to make this faster:
+When a chain is 'closed', it is moved onto the heap. A sort of stack is created (living on the heap,
+separate from the main stack). As links in the chain are consumed, the stack pointer moves forward,
+but the chain links can push it backwards and add more state.
+
+Essentially, a sort of stack, separate from the main stack, is created.
+
+However, chains will generally be small and copying their internals generally OK speed-wise--not super fast,
+but faster than malloc, and on the fast path (future returns immediately) there is no copy.
+So let's see if this becomes necessary perf-wise.
+
+We have laid the groundwork for this by making prepend a trait method.
+*/
+
+/// A Chain is a computation that takes in an input and yields an output.
+/// Chains may have functions 'linked' to the beginning, hence the name.
+///
+/// Note that two chains cannot be linked together. This is due to Rust's lack of higher-kinded types.
+/// Chains must always be passed around in tail position. This is not necessarily a disadvantage,
+/// since by doing so, you sidestep Rust's poor support for abstract return types.
+/// Indeed, one of the motivation factors of Chain was to avoid abstract return types.
 pub trait Chain<Input>: Sized {
-    type Output;
+    type Out;
 
-    // /// Links the given function to this Chain, returning an new Chain.
-    // /// Link is a function that accepts an input item A and this Chain and produces a ChainState.
-    // /// Link may be an arbitrary function--it may call Chain::close, construct a new Chain and call chain::close
-    // /// on that, or even return, ignoring the rest of this chain.
-    // fn prepend<C>(self, c: C) -> ChainPair<C, Self> where
-    // C: Chain<Output = Self::Input>;
-
-    fn prepend<F, I>(self, f: F) -> ChainLink<F, Self, I, Input> where
-    F: FnOnce(I, Self) -> Self::Output {
-        ChainLink::new(f, self)
+    /// Links the given function to this Chain, returning an new Chain.
+    /// The link function is a function that accepts an input item A and this Chain, and produces this chain's Output.
+    /// In idiomatic use, type inference is used to deduce the type of F.
+    fn prepend<F, I>(self, link: F) -> ChainLink<F, Self, I, Input> where
+    F: FnOnce(I, Self) -> Self::Out {
+        ChainLink::new(link, self)
     }
 
-    // /// Links two chains together, feeding the output of the given chain into this one.
-    // fn prepend_chain<C, I>(self, c: C) -> ChainPair<C, Self, I, Input> where
-    // C: Chain<I, Output = Input> {
-    //     ChainPair::new(c, self)
-    // }
-
-    fn indir<'a>(self) -> Indir<'a, Input, Self::Output> where Self: 'a {
+    /// Returns an indirected Chain from this one, discarding all internal type information.
+    /// Each indirect must chase a pointer once when it executes.
+    ///
+    /// Indirects have two uses:
+    /// * They can make code compile when the static types would otherwise be infinite,
+    /// for instance, when functions are recursive.
+    /// * They can be used to box a Chain of unknown size into an allocated Chain of fixed size.
+    fn indir<'a>(self) -> Indir<'a, Input, Self::Out> where Self: 'a {
         Indir::new(self)
     }
 
-    fn exec(self, i: Input) -> Self::Output;
+    /// Execute this Chain, yielding output.
+    fn exec(self, i: Input) -> Self::Out;
 }
 
-// TODO rename
+/// Prepends the given function to the given Chain. This is the same as Chain::prepend,
+/// but with the arguments in nicer looking order.
+pub fn bind<F, C, I, L>(f: F, c: C) -> impl Chain<I, Out = C::Out> where
+C: Chain<L>,
+F: FnOnce(I, C) -> C::Out
+{
+    c.prepend(f)
+}
+
+/// An empty chain that returns the identity when it executes.
 pub struct EmptyChain;
 
 impl EmptyChain {
@@ -62,25 +69,31 @@ impl EmptyChain {
 }
 
 impl<T> Chain<T> for EmptyChain {
-    type Output = T;
+    type Out = T;
 
-    fn exec(self, i: T) -> Self::Output {
+    fn exec(self, i: T) -> T {
         i
     }
+}
+
+/// Executes the given function with the empty chain.
+pub fn exec<F, O>(f: F) -> O where F: FnOnce(EmptyChain) -> O {
+    f(EmptyChain::new())
 }
 
 // TODO: name
 // TODO: impl is slow
 pub struct Indir<'a, I, O> {
-    // type is Box<C> where C is a 'hidden' type
+    // type is Box<C> where C is a 'hidden' type implementing Chain<I, Out = O>
     inner: *mut u8,
     exec_f: fn(*mut u8, I) -> O,
     drop_box_f: fn(*mut u8),
+    // Important for drop checking, I think. (Rust docs don't really explain.)
     _p: PhantomData<&'a u8>,
 }
 
 impl<'a, I, O> Indir<'a, I, O> {
-    fn new<C: Chain<I, Output = O> + 'a>(c: C) -> Self {
+    fn new<C: Chain<I, Out = O> + 'a>(c: C) -> Self {
         Indir {
             inner: Box::into_raw(Box::new(c)) as *mut _,
             exec_f: Self::exec_f::<C>,
@@ -90,7 +103,8 @@ impl<'a, I, O> Indir<'a, I, O> {
     }
 
     /// Internal exec function. This consumes the target pointer; the caller must set it to null before calling.
-    fn exec_f<C: Chain<I, Output = O>>(target: *mut u8, i: I) -> O {
+    fn exec_f<C: Chain<I, Out = O>>(target: *mut u8, i: I) -> O {
+        debug_assert!(target as *const _ != ptr::null());
         unsafe {
             let typed_target = mem::transmute(target);
             let target_box: Box<C> = Box::from_raw(typed_target);
@@ -99,24 +113,25 @@ impl<'a, I, O> Indir<'a, I, O> {
     }
 
     /// Internal drop function, called by <Self as Drop>::drop.
-    fn drop_box_f<C: Chain<I, Output = O>>(target: *mut u8) {
-        if target as *const _ != ptr::null() {
-            unsafe {
-                let typed_target = mem::transmute(target);
-                let _b: Box<C> = Box::from_raw(typed_target);
-                // _b is now dropped
-            }
+    fn drop_box_f<C: Chain<I, Out = O>>(target: *mut u8) {
+        debug_assert!(target as *const _ != ptr::null());
+        unsafe {
+            let typed_target = mem::transmute(target);
+            let _b: Box<C> = Box::from_raw(typed_target);
+            // _b is now dropped
         }
     }
 }
 
 impl<'a, I, O> Chain<I> for Indir<'a, I, O> {
-    type Output = O;
+    type Out = O;
 
     fn exec(mut self, i: I) -> O {
-        let r = (self.exec_f)(self.inner, i);
+        let a = (self.exec_f)(self.inner, i);
+        // For performance, important to do these manipulations outside the function pointers.
+        // This way the pointer check in Self::drop can possibly be inlined away.
         self.inner = ptr::null::<u8>() as *mut _;
-        r
+        a
     }
 
     fn indir<'b>(self) -> Indir<'b, I, O> where Self: 'b {
@@ -133,73 +148,47 @@ impl<'a, I, O> Chain<I> for Indir<'a, I, O> {
 
 impl<'a, I, O> Drop for Indir<'a, I, O> {
     fn drop(&mut self) {
-        (self.drop_box_f)(self.inner);
+        if self.inner as *const _ != ptr::null() {
+            (self.drop_box_f)(self.inner);
+        }
         mem::drop(self.exec_f);
         mem::drop(self.drop_box_f);
     }
 }
 
-/// An instance of PhantomData that implements Send.
-pub struct PhantomDataSend<T>(PhantomData<T>);
-
-unsafe impl<T> Send for PhantomDataSend<T> {}
-
 pub struct ChainLink<F, C, I, _X> where
-F: FnOnce(I, C) -> C::Output,
+F: FnOnce(I, C) -> C::Out,
 C: Chain<_X>,
 {
     f: F,
     c: C,
     // We never use I/L
-    _p: PhantomDataSend<*const (I, _X)>,
+    _p: PhantomData<*const (I, _X)>,
 }
 
 impl<F, C, I, _X> ChainLink<F, C, I, _X> where
-F: FnOnce(I, C) -> C::Output,
+F: FnOnce(I, C) -> C::Out,
 C: Chain<_X>
 {
     fn new(f: F, c: C) -> Self {
         ChainLink {
             f: f,
             c: c,
-            _p: PhantomDataSend(PhantomData),
+            _p: PhantomData
         }
     }
 }
 
 impl<F, C, I, _X> Chain<I> for ChainLink<F, C, I, _X> where
-F: FnOnce(I, C) -> C::Output,
+F: FnOnce(I, C) -> C::Out,
 C: Chain<_X>,
 {
-    type Output = C::Output;
+    type Out = C::Out;
 
-    fn exec(self, i: I) -> C::Output {
+    fn exec(self, i: I) -> C::Out {
         (self.f)(i, self.c)
     }
 }
-
-// pub struct ChainPair<A, B, I, L> where
-// A: Chain<I, Output = L>,
-// B: Chain<L>,
-// {
-//     a: A,
-//     b: B,
-//     // We never store an I.
-//     _p: PhantomDataSend<*const I>,
-// }
-
-// impl<A, B, I, L> ChainPair<A, B, I, L> where
-// A: Chain<I, Output = L>,
-// B: Chain<L>,
-// {
-//     fn new(a: A, b: B) -> Self {
-//         ChainPair {
-//             a: a,
-//             b: b,
-//             _p: PhantomDataSend(PhantomData),
-//         }
-//     }
-// }
 
 // TODO: different module. different binary? need to test inlining
 #[cfg(test)]
@@ -229,19 +218,18 @@ mod tests {
 
     #[bench]
     fn bench_factorial_chain(b: &mut Bencher) {
-        fn fact<C: Chain<u64>>(i: u64, rest: C) -> C::Output {
+        fn fact<C: Chain<u64>>(i: u64, rest: C) -> C::Out {
             black_box(i);
 
             if i == 1 {
                 rest.exec(i)
             } else {
-                fact(i - 1, rest.prepend(move |j, rest| rest.exec(j * i)).indir())
+                fact(i - 1, bind(move |j, c| c.exec(j * i), rest).indir())
             }
         }
 
         b.iter(|| {
-            let c = EmptyChain::new();
-            let x = fact(20, c);
+            let x = exec(|c| fact(20, c));
             black_box(x);
             debug_assert!(x == 2432902008176640000);
         })
@@ -267,25 +255,23 @@ mod tests {
     #[allow(dead_code)]
     fn bench_shallow_inlining_chain(b: &mut Bencher) {
         b.iter(|| {
-            let chain = EmptyChain::new();
-
-            fn a<C: Chain<u64>>(ch: C) -> C::Output {
+            fn a<C: Chain<u64>>(ch: C) -> C::Out {
                 ch.exec(1)
             }
 
-            fn b<C: Chain<u64>>(ch: C) -> C::Output {
-                a(ch.prepend(|x, rest| a(rest.prepend(|y, rest| rest.exec(x + y)))))
+            fn b<C: Chain<u64>>(ch: C) -> C::Out {
+                a(bind(|x, ch| a(bind(|y, ch| ch.exec(x + y), ch)), ch))
             }
 
-            fn c<C: Chain<u64>>(ch: C) -> C::Output {
-                b(ch.prepend(|x, rest| b(rest.prepend(|y, rest| rest.exec(x + y)))))
+            fn c<C: Chain<u64>>(ch: C) -> C::Out {
+                b(bind(|x, ch| b(bind(|y, ch| ch.exec(x + y), ch)), ch))
             }
 
-            fn d<C: Chain<u64>>(ch: C) -> C::Output {
-                c(ch.prepend(|x, rest| c(rest.prepend(|y, rest| rest.exec(x + y)))))
+            fn d<C: Chain<u64>>(ch: C) -> C::Out {
+                c(bind(|x, ch| c(bind(|y, ch| ch.exec(x + y), ch)), ch))
             }
 
-            let x = d(chain);
+            let x = exec(d);
             black_box(x);
             debug_assert!(x == 8);
         })

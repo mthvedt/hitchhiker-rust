@@ -1,20 +1,42 @@
+//!
+//!
+//! # Perf notes
+//!
+//! Every nontrivial ChainState involves an alloc and copy. For large or frequently interrupted chains,
+//! this is a source of inefficiency.
+//!
+//! It is possible but tedious to implement ChainState with only O(amortized max size)
+//! allocations for the entire state; using a large allocation buffer, the overhead becomes trivial.
+//! Basically, this is done by keeping a stack representing the chain continuation--but allocating the stack
+//! on the heap.
+//! See the unfinished work in alloc/stack.
+//!
+//! # CS notes
+//!
+//! The astute computer scientist will note that Chains are continuations. If we implement clone for ChainState,
+//! we recover the shift/reset mechanism from Scheme or the ContT monad from Haskell.
+//! Continuation-passing code is too complex for our use case, however, so this case is not implemented.
+
+use std::io;
 use std::mem;
 
 use futures::{Async, Future, Poll};
 
-/// An uninstantiable Future. Useful for type gymnastics.
-struct VoidFuture<Item, Error> {
-    phantom: PhantomData<(Item, Error)>,
-}
+use chain::{bind, Chain};
 
-impl<Item, Error> Future for VoidFuture<Item, Error> {
-    type Item = Item;
-    type Error = Error;
+// /// An uninstantiable Future. Useful for type gymnastics.
+// struct VoidFuture<Item, Error> {
+//     phantom: PhantomData<(*const Item, *const Error)>,
+// }
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        unreachable!()
-    }
-}
+// impl<Item, Error> Future for VoidFuture<Item, Error> {
+//     type Item = Item;
+//     type Error = Error;
+
+//     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+//         unreachable!()
+//     }
+// }
 
 /// The result of a fn that may optionally return a future.
 ///
@@ -78,138 +100,243 @@ impl<F: Future> Future for FutureResultFuture<F> {
 }
 
 /*
-A plan to make this faster:
-When a chain is 'closed', it is moved onto the heap. A sort of stack is created (living on the heap,
-separate from the main stack). As links in the chain are consumed, the stack pointer moves forward,
-but the chain links can push it backwards and add more state.
+TODO: where to put Out?
+ClosedChain has an Out parameter that is now real inconvenient. WHY is it inconvenient?
+Because it's really C::Out. Ugh.
 
-Essentially, a sort of stack, separate from the main stack, is created.
+We want FutureChain's generic type to be real pure.
 
-However, chains will generally be small and copying their internals generally OK speed-wise--not super fast,
-but faster than malloc, and on the fast path (future returns immediately) there is no copy.
-So let's see if this becomes necessary perf-wise.
+We might have to make FutureChain a wrapper...
+
+TODO: the below doesn't work because of static requirements.
 */
-struct ClosedChain<F, C, I> where
-F: Future<Item = I, Error = io::Error>,
-C: Chain<F::Item>,
-{
-    f: F,
-    link: C,
+/// A state containing an Item, Error, or ClosedChain. Used as input to FutureChains.
+///
+/// Ideally, ClosedChain should be paramterized by output and error type.
+/// I was unable to make this work without inducing ugly type signatures.
+pub enum FutureChainState<Item> {
+    Ok(Item),
+    Err(io::Error),
+    Wait(ClosedChain),
 }
 
-impl<F, C, I> ClosedChain<F, C, I> where
-F: Future<Item = I, Error = io::Error>,
-C: Chain<F::Item>,
+// Alternate idea:
+// pub struct FutureChain2<C> where C: Chain {
+
+// }
+
+/// A trait for chains that carry FutureChainResults. These are automatically Chains (...)
+pub trait FutureChain<Input> where Self: Chain<FutureChainState<Input>, Out = FutureChainState<()>> + 'static {
+    /// Execute this FutureChain with the given item.
+    fn exec_ok(self, i: Input) -> Self::Out  {
+        self.exec(FutureChainState::Ok(i))
+    }
+
+    /// Execute this FutureChain with the given error. The default behavior is to return the error immediately.
+    fn exec_err(self, e: io::Error) -> Self::Out {
+        self.exec(FutureChainState::Err(e))
+    }
+
+    /// Delay execution of this FutureChain, instead returning a Wait.
+    fn wait<F: Future<Item = Input, Error = io::Error> + 'static>(self, f: F) -> Self::Out {
+        FutureChainState::Wait(ClosedChain::new(f, self))
+    }
+}
+
+impl<Input, C> FutureChain<Input> for C where
+C: Chain<FutureChainState<Input>, Out = FutureChainState<()>> + 'static {
+}
+
+/// Like bind, but for a fn that is only interested in Ok(item) results.
+/// If given an Err or Wait, it is passed to the Chain directly.
+fn bind_ok<F, C, Item, L>(link: F, c: C) -> impl FutureChain<Item> where
+F: FnOnce(Item, C) -> C::Out + 'static,
+C: FutureChain<L>,
+Item: 'static,
+L: 'static,
+{
+    let mylink = |fcr, c2| match fcr {
+        FutureChainState::Ok(i) => (link)(i, c2),
+        FutureChainState::Err(e) => c2.exec_err(e),
+        FutureChainState::Wait(s) => c2.exec(FutureChainState::Wait(s)),
+    };
+
+    bind(mylink, c)
+}
+
+/// Like bind, but for a fn that is only interested in Err(e) results.
+/// If given an Ok or Wait, it is passed to the Chain directly.
+fn bind_catch<F, C, Item>(catch: F, c: C) -> impl FutureChain<Item> where
+F: FnOnce(io::Error, C) -> C::Out + 'static,
+C: FutureChain<Item>,
+Item: 'static,
+{
+    let mycatch = |fcr, c2: C| {
+        let r: FutureChainState<()> = match fcr {
+            FutureChainState::Ok(i) => {
+                let x: FutureChainState<()> = c2.exec_ok(i);
+                x
+            },
+            FutureChainState::Err(e) => (catch)(e, c2),
+            FutureChainState::Wait(s) => c2.exec(FutureChainState::Wait(s)),
+
+        };
+        r
+    };
+
+    bind(mycatch, c)
+}
+
+trait ClosedChainInner {
+    fn poll(&mut self) -> FutureResult<ClosedChain>;
+}
+
+// TODO eliminate io::Error
+struct ClosedChainInnerImpl<F, C> where
+F: Future<Error = io::Error>,
+C: FutureChain<F::Item>,
+{
+    b: Option<(F, C)>,
+}
+
+impl<F, C> ClosedChainInnerImpl<F, C> where
+F: Future<Error = io::Error>,
+C: FutureChain<F::Item>,
 {
     fn new(f: F, chain: C) -> Self {
+        ClosedChainInnerImpl {
+            b: Some((f, chain)),
+        }
+    }
+}
+
+impl<F, C> ClosedChainInner for ClosedChainInnerImpl<F, C> where
+F: Future<Error = io::Error> + 'static,
+C: FutureChain<F::Item>,
+{
+    fn poll(&mut self) -> FutureResult<ClosedChain> {
+        let unbox = match mem::replace(&mut self.b, None) {
+            Some(tuple) => tuple,
+            None => panic!("cannot poll a used Future"),
+        };
+
+        let (mut f, link) = unbox;
+
+        let x = match f.poll() {
+            Ok(Async::Ready(i)) => link.exec(FutureChainState::Ok(i)),
+            Ok(Async::NotReady) => FutureChainState::Wait(ClosedChain::wrap(Self::new(f, link))),
+            Err(e) => link.exec(FutureChainState::Err(e)),
+        };
+
+        // TODO ???
+        match x {
+            FutureChainState::Ok(()) => FutureResult::Ok(()),
+            FutureChainState::Err(e) => FutureResult::Err(e),
+            FutureChainState::Wait(cc) => FutureResult::Wait(cc),
+        }
+    }
+}
+
+pub struct ClosedChain {
+    inner: Box<ClosedChainInner>,
+}
+
+impl ClosedChain {
+    fn new<F, C>(f: F, chain: C) -> Self where
+    F: Future<Error = io::Error> + 'static,
+    C: FutureChain<F::Item> + 'static,
+    {
+        Self::wrap(ClosedChainInnerImpl::new(f, chain))
+    }
+
+    fn wrap<F, C>(cc: ClosedChainInnerImpl<F, C>) -> Self where
+    F: Future<Error = io::Error> + 'static,
+    C: FutureChain<F::Item> + 'static,
+    {
         ClosedChain {
-            f: f,
-            link: chain,
-        }
-    }
-
-    fn poll(mut self) -> ChainState<C::Output> {
-        match self.f.poll() {
-            Ok(Async::Ready(i)) => self.link.exec(i),
-            Ok(Async::NotReady) => ChainState::Wait(ChainExecutor::wrap(self)),
-            Err(e) => ChainState::Err(e),
+            inner: Box::new(cc),
         }
     }
 }
 
-pub struct ChainExecutor<T> {
-    poll_f: fn(*mut u8) -> ChainState<T>,
-    drop_f: fn(*mut u8),
-    target: *mut u8,
-    // We never store a T.
-    // TODO: impl Send.
-    _p: PhantomData<*const T>,
-}
+impl Future for ClosedChain {
+    type Item = ();
+    type Error = io::Error;
 
-impl<T> ChainExecutor<T> {
-    /// Internal poll function. This consumes the target pointer; the caller must set it to null before calling.
-    fn poll_f<F, C, I>(target: *mut u8) -> ChainState<T> where
-    F: Future<Item = I, Error = io::Error>,
-    C: Chain<F::Item, Output = T>,
-    {
-        unsafe {
-            let typed_target = mem::transmute(target);
-            let target_box: Box<ClosedChain<F, C, I>> = Box::from_raw(typed_target);
-            target_box.poll()
-        }
-    }
-
-    /// Internal drop function, called by <Self as Drop>::drop.
-    fn drop_f<F, C, I>(target: *mut u8) where
-    F: Future<Item = I, Error = io::Error>,
-    C: Chain<F::Item, Output = T>,
-    {
-        if target as *const _ != ptr::null() {
-            unsafe {
-                let typed_target = mem::transmute(target);
-                let _b: Box<ClosedChain<F, C, I>> = Box::from_raw(typed_target);
-                // _b is now dropped
+    fn poll(&mut self) -> Poll<(), io::Error> {
+        match self.inner.poll() {
+            FutureResult::Ok(i) => Ok(Async::Ready(i)),
+            FutureResult::Err(e) => Err(e),
+            FutureResult::Wait(mut cc) => {
+                mem::swap(self, &mut cc);
+                Ok(Async::NotReady)
             }
         }
     }
-
-    fn wrap<F, C, I>(cc: ClosedChain<F, C, I>) -> Self where
-    F: Future<Item = I, Error = io::Error>,
-    C: Chain<F::Item, Output = T>,
-    {
-        ChainExecutor {
-            poll_f: Self::poll_f::<F, C, I>,
-            drop_f: Self::drop_f::<F, C, I>,
-            target: Box::into_raw(Box::new(cc)) as *mut u8,
-            _p: PhantomData,
-        }
-    }
-
-    fn poll(mut self) -> ChainState<T> {
-        let target = self.target;
-        // In case poll_f panics
-        self.target = ptr::null::<u8>() as *mut _;
-        (self.poll_f)(target)
-    }
 }
 
-impl<T> Drop for ChainExecutor<T> {
-    fn drop(&mut self) {
-        (self.drop_f)(self.target);
-        // Not needed, but for completeness' sake
-        mem::drop(self.poll_f);
-        mem::drop(self.drop_f);
-    }
-}
+// pub struct ClosedChain {
+//     poll_f: fn(*mut u8),
+//     drop_f: fn(*mut u8),
+//     target: *mut u8,
+// }
 
-trait FutureChain: Chain {
-    /// Plugs a FutureResult into this Chain, returning a ChainState which may be executed.
-    // TODO: this does not need to be part of Chain. Chain is a more general continuation-passing mechanism.
-    fn recv<F: Future<Item = Input, Error = io::Error>>(self, input: FutureResult<F>) ->
-    ChainState<Self::Output> {
-        match input {
-            FutureResult::Ok(i) => self.exec(i),
-            FutureResult::Err(e) => ChainState::Err(e),
-            FutureResult::Wait(f) => ChainState::Wait(ChainExecutor::wrap(ClosedChain::new(f, self)))
-        }
-    }
+// impl ClosedChain {
+//     fn new<F: Future, C: FutureChain<F::Item, F::Error>>(f: F, chain: C) -> Self {
+//         Self::wrap(ClosedChainInner::new(f, chain))
+//     }
 
-    fn recv_ok(self, item: Input) -> ChainState<Self::Output> {
-        self.recv::<VoidFuture<Input, io::Error>>(FutureResult::Ok(item))
-    }
+//     /// Internal poll function. This consumes the target pointer; the caller must set it to null before calling.
+//     fn poll_f<F, C>(target: *mut u8) where
+//     F: Future,
+//     C: FutureChain<F::Item, F::Error>,
+//     {
+//         unsafe {
+//             let typed_target = mem::transmute(target);
+//             let target_box: Box<ClosedChainInner<F, C>> = Box::from_raw(typed_target);
+//             target_box.poll()
+//         }
+//     }
 
-    fn recv_err(self, err: io::Error) -> ChainState<Self::Output> {
-        self.recv::<VoidFuture<Input, io::Error>>(FutureResult::Err(err))
-    }
-}
+//     /// Internal drop function, called by <Self as Drop>::drop.
+//     fn drop_f<F, C>(target: *mut u8) where
+//     F: Future,
+//     C: FutureChain<F::Item, F::Error>,
+//     {
+//          unsafe {
+//             let typed_target = mem::transmute(target);
+//             let _b: Box<ClosedChainInner<F, C>> = Box::from_raw(typed_target);
+//             // _b is now dropped
+//         }
+//     }
 
-/// A Chain that is partially or completely executed. If partially executed, it is waiting for
-/// a Future to return.
-///
-/// ChainStates are produced from Chain::recv.
-pub enum ChainState<T>
-{
-    Wait(ChainExecutor<T>),
-    Ok(T),
-    Err(io::Error),
-}
+//     fn wrap<F, C>(cc: ClosedChainInner<F, C>) -> Self where
+//     F: Future,
+//     C: FutureChain<F::Item, F::Error>,
+//     {
+//         ClosedChain {
+//             poll_f: Self::poll_f::<F, C>,
+//             drop_f: Self::drop_f::<F, C>,
+//             target: Box::into_raw(Box::new(cc)) as *mut u8,
+//         }
+//     }
+
+//     fn poll(mut self) {
+//         let target = self.target;
+//         self.target = ptr::null::<u8>() as *mut _;
+//         (self.poll_f)(target)
+//     }
+// }
+
+// impl Drop for ClosedChain {
+//     fn drop(&mut self) {
+//         if self.target as *const _ != ptr::null() {
+//             // Put the null check in the static fn, so it's not hidden behind an indirection.
+//             // Then it will be optimized away most of the time.
+//             (self.drop_f)(self.target);
+//         }
+//         // Not needed, but for completeness' sake
+//         mem::drop(self.poll_f);
+//         mem::drop(self.drop_f);
+//     }
+// }

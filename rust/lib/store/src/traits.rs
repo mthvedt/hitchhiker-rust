@@ -1,20 +1,25 @@
+use std::io;
+
+use chain::future::FutureChain;
+
 use alloc::Scoped;
 use data::Range;
 
-use tdfuture::Waiter;
-
 // TODO: need a TdError mechanism.
+
+// TODO improve this.
+pub struct TdError(io::Error);
 
 /// N.B.: We would ideally like T to be an associated type, not a generic type.
 /// However, this makes Rust's constraint checker go nuts once we get subtraits (KvSource, KvSink).
 /// In particular, it starts demanding manual constraints for GetValue everywhere, even though
 /// those constraints should be inferable.
-pub trait Source<T: ?Sized> {
+pub trait Source<T: ?Sized + 'static> {
 	type Get: Scoped<T>;
 
     // TODO: should we pass in context? why or why not?
     /// Get a value from this KvSource.
-    fn get<K: Scoped<[u8]>, R: Waiter<Option<Self::Get>>>(&mut self, k: K, r: R);
+    fn get<K: Scoped<[u8]>, C: FutureChain<Option<Self::Get>, TdError>>(&mut self, k: K, c: C) -> C::Out;
 
     // TODO: StreamResult?
     // type GetMany: Stream<Item = Self::GetValue, Error = io::Error>;
@@ -34,7 +39,7 @@ pub trait Source<T: ?Sized> {
     fn subrange(&mut self, range: Range) -> Self;
 }
 
-pub trait Sink<T: ?Sized>: Source<T> {
+pub trait Sink<T: ?Sized + 'static>: Source<T> {
     /// The max size of a value in this KVSource
 
     // TODO: this should be a constant? At the very least, max_value_size should be a property
@@ -47,7 +52,7 @@ pub trait Sink<T: ?Sized>: Source<T> {
     /// fit in an in-memory slice.
     ///
     /// Not that we don't have put_many or put_range. This use case should be handled
-    fn put_small<K: Scoped<[u8]>, V: Scoped<T>, R: Waiter<()>>(&mut self, k: K, v: V, r: R);
+    fn put_small<K: Scoped<[u8]>, V: Scoped<T>, C: FutureChain<(), TdError>>(&mut self, k: K, v: V, c: C) -> C::Out;
 }
 
 pub trait KvSource: Source<[u8]> {}

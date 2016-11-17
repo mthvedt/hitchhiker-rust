@@ -9,15 +9,6 @@ The Thunderhead data store is a persistent hitchhiker B-tree, supporting the fol
 Yak shave
 =========
 
-Datum is totally unnecessary.
-Keys should be Borrow<[u8]> for all cases except insert. Insert keys, and all values, should have some
-sort of associated transaction thing, but that's not important right now. Is it?
-
-In fact, key might be ENTIRELY obsolete. We can later implement the ability to pin zero-copy
-buffers to transactions, but that's not important right now.
-
-TODO: determine if key is entirely obsolete! When is it a good idea?
-
 Master TODO list
 ================
 
@@ -25,8 +16,8 @@ A disk model should provide futures for getting and saving. Need to do some thin
 It needs to be external.
 
 - Fixup interior node polymorphism.
-- Think about tx and alloc model. Needs to come BEFORE futures model.
-- Futures model?
+- Think about tx and alloc model.
+- Futures model. Choice of chains or direct futures.
 
 A transaction allows us to alloc arbitrary bytes, as well as arena-alloc various typed things.
 Publically, we can alloc space for keys and values to be inserted into the tree without copying.
@@ -37,7 +28,7 @@ The returned 'AllocPointers' maybe from a transaction arena or may simply be box
 - Commit model.
 - Persistence.
 - Rudimentary locks.
-- Within tree references.
+- Intra-tree references.
 
 Commit model Qs
 ===============

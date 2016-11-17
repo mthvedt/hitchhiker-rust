@@ -10,26 +10,29 @@ use futures::{Async, Fuse, Future, Join, Poll};
 
 use serde::{Deserialize, Serialize, Serializer};
 
-use datatype::datatypes::DatatypeId;
+use chain::future::{FutureChain, premap_ok};
 
-use thunderhead_store::{KvSource, KvSink};
+use thunderhead_store::{KvSource, KvSink, TdError};
 use thunderhead_store::alloc::Scoped;
 use thunderhead_store::util::{ByteReader, ByteWriter};
-use thunderhead_store::tdfuture::{FutureResult, FutureResultFuture, Waiter};
+
+use datatype::datatypes::DatatypeId;
 
 // TODO rename to Lens
 
 /// A Lens is a bidirectional map from one type to another.
 ///
 /// In normal usage, DataLenses are parameteric over their source/target stores. (Why?)
-pub trait Lens<S>: Clone + Sized {
+///
+/// Lens has a generic argument S, because its Read/Write types may depend on S.
+pub trait Lens<S>: Clone + Sized + 'static {
     // TODO: Target -> View
     // TODO: should target be the option? or should we have Future<Item = Option<Target>>?
     type Target;
 
-    fn read<W: Waiter<Option<Self::Target>>>(&self, source: &mut S, w: W);
+    fn read<C: FutureChain<Option<Self::Target>, TdError>>(&self, source: &mut S, c: C) -> C::Out;
 
-    fn write<V: Scoped<Self::Target>, W: Waiter<()>>(&self, target: V, sink: &mut S, w: W);
+    fn write<V: Scoped<Self::Target>, C: FutureChain<(), TdError>>(&self, target: V, sink: &mut S, c: C) -> C::Out;
 }
 
 /// A datatype header.
@@ -54,14 +57,16 @@ impl<S, L: SimpleLens> Clone for SimpleLensToLens<S, L> {
     }
 }
 
-impl<S: KvSink, L: SimpleLens> Lens<S> for SimpleLensToLens<S, L> {
+impl<S: KvSink + 'static, L: SimpleLens> Lens<S> for SimpleLensToLens<S, L> {
     type Target = L::Target;
 
-    fn read<W: Waiter<Option<Self::Target>>>(&self, source: &mut S, w: W) {
-        source.get([], w.premap(|i: Option<S::Get>| i.map(|bs| self.inner.read(bs.get().unwrap()))));
+    fn read<C: FutureChain<Option<Self::Target>, TdError>>(&self, source: &mut S, c: C) -> C::Out {
+        let self_clone = self.clone();
+        let reader_f = move |i: Option<S::Get>| i.map(|bs| self_clone.inner.read(bs.get().unwrap()));
+        source.get([], premap_ok(move |i| reader_f(i), c))
     }
 
-    fn write<V: Scoped<Self::Target>, W: Waiter<()>>(&self, target: V, sink: &mut S, w: W) {
+    fn write<V: Scoped<Self::Target>, C: FutureChain<(), TdError>>(&self, target: V, sink: &mut S, c: C) -> C::Out {
         // TODO: KvSink should support 'opening a writer', to avoid this heap allocation.
         let mut v = Vec::with_capacity(65536);
         unsafe { v.set_len(65536); }
@@ -73,12 +78,12 @@ impl<S: KvSink, L: SimpleLens> Lens<S> for SimpleLensToLens<S, L> {
         }
         unsafe { v.set_len(newlen); }
 
-        sink.put_small([], v, w)
+        sink.put_small([], v, c)
     }
 }
 
 /// A simple lens which wraps a Serde serializable.
-pub trait SimpleLens: Clone + Sized {
+pub trait SimpleLens: Clone + Sized + 'static {
     type Target: Serialize + Deserialize;
 
     /// TODO: we might consider making some kind of 'BorrowOrScoped' enum.
@@ -121,7 +126,7 @@ impl<'a, T: Serialize + 'a> Serialize for SerialLensWriteValue<'a, T> {
 ///
 /// TODO: Generify this. ComboLens.
 #[derive(Eq, PartialEq)]
-pub struct SerialLens<T: Serialize + Deserialize> {
+pub struct SerialLens<T: Serialize + Deserialize + 'static> {
     header: DatatypeHeader,
     _phantom: PhantomData<T>,
 }
@@ -145,7 +150,7 @@ impl<T: Serialize + Deserialize> SerialLens<T> {
     }
 }
 
-impl<T: Serialize + Deserialize> Clone for SerialLens<T> {
+impl<T: Serialize + Deserialize + 'static> Clone for SerialLens<T> {
     fn clone(&self) -> SerialLens<T> {
         SerialLens {
             header: self.header.clone(),
@@ -154,7 +159,7 @@ impl<T: Serialize + Deserialize> Clone for SerialLens<T> {
     }
 }
 
-impl<T: Serialize + Deserialize> SimpleLens for SerialLens<T> {
+impl<T: Serialize + Deserialize + 'static> SimpleLens for SerialLens<T> {
     type Target = T;
 
     fn read<B: AsRef<[u8]>>(&self, bytes: B) -> T {
@@ -180,11 +185,11 @@ impl<T: Serialize + Deserialize> SimpleLens for SerialLens<T> {
 }
 
 /// A String lens, with no header.
-pub struct StringLens<S: KvSink> {
+pub struct StringLens<S: KvSink+ 'static> {
     _phantom: PhantomData<S>,
 }
 
-impl<S: KvSink> StringLens<S> {
+impl<S: KvSink+ 'static> StringLens<S> {
     fn new() -> Self {
         StringLens {
             _phantom: PhantomData,
@@ -192,7 +197,7 @@ impl<S: KvSink> StringLens<S> {
     }
 }
 
-impl<S: KvSink> Clone for StringLens<S> {
+impl<S: KvSink + 'static> Clone for StringLens<S> {
     fn clone(&self) -> Self {
         StringLens {
             _phantom: PhantomData,
@@ -200,7 +205,7 @@ impl<S: KvSink> Clone for StringLens<S> {
     }
 }
 
-impl<S: KvSink> SimpleLens for StringLens<S> {
+impl<S: KvSink + 'static> SimpleLens for StringLens<S> {
     type Target = String;
 
     /// TODO: we might consider making some kind of 'BorrowOrScoped' enum.
@@ -328,7 +333,7 @@ impl<S: KvSink> SimpleLens for StringLens<S> {
 // }
 
 /// A Lens that wraps another lens while reading/writing a header at position [].
-pub struct LensWithHeader<S, L: Lens<S>> {
+pub struct LensWithHeader<S: KvSink + 'static, L: Lens<S>> {
     header: DatatypeHeader,
     inner: L,
     _phantom: PhantomData<S>,
@@ -344,34 +349,36 @@ impl<S: KvSink, L: Lens<S>> Clone for LensWithHeader<S, L> {
     }
 }
 
-impl<S: KvSink, L: Lens<S>> Lens<S> for LensWithHeader<S, L> {
+impl<S: KvSink + 'static, L: Lens<S>> Lens<S> for LensWithHeader<S, L> {
     type Target = L::Target;
 
-    fn read<W: Waiter<Option<Self::Target>>>(&self, source: &mut S, w: W) {
-        Waiter::bind(
-            |w| SerialLens::new(self.header).read(source, w),
-            |header|
-        let second = self.inner.read(source).to_future();
+    fn read<C: FutureChain<Option<Self::Target>, TdError>>(&self, source: &mut S, c: C) -> C::Out {
+        // Waiter::bind(
+        //     |w| SerialLens::new(self.header).read(source, w),
+        //     |header|
+        // let second = self.inner.read(source, c)
+        panic!("TODO")
     }
 
-    fn write<V: Scoped<Self::Target>, W: Waiter<()>>(&self, target: V, sink: &mut S, w: W) {
-        let header_lens: SerialLens<()> = SerialLens::new(self.header);
-        let first = header_lens.to_lens().write((), sink).to_future();
-        // TODO: subrange
-        // TODO: test subrange limitations
-        let second = self.inner.write(target, sink).to_future();
-        w.wait(first.join(second))
+    fn write<V: Scoped<Self::Target>, C: FutureChain<(), TdError>>(&self, target: V, sink: &mut S, c: C) -> C::Out {
+        panic!("TODO")
+        // let header_lens: SerialLens<()> = SerialLens::new(self.header);
+        // let first = exec(|c| header_lens.to_lens().write((), sink, c));
+        // // TODO: subrange
+        // // TODO: test subrange limitations
+        // let second = self.inner.write(target, sink).to_future();
+        // w.wait(first.join(second))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use thunderhead_store::testlib::NullKeyDummyKvSink;
+    // use super::*;
+    // use thunderhead_store::testlib::NullKeyDummyKvSink;
 
-    #[quickcheck]
-    fn test_string_lens(s: String) {
-        let lens = StringLens::new();
-        let repo = NullKeyDummyKvSink::new();
-    }
+    // #[quickcheck]
+    // fn test_string_lens(s: String) {
+    //     let lens = StringLens::new();
+    //     let repo = NullKeyDummyKvSink::new();
+    // }
 }

@@ -1,7 +1,5 @@
 use thunderhead_store::{KvSource, KvSink, Range, Source, Sink};
 use thunderhead_store::alloc::Scoped;
-// TODO: move FutureResult, Scoped up a level?
-use thunderhead_store::tdfuture::FutureResult;
 
 use datatype::io::Lens;
 

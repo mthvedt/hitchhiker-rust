@@ -1,10 +1,7 @@
 //! Thunderhead library for futures.
 
-// chain: totally unsafe and untested!
-mod chain;
-
-// chain_future: totally unsafe and untested!
-mod chain_future;
+// // chain_future: totally unsafe and untested!
+// mod chain_future;
 
 mod future;
 pub use self::future::*;

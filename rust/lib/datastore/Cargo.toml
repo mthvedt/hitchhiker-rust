@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["Mike Thvedt <mike.thvedt@gmail.com>"]
 
 [dependencies]
+chain = { path = "../chain" }
 thunderhead-store = { path = "../store" }
 
 bincode = "0.6.0"

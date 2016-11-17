@@ -59,6 +59,13 @@ F: FnOnce(I, C) -> C::Out
     c.prepend(f)
 }
 
+pub fn premap<F, C, I, L>(f: F, c: C) -> impl Chain<I, Out = C::Out> where
+C: Chain<L>,
+F: FnOnce(I) -> L
+{
+    bind(|i, c| c.exec(f(i)), c)
+}
+
 /// An empty chain that returns the identity when it executes.
 pub struct EmptyChain;
 

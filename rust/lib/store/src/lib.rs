@@ -26,11 +26,18 @@
 extern crate futures;
 extern crate typed_arena;
 
-// Used for bench. TODO: separate crates...
-extern crate rand;
+extern crate chain;
 
 #[cfg(test)]
 extern crate bytebuffer;
+#[cfg(test)]
+extern crate test;
+
+// TODO: isolate
+// #[cfg(bench)]
+extern crate rand;
+#[cfg(bench)]
+extern crate test;
 
 pub mod alloc;
 
@@ -44,7 +51,7 @@ pub mod bench;
 mod data;
 pub use data::*;
 
-pub mod tdfuture;
+// pub mod tdfuture;
 
 #[cfg(test)]
 mod testlib;
@@ -53,9 +60,3 @@ mod traits;
 pub use traits::*;
 
 pub mod tree;
-
-#[cfg(test)]
-extern crate test;
-
-#[cfg(bench)]
-extern crate test;

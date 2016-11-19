@@ -8,7 +8,16 @@ use data::Range;
 // TODO: need a TdError mechanism.
 
 // TODO improve this.
-pub struct TdError(io::Error);
+// TODO: hide details
+pub enum TdError {
+    IoError(io::Error),
+}
+
+impl From<io::Error> for TdError {
+    fn from(e: io::Error) -> Self {
+        TdError::IoError(e)
+    }
+}
 
 /// N.B.: We would ideally like T to be an associated type, not a generic type.
 /// However, this makes Rust's constraint checker go nuts once we get subtraits (KvSource, KvSink).
@@ -41,7 +50,7 @@ pub trait Source<T: ?Sized + 'static> {
 }
 
 pub trait Sink<T: ?Sized + 'static>: Source<T> {
-    type PutF: Future<Item = Self::Get, Error = TdError>;
+    type PutF: Future<Item = (), Error = TdError>;
 
     /// The max size of a value in this KVSource
 

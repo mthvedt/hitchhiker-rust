@@ -64,7 +64,7 @@ impl<'a> ByteWriter<'a> {
     }
 
     /// The number of bytes written to so far.
-    pub fn len_written(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.ptr
     }
 }

@@ -49,7 +49,7 @@ pub mod bench;
 mod data;
 pub use data::*;
 
-// pub mod tdfuture;
+pub mod tdfuture;
 
 #[cfg(test)]
 mod testlib;

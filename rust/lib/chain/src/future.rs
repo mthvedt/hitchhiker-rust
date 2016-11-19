@@ -25,7 +25,15 @@ Why Chain is a bad idea
 
 Why Chain may not be a bad idea
 
-- It is probably pretty fast. It hides future return types.
+- It hides future return types.
+- Reduces the size of allocated future space.
+- Proceeds immediately when the target is in cache.
+
+Potential alternative
+
+- Use Chain, but only for the main future. Spawn 'side' futures.
+At any join point, we get either a future or an Item. We then choose to allocate a 'side future'
+if we need.
 
 */
 

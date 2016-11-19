@@ -1,6 +1,6 @@
 use std::io;
 
-use chain::future::FutureChain;
+use futures::Future;
 
 use alloc::Scoped;
 use data::Range;
@@ -16,10 +16,11 @@ pub struct TdError(io::Error);
 /// those constraints should be inferable.
 pub trait Source<T: ?Sized + 'static> {
 	type Get: Scoped<T>;
+    type GetF: Future<Item = Self::Get, Error = TdError>;
 
     // TODO: should we pass in context? why or why not?
     /// Get a value from this KvSource.
-    fn get<K: Scoped<[u8]>, C: FutureChain<Option<Self::Get>, TdError>>(&mut self, k: K, c: C) -> C::Out;
+    fn get<K: Scoped<[u8]>>(&mut self, k: K) -> Self::GetF;
 
     // TODO: StreamResult?
     // type GetMany: Stream<Item = Self::GetValue, Error = io::Error>;
@@ -40,6 +41,8 @@ pub trait Source<T: ?Sized + 'static> {
 }
 
 pub trait Sink<T: ?Sized + 'static>: Source<T> {
+    type PutF: Future<Item = Self::Get, Error = TdError>;
+
     /// The max size of a value in this KVSource
 
     // TODO: this should be a constant? At the very least, max_value_size should be a property
@@ -52,7 +55,7 @@ pub trait Sink<T: ?Sized + 'static>: Source<T> {
     /// fit in an in-memory slice.
     ///
     /// Not that we don't have put_many or put_range. This use case should be handled
-    fn put_small<K: Scoped<[u8]>, V: Scoped<T>, C: FutureChain<(), TdError>>(&mut self, k: K, v: V, c: C) -> C::Out;
+    fn put_small<K: Scoped<[u8]>, V: Scoped<T>>(&mut self, k: K, v: V) -> Self::PutF;
 }
 
 pub trait KvSource: Source<[u8]> {}

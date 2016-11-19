@@ -25,15 +25,8 @@ We have laid the groundwork for this by making prepend a trait method.
 /// since by doing so, you sidestep Rust's poor support for abstract return types.
 /// Indeed, one of the motivation factors of Chain was to avoid abstract return types.
 pub trait Chain<Input>: Sized {
+    // TODO: Out -> Output.
     type Out;
-
-    /// Links the given function to this Chain, returning an new Chain.
-    /// The link function is a function that accepts an input item A and this Chain, and produces this chain's Output.
-    /// In idiomatic use, type inference is used to deduce the type of F.
-    fn prepend<F, I>(self, link: F) -> ChainLink<F, Self, I, Input> where
-    F: FnOnce(I, Self) -> Self::Out {
-        ChainLink::new(link, self)
-    }
 
     /// Returns an indirected Chain from this one, discarding all internal type information.
     /// Each indirect must chase a pointer once when it executes.
@@ -50,13 +43,14 @@ pub trait Chain<Input>: Sized {
     fn exec(self, i: Input) -> Self::Out;
 }
 
-/// Prepends the given function to the given Chain. This is the same as Chain::prepend,
-/// but with the arguments in nicer looking order.
+/// Prepends the given function to the given Chain.
+/// The link function is a function that accepts an input item A and this Chain, and produces this chain's Output.
+/// In idiomatic use, type inference is used to deduce the type of F.
 pub fn bind<F, C, I, L>(f: F, c: C) -> impl Chain<I, Out = C::Out> where
 C: Chain<L>,
 F: FnOnce(I, C) -> C::Out
 {
-    c.prepend(f)
+    ChainLink::new(f, c)
 }
 
 pub fn premap<F, C, I, L>(f: F, c: C) -> impl Chain<I, Out = C::Out> where

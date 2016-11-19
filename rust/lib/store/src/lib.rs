@@ -26,8 +26,6 @@
 extern crate futures;
 extern crate typed_arena;
 
-extern crate chain;
-
 #[cfg(test)]
 extern crate bytebuffer;
 #[cfg(test)]

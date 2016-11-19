@@ -6,7 +6,7 @@ version = "0.1.0"
 authors = ["Mike Thvedt <mike.thvedt@gmail.com>"]
 
 [dependencies]
-chain = { path = "../chain" }
+# chain = { path = "../chain" }
 futures = "0.1.2"
 typed-arena = "1.2.0"
 

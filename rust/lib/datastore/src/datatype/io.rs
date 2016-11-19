@@ -10,8 +10,6 @@ use futures::{Async, Fuse, Future, Join, Poll};
 
 use serde::{Deserialize, Serialize, Serializer};
 
-use chain::future::{FutureChain, premap_ok};
-
 use thunderhead_store::{KvSource, KvSink, TdError};
 use thunderhead_store::alloc::Scoped;
 use thunderhead_store::util::{ByteReader, ByteWriter};
@@ -29,6 +27,8 @@ pub trait Lens<S>: Clone + Sized + 'static {
     // TODO: Target -> View
     // TODO: should target be the option? or should we have Future<Item = Option<Target>>?
     type Target;
+    type ReadF: Future<Item = Self::Target, Error = TdError>;
+    type WriteF: Future<Item = Self::Target, Error = TdError>;
 
     fn read<C: FutureChain<Option<Self::Target>, TdError>>(&self, source: &mut S, c: C) -> C::Out;
 
@@ -353,6 +353,7 @@ impl<S: KvSink + 'static, L: Lens<S>> Lens<S> for LensWithHeader<S, L> {
     type Target = L::Target;
 
     fn read<C: FutureChain<Option<Self::Target>, TdError>>(&self, source: &mut S, c: C) -> C::Out {
+        let read_second = bind(|unit, c| self.inner.read(s, c), c);
         // Waiter::bind(
         //     |w| SerialLens::new(self.header).read(source, w),
         //     |header|

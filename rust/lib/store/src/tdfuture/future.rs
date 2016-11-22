@@ -32,72 +32,75 @@ use alloc::Scoped;
 //     fn poll(&mut self, c: &mut C) -> Poll<Self::Item>;
 // }
 
-/// The result of a fn that may optionally return a future.
-///
-/// They are not futures by default. The motivation behind this is that we want to continue directly,
-/// instead of using the future mechanism, when a result is ready immediately. Additionally,
-/// we want to use the FutureChain (not yet implemented) mechanism.
-///
-/// It is easy to adapt
-/// a FutureResult into a FutureResultFuture; because their memory layouts are the same, this is
-/// usually efficient.
-pub enum FutureResult<F: Future> {
-    Ok(F::Item),
-    Err(F::Error),
-    Wait(F),
-}
+// TODO: we don't use these. Right now we are really concerned about JS speed. For Rust speed
+// it is probably better to use the cont mechanism.
 
-impl<F: Future> FutureResult<F> {
-    pub fn map<Item2, FC: FnOnce(F::Item) -> Item2>(self, fc: FC) -> FutureResult<Map<F, FC>> {
-        match self {
-            FutureResult::Ok(x) => FutureResult::Ok((fc)(x)),
-            FutureResult::Err(e) => FutureResult::Err(e),
-            FutureResult::Wait(f) => FutureResult::Wait(f.map(fc)),
-        }
-    }
+// /// The result of a fn that may optionally return a future.
+// ///
+// /// They are not futures by default. The motivation behind this is that we want to continue directly,
+// /// instead of using the future mechanism, when a result is ready immediately. Additionally,
+// /// we want to use the FutureChain (not yet implemented) mechanism.
+// ///
+// /// It is easy to adapt
+// /// a FutureResult into a FutureResultFuture; because their memory layouts are the same, this is
+// /// usually efficient.
+// pub enum FutureResult<F: Future> {
+//     Ok(F::Item),
+//     Err(F::Error),
+//     Wait(F),
+// }
 
-    pub fn to_future(self) -> FutureResultFuture<F> {
-        match self {
-            FutureResult::Ok(item) => FutureResultFuture::Ok(item),
-            FutureResult::Err(e) => FutureResultFuture::Err(e),
-            FutureResult::Wait(f) => FutureResultFuture::Wait(f),
-        }
-    }
-}
+// impl<F: Future> FutureResult<F> {
+//     pub fn map<Item2, FC: FnOnce(F::Item) -> Item2>(self, fc: FC) -> FutureResult<Map<F, FC>> {
+//         match self {
+//             FutureResult::Ok(x) => FutureResult::Ok((fc)(x)),
+//             FutureResult::Err(e) => FutureResult::Err(e),
+//             FutureResult::Wait(f) => FutureResult::Wait(f.map(fc)),
+//         }
+//     }
+
+//     pub fn to_future(self) -> FutureResultFuture<F> {
+//         match self {
+//             FutureResult::Ok(item) => FutureResultFuture::Ok(item),
+//             FutureResult::Err(e) => FutureResultFuture::Err(e),
+//             FutureResult::Wait(f) => FutureResultFuture::Wait(f),
+//         }
+//     }
+// }
 
 
-/// A future version of FutureResult. See `FutureResult::to_future(self)`.
-pub enum FutureResultFuture<F: Future> {
-    Ok(F::Item),
-    Err(F::Error),
-    Wait(F),
-    /// A consumed FutureResultFuture. This exists so poll can move out of the Ok and Err states.
-    /// Polling a consumed FutureResultFuture is an error.
-    Consumed,
-}
+// /// A future version of FutureResult. See `FutureResult::to_future(self)`.
+// pub enum FutureResultFuture<F: Future> {
+//     Ok(F::Item),
+//     Err(F::Error),
+//     Wait(F),
+//     /// A consumed FutureResultFuture. This exists so poll can move out of the Ok and Err states.
+//     /// Polling a consumed FutureResultFuture is an error.
+//     Consumed,
+// }
 
-impl<F: Future> Future for FutureResultFuture<F> {
-    type Item = F::Item;
-    type Error = F::Error;
+// impl<F: Future> Future for FutureResultFuture<F> {
+//     type Item = F::Item;
+//     type Error = F::Error;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let mut oldself = FutureResultFuture::Consumed;
-        mem::swap(self, &mut oldself);
+//     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+//         let mut oldself = FutureResultFuture::Consumed;
+//         mem::swap(self, &mut oldself);
 
-        match oldself {
-            FutureResultFuture::Ok(item) => Ok(Async::Ready(item)),
-            FutureResultFuture::Err(err) => Err(err),
-            FutureResultFuture::Wait(mut f) => {
-                let r = f.poll();
-                // We don't actually need to check what we polled.
-                // We just keep the future around; it can be polled again if needed.
-                *self = FutureResultFuture::Wait(f);
-                r
-            }
-            FutureResultFuture::Consumed => panic!("Cannot poll a complete future twice"),
-        }
-    }
-}
+//         match oldself {
+//             FutureResultFuture::Ok(item) => Ok(Async::Ready(item)),
+//             FutureResultFuture::Err(err) => Err(err),
+//             FutureResultFuture::Wait(mut f) => {
+//                 let r = f.poll();
+//                 // We don't actually need to check what we polled.
+//                 // We just keep the future around; it can be polled again if needed.
+//                 *self = FutureResultFuture::Wait(f);
+//                 r
+//             }
+//             FutureResultFuture::Consumed => panic!("Cannot poll a complete future twice"),
+//         }
+//     }
+// }
 
 /// A closure that transforms the output of a Future.
 ///

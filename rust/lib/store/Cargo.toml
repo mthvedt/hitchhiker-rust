@@ -24,9 +24,3 @@ bytebuffer = "0.2"
 
 # quickcheck = "0.3"
 # quickcheck_macros = "0.2"
-
-# For profiling.
-# TODO does this slow things down? Can we make another profile?
-[profile.release]
-debug = true
-lto = true

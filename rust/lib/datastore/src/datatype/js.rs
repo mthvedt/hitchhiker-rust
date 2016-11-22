@@ -36,4 +36,9 @@ struct TdJson {
 struct SmJsonLens;
 
 /// A lens that turns REST wire-format JSON into Spidermonkey JS.
-struct SmRestJsonLens;
+struct SmTextJsonLens;
+
+#[cfg(test)]
+mod test {
+
+}

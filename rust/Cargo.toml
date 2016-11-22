@@ -15,4 +15,9 @@ openssl = "0.8"
 url = { git = "https://github.com/servo/rust-url" }
 time = "0.1"
 
+[profile.release]
+# TODO: should have a profiling profile instead of debug = true.
+debug = true
+lto = true
+
 [workspace]

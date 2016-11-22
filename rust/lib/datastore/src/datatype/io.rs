@@ -15,13 +15,13 @@ use datatype::datatypes::DatatypeId;
 use thunderhead_store::{KvSource, KvSink, TdError};
 use thunderhead_store::alloc::Scoped;
 use thunderhead_store::util::{ByteReader, ByteWriter};
-use thunderhead_store::tdfuture::{FutureMap, FutureResult, FutureResultFuture, MapFuture};
+use thunderhead_store::tdfuture::{FutureMap, MapFuture};
 
 // TODO rename to Lens
 
 /// A Lens is a bidirectional map from one type to another.
 ///
-/// In normal usage, DataLenses are parameteric over their source/target stores. (Why?)
+/// In normal usage, DataLenses are parametric over their source/target stores. (Why?)
 pub trait Lens<S>: Clone + Sized {
     type Target;
 
@@ -144,21 +144,6 @@ impl<T: Serialize + Deserialize> SimpleLens for SerialLens<T> {
     }
 }
 
-// /// Helper to reify SerialDataLens::ReadResult into a named type.
-// struct SingleKeyRead<F: Future<Item = B>, L: SimpleLens, B: Scoped<[u8]>> {
-//     inner: F,
-//     lens: L,
-// }
-
-// impl<F: Future<Item = B>, L: SimpleLens, B: Scoped<[u8]>> Future for SingleKeyRead<F, L, B> {
-//     type Item = L::Target;
-//     type Error = F::Error;
-
-//     fn poll(&mut self) -> Poll<L::Target, F::Error> {
-//         self.inner.poll().map(|async| async.map(|bytes| self.lens.read(bytes.get().unwrap())))
-//     }
-// }
-
 /// Reification of SimpleDataLens::ReadResult into a named type.
 struct SimpleLensRead<L: SimpleLens, B: Scoped<[u8]>> {
     lens: L,
@@ -221,25 +206,6 @@ impl<S: KvSource + KvSink, L: SimpleLens> Lens<S> for SimpleLensReified<S, L> {
         sink.put_small([], v)
     }
 }
-
-// /// We can't use futures::Map because we need to use this as an assacoiated type.
-// struct SimpleLensFuture<B: Scoped<[u8]>, F: Future<Item = B>, S: SimpleLens> {
-//     inner: F,
-//     simple_lens: S,
-// }
-
-// impl<B: Scoped<[u8]>, F: Future<Item = B>, S: SimpleLens> Future for SimpleLensFuture<B, F, S> {
-//     type Item = S::Target;
-//     type Error = F::Error;
-
-//     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-//         match self.inner.poll() {
-//             Ok(Async::Ready(bytes)) => Ok(Async::Ready(self.simple_lens.read(&bytes.get().unwrap()))),
-//             Ok(Async::NotReady) => Ok(Async::NotReady),
-//             Err(e) => Err(e),
-//         }
-//     }
-// }
 
 struct HeaderVerify<B: Scoped<[u8]>> {
     header: DatatypeHeader,
@@ -357,3 +323,5 @@ impl<S: KvSource + KvSink, L: Lens<S>> Lens<S> for LensWithHeader<S, L> {
         MapFuture::new(first.join(second), GetNone::new())
     }
 }
+
+// No tests here. Tests are on implementations of Lens.

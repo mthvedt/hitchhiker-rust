@@ -18,8 +18,6 @@ extern crate thunderhead_store;
 
 #[cfg(test)]
 extern crate quickcheck;
-#[cfg(test)]
-extern crate quickcheck_macros;
 
 // TODO flatten
 mod datatype;

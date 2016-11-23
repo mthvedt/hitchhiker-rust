@@ -1,12 +1,13 @@
 use std;
-use std::ptr;
+use std::cell::RefCell;
 use std::iter::FromIterator;
 use std::marker::PhantomData;
-use std::ops::{Deref, DerefMut};
+use std::ptr;
 use std::ptr::Unique;
+use std::rc::Rc;
 
 use js::jsapi;
-use js::jsapi::{JSAutoCompartment, JSClass, JSContext, JSPrincipals, JSRuntime, JSObject, Value};
+use js::jsapi::{JSAutoCompartment, JSContext, JSRuntime, JSObject, Value};
 use js::jsval;
 use js::rust;
 
@@ -71,6 +72,7 @@ const SYSTEM_CODE_STACK_BUFFER: usize = 32 * 1024;
 // /// Borrowed from Gecko. Gives us stack space for trusted script calls.
 const TRUSTED_SCRIPT_STACK_BUFFER: usize = 128 * 1024;
 
+/// The master runtime for all JS runtimes in Thunderhead.
 fn master_runtime() -> *mut JSRuntime {
     struct MasterRuntime(*mut JSRuntime);
     unsafe impl Sync for MasterRuntime {}
@@ -79,12 +81,18 @@ fn master_runtime() -> *mut JSRuntime {
         static ref INNER: MasterRuntime = {
             unsafe {
                 assert!(jsapi::JS_Init(), "FATAL: Could not init JS");
-                let runtime = jsapi::JS_NewRuntime(DEFAULT_HEAP_SIZE, DEFAULT_CHUNK_SIZE, ptr::null_mut());
+                let runtime = jsapi::JS_NewRuntime(
+                    DEFAULT_HEAP_SIZE,
+                    DEFAULT_CHUNK_SIZE,
+                    ptr::null_mut() // Parent runtime--none
+                );
                 assert!(!runtime.is_null(), "FATAL: Could not allocate master JS runtime");
 
                 let context = jsapi::JS_GetContext(runtime);
+                jsapi::JS_BeginRequest(context);
                 assert!(!context.is_null(), "FATAL: Could not get master JS context");
                 jsapi::InitSelfHostedCode(context);
+                jsapi::JS_EndRequest(context);
 
                 MasterRuntime(runtime)
             }
@@ -94,20 +102,21 @@ fn master_runtime() -> *mut JSRuntime {
     INNER.0
 }
 
-/// A fully-initialized javascript execution context
-pub struct Context {
+/// A fully-initialized Javascript runtime.
+///
+/// In this impl, it is actually a Spidermonkey JSRuntime + JSContext.
+pub struct Runtime {
     inner: Unique<JSContext>,
     inner_runtime: Unique<JSRuntime>,
-    global: RootedObject,
 }
 
-impl Context {
-    /// Creates a new `JSRuntime` and `JSContext`.
-    pub fn new() -> Context {
+impl Runtime {
+    pub fn new() -> Self {
         unsafe {
             let js_runtime = jsapi::JS_NewRuntime(DEFAULT_HEAP_SIZE, DEFAULT_CHUNK_SIZE, master_runtime());
             assert!(!js_runtime.is_null(), "Out of memory allocating JS runtime");
 
+            // This next line (and the below comments) were taken from Servo's mozjs project.
             // Unconstrain the runtime's threshold on nominal heap size, to avoid
             // triggering GC too often if operating continuously near an arbitrary
             // finite threshold. This leaves the maximum-JS_malloc-bytes threshold
@@ -119,6 +128,10 @@ impl Context {
             let js_context = jsapi::JS_GetContext(js_runtime);
             assert!(!js_context.is_null(), "Could not get JS context");
 
+            // I'm not really sure how requests work in SpiderMonkey. They seem to be
+            // about preventing GC in multithreaded contexts, but threads are turned off by default?
+            // Anyway, we will always be in a single thread, so no harm in keeping the request open for the lifetime
+            // of the Context.
             jsapi::JS_BeginRequest(js_context);
 
             jsapi::JS_SetNativeStackQuota(
@@ -138,25 +151,12 @@ impl Context {
             // TODO
             // jsapi::SetWarningReporter(js_runtime, Some(report_warning));
 
-            let g = jsapi::JS_NewGlobalObject(js_context,
-                &rust::SIMPLE_GLOBAL_CLASS, // Default global class. TODO: investigate.
-                ptr::null_mut(), // Principals. Obsolete.
-                jsapi::OnNewGlobalHookOption::FireOnNewGlobalHook, // Allow debugger to activate immediately.
-                &jsapi::CompartmentOptions::default() // Compartment options. TODO: investigate.
-            );
-            let g_rooted = Rooted::new(g, &mut *js_context);
-
-            assert!(!g.is_null(), "Could not build JS global object");
-
-            Context {
+            Runtime {
                 inner_runtime: Unique::new(js_runtime),
                 inner: Unique::new(js_context),
-                global: g_rooted,
             }
         }
     }
-
-    /* End code taken from rust-mozjs */
 
     // pub fn evaluate_script(&self, glob: HandleObject, script: &str, filename: &str,
     //                        line_num: u32, rval: MutableHandleValue)
@@ -188,30 +188,9 @@ impl Context {
     //         }
     //     }
     // }
-
-    pub fn null_value(&mut self) -> RootedVal {
-        unsafe {
-            Rooted::new(jsval::NullValue(), self.inner.get_mut())
-        }
-    }
-
-    pub fn parse_json(&mut self, s: &str) -> Option<RootedVal> {
-        unsafe {
-            let _a = JSAutoCompartment::new(self.inner.get_mut(), self.global.inner.ptr);
-            // TODO: str len check
-            let u16str = Vec::from_iter(s.encode_utf16());
-            let mut r = self.null_value();
-            match jsapi::JS_ParseJSON(
-                self.inner.get_mut(), u16str.as_ptr(), u16str.len() as u32, r.handle_mut().inner) {
-                true => Some(r),
-                // TODO: exception handling?
-                false => None,
-            }
-        }
-    }
 }
 
-impl Drop for Context {
+impl Drop for Runtime {
     fn drop(&mut self) {
         unsafe {
             jsapi::JS_EndRequest(self.inner.get_mut());
@@ -220,20 +199,93 @@ impl Drop for Context {
     }
 }
 
+#[derive(Clone)]
+pub struct RuntimeHandle {
+    inner: Rc<RefCell<Runtime>>,
+}
+
+impl RuntimeHandle {
+    fn new() -> Self {
+        RuntimeHandle {
+            inner: Rc::new(RefCell::new(Runtime::new())),
+        }
+    }
+
+    fn context(&mut self) -> &mut JSContext {
+        unsafe {
+            let mut b = self.inner.borrow_mut();
+            let p: *mut JSContext = b.inner.get_mut();
+            &mut *p
+        }
+    }
+
+    pub fn new_environment(&mut self) -> Environment {
+        Environment::new(self)
+    }
+}
+
+pub struct Environment {
+    parent: RuntimeHandle,
+    global: RootedObject,
+}
+
+impl Environment {
+    fn new(parent: &mut RuntimeHandle) -> Self {
+        unsafe {
+            let g = jsapi::JS_NewGlobalObject(parent.context(),
+                &rust::SIMPLE_GLOBAL_CLASS, // Default global class. TODO: investigate.
+                ptr::null_mut(), // Principals. Obsolete.
+                jsapi::OnNewGlobalHookOption::FireOnNewGlobalHook, // Allow debugger to activate immediately.
+                &jsapi::CompartmentOptions::default() // Compartment options. TODO: investigate.
+            );
+            let g_rooted = Rooted::new(g, parent.context());
+
+            assert!(!g.is_null(), "Could not build JS global object");
+
+            Environment {
+                parent: parent.clone(),
+                global: g_rooted,
+            }
+        }
+    }
+
+    pub fn null_value(&mut self) -> RootedVal {
+        Rooted::new(jsval::NullValue(), self.parent.context())
+    }
+
+    pub fn parse_json(&mut self, s: &str) -> Option<RootedVal> {
+        unsafe {
+            let _a = JSAutoCompartment::new(self.parent.context(), self.global.inner.ptr);
+            // TODO: str len check
+            let u16str = Vec::from_iter(s.encode_utf16());
+            let mut r = self.null_value();
+            match jsapi::JS_ParseJSON(
+                self.parent.context(), u16str.as_ptr(), u16str.len() as u32, r.handle_mut().inner) {
+                true => Some(r),
+                // TODO: exception handling?
+                false => None,
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
-    use super::Context;
+    use super::RuntimeHandle;
 
     #[test]
     fn context_smoke_test() {
-        Context::new();
+        RuntimeHandle::new();
     }
 
     #[test]
     fn json_smoke_test() {
-        let mut c = Context::new();
-        c.parse_json("{}");
-        c.parse_json(r#"{"rpc": "2.0", "fn": "add", "callback": true, "params": [42, 23], "id": 1,
+        let mut r = RuntimeHandle::new();
+        let mut env = r.new_environment();
+        env.parse_json("{}");
+
+        env.parse_json(r#"{"rpc": "2.0", "fn": "add", "callback": true, "params": [42, 23], "id": 1,
         "callback_to": {"site": "www.foo.bar", "port": 8888}}"#);
+        // TODO test result
     }
 }

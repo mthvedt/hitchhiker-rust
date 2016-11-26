@@ -196,3 +196,66 @@ impl<F: Future, C: FutureCont<Input = F::Item, Error = F::Error>> Future for And
         self.poll()
     }
 }
+
+pub type BoxFuture<T, E> = Box<Future<Item = T, Error = E>>;
+
+#[must_use = "futures do nothing unless polled"]
+pub struct Lift<A, F> {
+    future: A,
+    f: Option<F>,
+}
+
+impl<A, B, F> Future for Lift<A, F> where
+A: Future,
+F: FnOnce(A::Item) -> Result<B, A::Error>,
+{
+    type Item = B;
+    type Error = A::Error;
+
+    fn poll(&mut self) -> Poll<B, A::Error> {
+        let e = match self.future.poll() {
+            Ok(Async::NotReady) => return Ok(Async::NotReady),
+            Ok(Async::Ready(e)) => Ok(e),
+            Err(e) => Err(e),
+        };
+        e.and_then(self.f.take().expect("cannot poll a completed future twice")).map(Async::Ready)
+    }
+}
+
+pub enum ResultFuture<Ok, Err> {
+    Ok(Ok),
+    Err(Err),
+    Done,
+}
+
+impl<Ok, Err> Future for ResultFuture<Ok, Err> {
+    type Item = Ok;
+    type Error = Err;
+
+    fn poll(&mut self) -> Poll<Ok, Err> {
+        match mem::replace(self, ResultFuture::Done) {
+            ResultFuture::Ok(ok) => Ok(Async::Ready(ok)),
+            ResultFuture::Err(err) => Err(err),
+            ResultFuture::Done => panic!("cannot poll a completed future twice"),
+        }
+    }
+}
+
+pub trait FutureExt: Future + Sized {
+    // TODO: move and_then, map, &c into special fns here. maybe called and_then_t, map_t?
+
+    fn lift<F, B>(self, f: F) -> Lift<Self, F> where
+    F: FnOnce(Self::Item) -> Result<B, Self::Error>
+    {
+        Lift {
+            future: self,
+            f: Some(f),
+        }
+    }
+
+    fn td_boxed(self) -> BoxFuture<Self::Item, Self::Error> where Self: 'static {
+        Box::new(self)
+    }
+}
+
+impl<F> FutureExt for F where F: Future {}

@@ -1,6 +1,8 @@
 use std;
+use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::ffi::CString;
+use std::io;
 use std::iter::FromIterator;
 use std::marker::PhantomData;
 use std::ptr;
@@ -9,8 +11,14 @@ use std::rc::Rc;
 
 use libc::{c_uint, size_t};
 
+use futures::Future;
+
+use thunderhead_store::{StringSource, TdError};
+use thunderhead_store::alloc;
+use thunderhead_store::tdfuture::{BoxFuture, FutureExt};
+
 use js::jsapi;
-use js::jsapi::{JSAutoCompartment, JSContext, JSRuntime, JSObject, Value};
+use js::jsapi::{JSAutoCompartment, JSContext, JSFunction, JSObject, JSRuntime, Value};
 use js::jsval;
 use js::rust;
 
@@ -19,7 +27,8 @@ pub struct Rooted<T> {
     inner: jsapi::Rooted<T>,
 }
 
-pub type RootedObject = Rooted<*mut JSObject>;
+pub type RootedFn = Rooted<*mut JSFunction>;
+pub type RootedObj = Rooted<*mut JSObject>;
 pub type RootedVal = Rooted<Value>;
 
 impl<T> Rooted<T> {
@@ -45,6 +54,38 @@ impl<T> Rooted<T> {
         HandleMut {
             inner: unsafe { jsapi::MutableHandle::from_marked_location(&mut self.inner.ptr) },
             _p: PhantomData,
+        }
+    }
+}
+
+impl RootedVal {
+    // TODO: make the context compartment safe
+    fn to_string(&self, cx: &mut JSContext) -> Result<String, TdError> {
+        unsafe {
+            if self.inner.ptr.is_string() {
+                let js_str = self.inner.ptr.to_string();
+                // TODO: write to buffer instead
+                let mut buf = [0 as u8; 65536];
+                let v = jsapi::JS_EncodeStringToBuffer(cx, js_str, &mut buf[0] as *mut u8 as *mut i8, 65536);
+
+                if v > 65536 {
+                    Err(TdError::RuntimeError(String::from("string too big")))
+                } else if v < 0 {
+                    Err(TdError::RuntimeError(String::from("could not encode string")))
+                } else {
+                    Ok(String::from_utf8_lossy(&buf[..v]).into_owned())
+                }
+            } else {
+                Err(TdError::RuntimeError(String::from("failed string cast")))
+            }
+        }
+    }
+}
+
+impl<T> Drop for Rooted<T> {
+    fn drop(&mut self) {
+        unsafe {
+            self.inner.remove_from_root_stack()
         }
     }
 }
@@ -198,7 +239,7 @@ impl RuntimeHandle {
 
 pub struct Environment {
     parent: RuntimeHandle,
-    global: RootedObject,
+    global: RootedObj,
 }
 
 impl Environment {
@@ -221,17 +262,27 @@ impl Environment {
         }
     }
 
+    pub fn new_object(&mut self) -> RootedObj {
+        let cx = self.parent.context();
+            // second argument is class--null class means vanilla object
+        unsafe {
+            Rooted::new(jsapi::JS_NewObject(cx, ptr::null()), cx)
+        }
+    }
+
     pub fn null_value(&mut self) -> RootedVal {
         Rooted::new(jsval::NullValue(), self.parent.context())
     }
 
-    pub fn parse_json(&mut self, s: &str) -> Option<RootedVal> {
+    pub fn parse_json<Bytes: alloc::Scoped<[u8]>>(&mut self, b: Bytes) -> Option<RootedVal> {
         unsafe {
+            // TODO: use JSString directly instead?
+            let scow = String::from_utf8_lossy(b.get().unwrap());
             let mut r = self.null_value();
             let ctx = self.parent.context();
             let _c = JSAutoCompartment::new(ctx, self.global.inner.ptr);
             // TODO: str len check
-            let u16str = Vec::from_iter(s.encode_utf16());
+            let u16str = Vec::from_iter(scow.encode_utf16());
             match jsapi::JS_ParseJSON(
                 ctx, u16str.as_ptr(), u16str.len() as u32, r.handle_mut().inner) {
                 true => Some(r),
@@ -241,7 +292,7 @@ impl Environment {
         }
     }
 
-    fn evaluate_script(&mut self, script: &str, scriptname: &str) -> bool {
+    fn evaluate_script(&mut self, script: &str, scriptname: &str) -> Result<RootedVal, TdError> {
         let script_utf16: Vec<u16> = script.encode_utf16().collect();
         let scriptname_cstr = CString::new(scriptname.as_bytes()).unwrap();
 
@@ -261,40 +312,80 @@ impl Environment {
         let options = rust::CompileOptionsWrapper::new(ctx, scriptname_cstr.as_ptr(), 0);
 
         unsafe {
-            if !jsapi::Evaluate2(ctx, options.ptr, script_ptr as *const u16,
+            if jsapi::Evaluate2(ctx, options.ptr, script_ptr as *const u16,
                 script_len as size_t, r.handle_mut().inner) {
                 // maybe_resume_unwind(); // TODO: ???
-                false
+                Ok(r)
             } else {
                 // TODO: what is the script result?
-                true
+                Err(TdError::EvalError)
             }
         }
     }
 }
-//
-// struct ScriptLookup<S> {
-//     source: S,
-//     name: String,
-// }
-//
-// struct Processor {
-//     inner: Environment,
-// }
-//
-// // TODO: don't copy the string
-// // TODO: error type?
-// pub fn lookup_script(s: ScriptLookup) -> Result<String, io::Error> {
-//     match s.source {
-//         System => (),
-//     }
-// }
-//
-// impl Processor {
-//     fn init(script: &ScriptLookup) -> Result<Self, io::Error> {
-//
-//     }
-// }
+
+pub struct Processor {
+    env: Environment,
+    /// Actually a function mapping (what to what)?
+    f: RootedVal,
+}
+
+impl Processor {
+    fn new(env: Environment, f: RootedVal) -> Result<Self, TdError> {
+        // TODO: verify f. Separate verifier environment?
+        // TODO: also verify (debug assert?) f belongs to environment.
+
+        Ok(Processor {
+            env: env,
+            f: f,
+        })
+    }
+
+    pub fn from_source<Source, Str>(mut env: Environment, name: Str, mut source: Source) -> BoxFuture<Self, TdError> where
+    Source: StringSource,
+    Str: alloc::Scoped<str> + 'static
+    {
+        source.get(name.get().unwrap().as_ref()).lift(move |scriptopt| {
+            use thunderhead_store::alloc::Scoped; // This breaks get() type inference for some reason.
+
+            let script_result = scriptopt.ok_or(TdError::from(
+                io::Error::new(io::ErrorKind::NotFound, "Script not found")));
+            // TODO: better names
+            script_result.and_then(|script| {
+                // TODO: an 'unscope' macro
+                env.evaluate_script(script.get().unwrap(), name.get().unwrap()).and_then(|f| Processor::new(env, f))
+            })
+        }).td_boxed()
+    }
+
+    pub fn apply<Bytes: alloc::Scoped<[u8]>>(&mut self, value_bytes: Bytes) -> Result<RootedVal, TdError> {
+        // TODO: what is the right function object to pass?
+        let fmut = self.f.handle();
+        let thisobj = self.env.new_object();
+        let mut r = self.env.null_value();
+        let call_value = match self.env.parse_json(value_bytes.get().unwrap()) {
+            Some(v) => v,
+            // TODO better error handling
+            None => return Err(TdError::EvalError),
+        };
+
+        unsafe {
+            jsapi::JS_CallFunctionValue(
+                self.env.parent.context(),
+                thisobj.handle().inner, // Function object (aka `this`).
+                fmut.inner,
+                &jsapi::HandleValueArray { length_: 1, elements_: &call_value.inner.ptr, },
+                r.handle_mut().inner,
+            )
+        };
+
+        Ok(r)
+    }
+
+    pub fn to_string(&mut self, str: RootedVal) -> Result<String, TdError> {
+        str.to_string(self.env.parent.context())
+    }
+}
 
 #[cfg(test)]
 mod test {
@@ -309,10 +400,10 @@ mod test {
     fn json_smoke_test() {
         let mut r = RuntimeHandle::new();
         let mut env = r.new_environment();
-        env.parse_json("{}");
+        env.parse_json("{}".as_ref());
 
         env.parse_json(r#"{"rpc": "2.0", "fn": "add", "callback": true, "params": [42, 23], "id": 1,
-        "callback_to": {"site": "www.foo.bar", "port": 8888}}"#);
+        "callback_to": {"site": "www.foo.bar", "port": 8888}}"#.as_ref());
         // TODO test result
     }
 }

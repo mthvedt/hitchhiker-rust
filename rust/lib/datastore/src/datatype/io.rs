@@ -23,13 +23,13 @@ use thunderhead_store::tdfuture::{FutureMap, MapFuture};
 ///
 /// In normal usage, DataLenses are parametric over their source/target stores. (Why?)
 pub trait Lens<S>: Clone + Sized {
-    type Target;
+    type Target: 'static;
 
-    type ReadResult: Future<Item = Option<Self::Target>, Error = TdError>;
+    type ReadResult: Future<Item = Option<Self::Target>, Error = TdError> + 'static;
 
     fn read(&self, source: &mut S) -> Self::ReadResult;
 
-    type WriteResult: Future<Item = (), Error = TdError>;
+    type WriteResult: Future<Item = (), Error = TdError> + 'static;
 
     fn write<V: Scoped<Self::Target>>(&self, target: V, sink: &mut S) -> Self::WriteResult;
 }
@@ -39,7 +39,7 @@ pub trait Lens<S>: Clone + Sized {
 /// TODO: This may be suboptimal for allocated types. Fortunately, the main path of Thunderhead
 /// uses fixed-size types or types which require allocation anyway. Implementing a better story
 /// for types which may use Scoped is a low-priority todo.
-trait SimpleLens: Clone + Sized {
+trait SimpleLens: Clone + Sized + 'static {
     type Target: Serialize + Deserialize;
 
     /// TODO: we might consider making some kind of 'BorrowOrScoped' enum.
@@ -85,7 +85,7 @@ impl<'a, T: Serialize + 'a> Serialize for SerialLensWriteValue<'a, T> {
 
 /// A data lens that reads/writes a Serde-serializable value, with the given header, to the empty key.
 #[derive(Eq, PartialEq)]
-struct SerialLens<T: Serialize + Deserialize> {
+struct SerialLens<T: Serialize + Deserialize + 'static> {
     header: DatatypeHeader,
     _phantom: PhantomData<T>,
 }
@@ -291,9 +291,9 @@ impl<A, B> FutureMap for GetSecond<A, B> {
             (Some(_), Some(b)) => Ok(Some(b)),
             (None, None) => Ok(None),
             (Some(_), None) => Err(TdError::from(io::Error::new(ErrorKind::InvalidData,
-                format!("could not read headered data, found header but no data")))),
+                format!("found header but no data")))),
             (None, Some(_)) => Err(TdError::from(io::Error::new(ErrorKind::InvalidData,
-                format!("could not read headered data, found data but no header")))),
+                format!("expected header, found data but no header")))),
         }
     }
 }

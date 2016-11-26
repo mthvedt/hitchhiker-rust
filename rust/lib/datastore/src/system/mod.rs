@@ -29,13 +29,15 @@ use thunderhead_store::{Range, Source, StringSource, TdError};
 //     }
 // }
 
+// TODO: this is not thread safe.
+// TODO: macro helpers.
 lazy_static! {
     // TODO: Box<[u8]> instead. or even &'static
     static ref SYSTEM_SCRIPTS: BTreeMap<&'static [u8], &'static str> = {
         let mut m = BTreeMap::new();
 
         // TODO: a macro
-        m.insert("js/parse_json.js".as_ref(), include_str!("js/parse_json.js"));
+        m.insert("js/parse_json".as_ref(), include_str!("js/parse_json.js"));
 
         m
     };

@@ -10,7 +10,10 @@ use data::Range;
 // TODO improve this.
 // TODO: hide details
 pub enum TdError {
+    EvalError,
+    // TODO: distinguish by error role. EvalError, DbError &c
     IoError(io::Error),
+    RuntimeError(String),
 }
 
 impl From<io::Error> for TdError {
@@ -29,8 +32,8 @@ impl From<io::Error> for TdError {
 // TODO: do we want to expose Scoped? why not Borrow?
 // TODO: T should be associated type
 pub trait Source<T: ?Sized + 'static> {
-	type Get: Scoped<T>;
-    type GetF: Future<Item = Option<Self::Get>, Error = TdError>;
+	type Get: Scoped<T> + 'static;
+    type GetF: Future<Item = Option<Self::Get>, Error = TdError> + 'static;
 
     // TODO: should we pass in context? why or why not?
     /// Get a value from this KvSource.
@@ -55,7 +58,7 @@ pub trait Source<T: ?Sized + 'static> {
 }
 
 pub trait Sink<T: ?Sized + 'static>: Source<T> {
-    type PutF: Future<Item = (), Error = TdError>;
+    type PutF: Future<Item = (), Error = TdError> + 'static;
 
     /// The max size of a value in this KVSource
 

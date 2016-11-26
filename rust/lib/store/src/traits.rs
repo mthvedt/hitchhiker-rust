@@ -23,9 +23,14 @@ impl From<io::Error> for TdError {
 /// However, this makes Rust's constraint checker go nuts once we get subtraits (KvSource, KvSink).
 /// In particular, it starts demanding manual constraints for GetValue everywhere, even though
 /// those constraints should be inferable.
+
+// TODO: we might want to make keys generic
+// TODO: do we want subtree/subrange to be part of source?
+// TODO: do we want to expose Scoped? why not Borrow?
+// TODO: T should be associated type
 pub trait Source<T: ?Sized + 'static> {
 	type Get: Scoped<T>;
-    type GetF: Future<Item = Self::Get, Error = TdError>;
+    type GetF: Future<Item = Option<Self::Get>, Error = TdError>;
 
     // TODO: should we pass in context? why or why not?
     /// Get a value from this KvSource.
@@ -70,3 +75,7 @@ pub trait Sink<T: ?Sized + 'static>: Source<T> {
 pub trait KvSource: Source<[u8]> {}
 
 pub trait KvSink: Sink<[u8]> + KvSource {}
+
+pub trait StringSource: Source<str> {}
+
+pub trait StringSink: Sink<str> + StringSource {}

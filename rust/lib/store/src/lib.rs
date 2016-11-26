@@ -47,7 +47,7 @@ pub mod bench;
 // TODO: cleaner separation of interfaces
 #[macro_use]
 mod data;
-pub use data::*;
+pub use data::Range;
 
 pub mod tdfuture;
 
@@ -58,3 +58,5 @@ mod traits;
 pub use traits::*;
 
 pub mod tree;
+
+pub mod util;

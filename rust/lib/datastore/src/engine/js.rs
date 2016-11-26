@@ -1,10 +1,13 @@
 use std;
 use std::cell::RefCell;
+use std::ffi::CString;
 use std::iter::FromIterator;
 use std::marker::PhantomData;
 use std::ptr;
 use std::ptr::Unique;
 use std::rc::Rc;
+
+use libc::{c_uint, size_t};
 
 use js::jsapi;
 use js::jsapi::{JSAutoCompartment, JSContext, JSRuntime, JSObject, Value};
@@ -157,37 +160,6 @@ impl Runtime {
             }
         }
     }
-
-    // pub fn evaluate_script(&self, glob: HandleObject, script: &str, filename: &str,
-    //                        line_num: u32, rval: MutableHandleValue)
-    //                 -> Result<(),()> {
-    //     let script_utf16: Vec<u16> = script.encode_utf16().collect();
-    //     let filename_cstr = ffi::CString::new(filename.as_bytes()).unwrap();
-    //     debug!("Evaluating script from {} with content {}", filename, script);
-    //     // SpiderMonkey does not approve of null pointers.
-    //     let (ptr, len) = if script_utf16.len() == 0 {
-    //         static empty: &'static [u16] = &[];
-    //         (empty.as_ptr(), 0)
-    //     } else {
-    //         (script_utf16.as_ptr(), script_utf16.len() as c_uint)
-    //     };
-    //     assert!(!ptr.is_null());
-    //     let _ac = JSAutoCompartment::new(self.cx(), glob.get());
-    //     let options = CompileOptionsWrapper::new(self.cx(), filename_cstr.as_ptr(), line_num);
-
-    //     unsafe {
-    //         if !Evaluate2(self.cx(), options.ptr, ptr as *const u16, len as size_t, rval) {
-    //             debug!("...err!");
-    //             maybe_resume_unwind();
-    //             Err(())
-    //         } else {
-    //             // we could return the script result but then we'd have
-    //             // to root it and so forth and, really, who cares?
-    //             debug!("...ok!");
-    //             Ok(())
-    //         }
-    //     }
-    // }
 }
 
 impl Drop for Runtime {
@@ -255,19 +227,74 @@ impl Environment {
 
     pub fn parse_json(&mut self, s: &str) -> Option<RootedVal> {
         unsafe {
-            let _a = JSAutoCompartment::new(self.parent.context(), self.global.inner.ptr);
+            let mut r = self.null_value();
+            let ctx = self.parent.context();
+            let _c = JSAutoCompartment::new(ctx, self.global.inner.ptr);
             // TODO: str len check
             let u16str = Vec::from_iter(s.encode_utf16());
-            let mut r = self.null_value();
             match jsapi::JS_ParseJSON(
-                self.parent.context(), u16str.as_ptr(), u16str.len() as u32, r.handle_mut().inner) {
+                ctx, u16str.as_ptr(), u16str.len() as u32, r.handle_mut().inner) {
                 true => Some(r),
                 // TODO: exception handling?
                 false => None,
             }
         }
     }
+
+    fn evaluate_script(&mut self, script: &str, scriptname: &str) -> bool {
+        let script_utf16: Vec<u16> = script.encode_utf16().collect();
+        let scriptname_cstr = CString::new(scriptname.as_bytes()).unwrap();
+
+        let script_ptr;
+        let script_len; // Needs to be c_uint although evaluate takes a size_t. I think?
+        if script_utf16.len() == 0 {
+            script_ptr = (&[]).as_ptr();
+            script_len = 0;
+        } else {
+            script_ptr = script_utf16.as_ptr();
+            script_len = script_utf16.len() as c_uint;
+        }
+
+        let mut r = self.null_value();
+        let ctx = self.parent.context();
+        let _c = JSAutoCompartment::new(ctx, self.global.inner.ptr);
+        let options = rust::CompileOptionsWrapper::new(ctx, scriptname_cstr.as_ptr(), 0);
+
+        unsafe {
+            if !jsapi::Evaluate2(ctx, options.ptr, script_ptr as *const u16,
+                script_len as size_t, r.handle_mut().inner) {
+                // maybe_resume_unwind(); // TODO: ???
+                false
+            } else {
+                // TODO: what is the script result?
+                true
+            }
+        }
+    }
 }
+//
+// struct ScriptLookup<S> {
+//     source: S,
+//     name: String,
+// }
+//
+// struct Processor {
+//     inner: Environment,
+// }
+//
+// // TODO: don't copy the string
+// // TODO: error type?
+// pub fn lookup_script(s: ScriptLookup) -> Result<String, io::Error> {
+//     match s.source {
+//         System => (),
+//     }
+// }
+//
+// impl Processor {
+//     fn init(script: &ScriptLookup) -> Result<Self, io::Error> {
+//
+//     }
+// }
 
 #[cfg(test)]
 mod test {

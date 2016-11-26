@@ -7,7 +7,7 @@ authors = ["Mike Thvedt <mike.thvedt@gmail.com>"]
 
 [dependencies]
 # chain = { path = "../chain" }
-futures = "0.1.2"
+futures = "0.1.6"
 typed-arena = "1.2.0"
 
 # TODO: these used by testlib. Need better isolation.

@@ -1,10 +1,6 @@
-use std::io;
-use std::marker::PhantomData;
 use std::mem;
 
-use futures::{Async, Future, Map, Poll};
-
-use alloc::Scoped;
+use futures::{Async, Future, Poll};
 
 // trait GlobalContext {
 //     fn kill(&self);

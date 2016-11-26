@@ -8,9 +8,10 @@ authors = ["Mike Thvedt <mike.thvedt@gmail.com>"]
 thunderhead-store = { path = "../store" }
 
 bincode = "0.6.0"
-futures = "0.1.2"
+futures = "0.1.6"
 lazy_static = "0.2.1"
 js = { git = "https://github.com/servo/rust-mozjs" }
+libc = "0.2.17"
 serde = "0.8.17"
 serde_derive = "0.8.18"
 serde_json = "0.8.3"

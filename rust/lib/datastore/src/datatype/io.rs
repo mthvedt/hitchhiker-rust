@@ -25,7 +25,7 @@ use thunderhead_store::tdfuture::{FutureMap, MapFuture};
 pub trait Lens<S>: Clone + Sized {
     type Target;
 
-    type ReadResult: Future<Item = Self::Target, Error = TdError>;
+    type ReadResult: Future<Item = Option<Self::Target>, Error = TdError>;
 
     fn read(&self, source: &mut S) -> Self::ReadResult;
 
@@ -38,12 +38,12 @@ pub trait Lens<S>: Clone + Sized {
 ///
 /// TODO: This may be suboptimal for allocated types. Fortunately, the main path of Thunderhead
 /// uses fixed-size types or types which require allocation anyway. Implementing a better story
-/// for types which may use Scoped is a low-priority TODO.
+/// for types which may use Scoped is a low-priority todo.
 trait SimpleLens: Clone + Sized {
     type Target: Serialize + Deserialize;
 
     /// TODO: we might consider making some kind of 'BorrowOrScoped' enum.
-    fn read<B: AsRef<[u8]>>(&self, source: B) -> Self::Target;
+    fn read<Bytes: AsRef<[u8]>>(&self, source: Bytes) -> Self::Target;
 
     fn write<W: Write, V: Scoped<Self::Target>>(&self, t: V, sink: &mut W);
 
@@ -98,8 +98,7 @@ impl<T: Serialize + Deserialize> SerialLens<T> {
         }
     }
 
-    fn read_header<B: AsRef<[u8]>>(&self, source: B) -> DatatypeHeader {
-
+    fn read_header<Bytes: AsRef<[u8]>>(&self, source: Bytes) -> DatatypeHeader {
         // TODO: size check
         let len = source.as_ref().len() as u64;
         let mut reader = ByteReader::wrap(source.as_ref());
@@ -122,7 +121,7 @@ impl<T: Serialize + Deserialize> Clone for SerialLens<T> {
 impl<T: Serialize + Deserialize> SimpleLens for SerialLens<T> {
     type Target = T;
 
-    fn read<B: AsRef<[u8]>>(&self, source: B) -> T {
+    fn read<Bytes: AsRef<[u8]>>(&self, source: Bytes) -> T {
         // TODO: size check
         let len = source.as_ref().len() as u64;
         let mut reader = ByteReader::wrap(source.as_ref());
@@ -151,12 +150,15 @@ struct SimpleLensRead<L: SimpleLens, B: Scoped<[u8]>> {
 }
 
 impl<L: SimpleLens, B: Scoped<[u8]>> FutureMap for SimpleLensRead<L, B> {
-    type Input = B;
-    type Output = L::Target;
+    type Input = Option<B>;
+    type Output = Option<L::Target>;
     type Error = TdError;
 
-    fn apply(&mut self, i: Self::Input) -> Result<Self::Output, TdError> {
-        Ok(self.lens.read(i.get().unwrap()))
+    fn apply(&mut self, iopt: Self::Input) -> Result<Self::Output, TdError> {
+        match iopt {
+            Some(i) => Ok(Some(self.lens.read(i.get().unwrap()))),
+            None => Ok(None),
+        }
     }
 }
 
@@ -222,15 +224,20 @@ impl<B: Scoped<[u8]>> HeaderVerify<B> {
 }
 
 impl<B: Scoped<[u8]>> FutureMap for HeaderVerify<B> {
-    type Input = B;
-    type Output = ();
+    type Input = Option<B>;
+    type Output = Option<()>;
     type Error = TdError;
 
-    fn apply(&mut self, i: Self::Input) -> Result<Self::Output, Self::Error> {
+    fn apply(&mut self, iopt: Self::Input) -> Result<Self::Output, Self::Error> {
+        let i = match iopt {
+            Some(i) => i,
+            None => return Ok(None),
+        };
+
         let inner_lens: SerialLens<()> = SerialLens::new(self.header);
         let h = inner_lens.read_header(i.get().unwrap());
         if h == self.header {
-            Ok(())
+            Ok(Some(()))
         } else {
             // TODO: better errors everywhere
             Err(TdError::from(io::Error::new(ErrorKind::InvalidData,
@@ -275,12 +282,19 @@ impl<A, B> GetSecond<A, B> {
 }
 
 impl<A, B> FutureMap for GetSecond<A, B> {
-    type Input = (A, B);
-    type Output = B;
+    type Input = (Option<A>, Option<B>);
+    type Output = Option<B>;
     type Error = TdError;
 
     fn apply(&mut self, i: Self::Input) -> Result<Self::Output, Self::Error> {
-        Ok(i.1)
+        match i {
+            (Some(_), Some(b)) => Ok(Some(b)),
+            (None, None) => Ok(None),
+            (Some(_), None) => Err(TdError::from(io::Error::new(ErrorKind::InvalidData,
+                format!("could not read headered data, found header but no data")))),
+            (None, Some(_)) => Err(TdError::from(io::Error::new(ErrorKind::InvalidData,
+                format!("could not read headered data, found data but no header")))),
+        }
     }
 }
 
@@ -303,7 +317,6 @@ impl<S: KvSource + KvSink, L: Lens<S>> Clone for LensWithHeader<S, L> {
 impl<S: KvSource + KvSink, L: Lens<S>> Lens<S> for LensWithHeader<S, L> {
     type Target = L::Target;
 
-    // TODO: we probably want a 'FastJoin' or something that doesn't use inefficient space/copying like futures-rs Join.
     type ReadResult = MapFuture<
     Join<MapFuture<S::GetF, HeaderVerify<S::Get>>, L::ReadResult>, GetSecond<(), L::Target>
     >;

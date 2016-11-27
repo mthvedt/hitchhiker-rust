@@ -1,5 +1,4 @@
 use std;
-use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::ffi::CString;
 use std::io;
@@ -11,14 +10,12 @@ use std::rc::Rc;
 
 use libc::{c_uint, size_t};
 
-use futures::Future;
-
 use thunderhead_store::{StringSource, TdError};
 use thunderhead_store::alloc;
 use thunderhead_store::tdfuture::{BoxFuture, FutureExt};
 
 use js::jsapi;
-use js::jsapi::{JSAutoCompartment, JSContext, JSFunction, JSObject, JSRuntime, Value};
+use js::jsapi::{HandleValueArray, JSAutoCompartment, JSContext, JSFunction, JSObject, JSRuntime, Value};
 use js::jsval;
 use js::rust;
 
@@ -70,7 +67,7 @@ impl RootedVal {
 
                 if v > 65536 {
                     Err(TdError::RuntimeError(String::from("string too big")))
-                } else if v < 0 {
+                } else if v == (0 as size_t).wrapping_sub(1) {
                     Err(TdError::RuntimeError(String::from("could not encode string")))
                 } else {
                     Ok(String::from_utf8_lossy(&buf[..v]).into_owned())
@@ -84,9 +81,10 @@ impl RootedVal {
 
 impl<T> Drop for Rooted<T> {
     fn drop(&mut self) {
-        unsafe {
-            self.inner.remove_from_root_stack()
-        }
+        // TODO: how does rooting work in rust?
+        // unsafe {
+        //     self.inner.remove_from_root_stack()
+        // }
     }
 }
 
@@ -94,6 +92,8 @@ struct Handle<'a, T: 'a> {
     inner: jsapi::Handle<T>,
     _p: PhantomData<&'a T>,
 }
+
+type HandleVal<'a> = Handle<'a, Value>;
 
 struct HandleMut<'a, T: 'a> {
     inner: jsapi::MutableHandle<T>,
@@ -224,16 +224,16 @@ impl RuntimeHandle {
         }
     }
 
+    pub fn new_environment(&mut self) -> Environment {
+        Environment::new(self)
+    }
+
     fn context(&mut self) -> &mut JSContext {
         unsafe {
             let mut b = self.inner.borrow_mut();
             let p: *mut JSContext = b.inner.get_mut();
             &mut *p
         }
-    }
-
-    pub fn new_environment(&mut self) -> Environment {
-        Environment::new(self)
     }
 }
 
@@ -262,16 +262,37 @@ impl Environment {
         }
     }
 
-    pub fn new_object(&mut self) -> RootedObj {
+    fn context<'a>(&'a mut self) -> ExecContext<'a> {
         let cx = self.parent.context();
-            // second argument is class--null class means vanilla object
+        let cpt = JSAutoCompartment::new(cx, self.global.inner.ptr);
+
+        ExecContext {
+            jscontext: cx,
+            // global: &mut self.global,
+            cpt: cpt,
+        }
+    }
+}
+
+pub struct ExecContext<'a> {
+    jscontext: &'a mut JSContext,
+    // global: &'a mut RootedObj,
+
+    // Used for JS scoping.
+    #[allow(dead_code)]
+    cpt: JSAutoCompartment,
+}
+
+impl<'a> ExecContext<'a> {
+    pub fn new_object(&mut self) -> RootedObj {
+        // second argument is class--null class means vanilla object
         unsafe {
-            Rooted::new(jsapi::JS_NewObject(cx, ptr::null()), cx)
+            Rooted::new(jsapi::JS_NewObject(self.jscontext, ptr::null()), self.jscontext)
         }
     }
 
     pub fn null_value(&mut self) -> RootedVal {
-        Rooted::new(jsval::NullValue(), self.parent.context())
+        Rooted::new(jsval::NullValue(), self.jscontext)
     }
 
     pub fn parse_json<Bytes: alloc::Scoped<[u8]>>(&mut self, b: Bytes) -> Option<RootedVal> {
@@ -279,12 +300,10 @@ impl Environment {
             // TODO: use JSString directly instead?
             let scow = String::from_utf8_lossy(b.get().unwrap());
             let mut r = self.null_value();
-            let ctx = self.parent.context();
-            let _c = JSAutoCompartment::new(ctx, self.global.inner.ptr);
             // TODO: str len check
             let u16str = Vec::from_iter(scow.encode_utf16());
             match jsapi::JS_ParseJSON(
-                ctx, u16str.as_ptr(), u16str.len() as u32, r.handle_mut().inner) {
+                self.jscontext, u16str.as_ptr(), u16str.len() as u32, r.handle_mut().inner) {
                 true => Some(r),
                 // TODO: exception handling?
                 false => None,
@@ -307,12 +326,10 @@ impl Environment {
         }
 
         let mut r = self.null_value();
-        let ctx = self.parent.context();
-        let _c = JSAutoCompartment::new(ctx, self.global.inner.ptr);
-        let options = rust::CompileOptionsWrapper::new(ctx, scriptname_cstr.as_ptr(), 0);
+        let options = rust::CompileOptionsWrapper::new(self.jscontext, scriptname_cstr.as_ptr(), 0);
 
         unsafe {
-            if jsapi::Evaluate2(ctx, options.ptr, script_ptr as *const u16,
+            if jsapi::Evaluate2(self.jscontext, options.ptr, script_ptr as *const u16,
                 script_len as size_t, r.handle_mut().inner) {
                 // maybe_resume_unwind(); // TODO: ???
                 Ok(r)
@@ -321,6 +338,30 @@ impl Environment {
                 Err(TdError::EvalError)
             }
         }
+    }
+
+    fn call_fval_one(&mut self, fobj: &HandleVal, arg: &RootedVal) -> Result<RootedVal, TdError> {
+        let args = jsapi::HandleValueArray { length_: 1, elements_: &arg.inner.ptr, };
+        self.call_fval(fobj, &args)
+    }
+
+    fn call_fval(&mut self, fobj: &HandleVal, args: &HandleValueArray) -> Result<RootedVal, TdError> {
+        // TODO: what is the right function object to pass?
+        let thisobj = self.new_object();
+        let mut r = self.null_value();
+
+        unsafe {
+            jsapi::JS_CallFunctionValue(
+                self.jscontext,
+                thisobj.handle().inner, // Function object (aka `this`). TODO: is this correct?
+                fobj.inner, // The function itself.
+                args,
+                r.handle_mut().inner,
+            )
+        };
+
+        // TODO: errors
+        Ok(r)
     }
 }
 
@@ -341,7 +382,8 @@ impl Processor {
         })
     }
 
-    pub fn from_source<Source, Str>(mut env: Environment, name: Str, mut source: Source) -> BoxFuture<Self, TdError> where
+    pub fn from_source<Source, Str>(mut env: Environment, name: Str, mut source: Source) ->
+    BoxFuture<Self, TdError> where
     Source: StringSource,
     Str: alloc::Scoped<str> + 'static
     {
@@ -352,38 +394,32 @@ impl Processor {
                 io::Error::new(io::ErrorKind::NotFound, "Script not found")));
             // TODO: better names
             script_result.and_then(|script| {
-                // TODO: an 'unscope' macro
-                env.evaluate_script(script.get().unwrap(), name.get().unwrap()).and_then(|f| Processor::new(env, f))
+                let fresult = {
+                    let mut cx = env.context();
+                    // TODO: an 'unscope' macro
+                    cx.evaluate_script(script.get().unwrap(), name.get().unwrap())
+                };
+                fresult.and_then(|f| Self::new(env, f))
             })
         }).td_boxed()
     }
 
     pub fn apply<Bytes: alloc::Scoped<[u8]>>(&mut self, value_bytes: Bytes) -> Result<RootedVal, TdError> {
-        // TODO: what is the right function object to pass?
+        let mut cx = self.env.context();
         let fmut = self.f.handle();
-        let thisobj = self.env.new_object();
-        let mut r = self.env.null_value();
-        let call_value = match self.env.parse_json(value_bytes.get().unwrap()) {
+
+        let call_value = match cx.parse_json(value_bytes.get().unwrap()) {
             Some(v) => v,
             // TODO better error handling
             None => return Err(TdError::EvalError),
         };
 
-        unsafe {
-            jsapi::JS_CallFunctionValue(
-                self.env.parent.context(),
-                thisobj.handle().inner, // Function object (aka `this`).
-                fmut.inner,
-                &jsapi::HandleValueArray { length_: 1, elements_: &call_value.inner.ptr, },
-                r.handle_mut().inner,
-            )
-        };
-
-        Ok(r)
+        cx.call_fval_one(&fmut, &call_value)
     }
 
     pub fn to_string(&mut self, str: RootedVal) -> Result<String, TdError> {
-        str.to_string(self.env.parent.context())
+        let mut cx = self.env.context();
+        str.to_string(cx.jscontext)
     }
 }
 
@@ -400,9 +436,10 @@ mod test {
     fn json_smoke_test() {
         let mut r = RuntimeHandle::new();
         let mut env = r.new_environment();
-        env.parse_json("{}".as_ref());
+        let mut cx = env.context();
+        cx.parse_json("{}".as_ref());
 
-        env.parse_json(r#"{"rpc": "2.0", "fn": "add", "callback": true, "params": [42, 23], "id": 1,
+        cx.parse_json(r#"{"rpc": "2.0", "fn": "add", "callback": true, "params": [42, 23], "id": 1,
         "callback_to": {"site": "www.foo.bar", "port": 8888}}"#.as_ref());
         // TODO test result
     }

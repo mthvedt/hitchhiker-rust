@@ -1,12 +1,13 @@
-use std::marker::PhantomData;
 use std::cell::RefCell;
+use std::marker::PhantomData;
+use std::mem;
 use std::rc::{Rc, Weak};
 
-use futures::Future;
+use futures::{Future, future, Poll};
 
 use thunderhead_store::{KvSource, KvSink, TdError};
 use thunderhead_store::alloc::Scoped;
-use thunderhead_store::tdfuture::{FutureMap, MapFuture};
+use thunderhead_store::tdfuture::{AndThenFuture, FutureCont, FutureMap, MapFuture};
 
 use datatype::io::Lens;
 use engine::js::Processor;
@@ -76,6 +77,29 @@ impl<I: Scoped<[u8]>, GetF: Future<Item = Option<I>>> FutureMap for ProcessorRea
     }
 }
 
+pub enum ErrorPropogator<F: Future> {
+    Ok(F),
+    Err(F::Error),
+    Done,
+}
+
+impl<F: Future> Future for ErrorPropogator<F> {
+    type Item = F::Item;
+    type Error = F::Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        if let &mut ErrorPropogator::Ok(ref mut f) = self {
+            return f.poll();
+        }
+
+        match mem::replace(self, ErrorPropogator::Done) {
+            ErrorPropogator::Ok(_) => unreachable!(),
+            ErrorPropogator::Err(e) => Err(e),
+            ErrorPropogator::Done => panic!("cannot poll a completed future twice"),
+        }
+    }
+}
+
 #[derive(Clone)]
 struct JsToTextProcessorLens {
     read: Rc<RefCell<Processor>>,
@@ -96,10 +120,17 @@ impl<S: KvSource + KvSink> Lens<S> for JsToTextProcessorLens {
         MapFuture::new(source.get([]), pr)
     }
 
-    type WriteResult = S::PutF;
+    type WriteResult = ErrorPropogator<S::PutF>;
 
     fn write<V: Scoped<Self::Target>>(&self, target: V, sink: &mut S) -> Self::WriteResult {
-        panic!("TODO")
+        let mut pxrref = self.write.borrow_mut();
+        let result = pxrref.apply(target.get().unwrap().as_ref());
+        let result_str = result.and_then(|result| pxrref.to_string(result));
+
+        match result_str {
+            Ok(result_str) => ErrorPropogator::Ok(sink.put_small([], result_str.as_ref())),
+            Err(e) => ErrorPropogator::Err(e),
+        }
     }
 }
 

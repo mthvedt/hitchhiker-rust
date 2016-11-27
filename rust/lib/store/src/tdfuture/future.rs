@@ -222,25 +222,6 @@ F: FnOnce(A::Item) -> Result<B, A::Error>,
     }
 }
 
-pub enum ResultFuture<Ok, Err> {
-    Ok(Ok),
-    Err(Err),
-    Done,
-}
-
-impl<Ok, Err> Future for ResultFuture<Ok, Err> {
-    type Item = Ok;
-    type Error = Err;
-
-    fn poll(&mut self) -> Poll<Ok, Err> {
-        match mem::replace(self, ResultFuture::Done) {
-            ResultFuture::Ok(ok) => Ok(Async::Ready(ok)),
-            ResultFuture::Err(err) => Err(err),
-            ResultFuture::Done => panic!("cannot poll a completed future twice"),
-        }
-    }
-}
-
 pub trait FutureExt: Future + Sized {
     // TODO: move and_then, map, &c into special fns here. maybe called and_then_t, map_t?
 

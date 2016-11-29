@@ -157,6 +157,7 @@ mod test {
     use thunderhead_store::testlib::NullKeyDummyKvSink;
 
     use engine::js::{Processor, RuntimeHandle};
+    use datatype::io::Lens;
     use system::SystemScripts;
 
     #[test]
@@ -166,6 +167,10 @@ mod test {
 
         let lens = JsToTextProcessorLens::new(pxr);
 
-        let s = NullKeyDummyKvSink::new();
+        let mut s = NullKeyDummyKvSink::new();
+
+        lens.write(String::from("{\"x\": 1}"), &mut s).wait().ok();
+        let r = lens.read(&mut s).wait().ok().unwrap().unwrap();
+        assert!(r == "{\"x\":1}");
     }
 }

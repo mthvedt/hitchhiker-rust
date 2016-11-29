@@ -196,11 +196,11 @@ impl ErrorReporter for LoggingErrorReporter {
     }
 
     fn report_warning(&mut self, e: Error) {
-        writeln!(&mut std::io::stderr(), "{:?}", e).ok();
+        writeln!(&mut std::io::stderr(), "{:?}", e).ok().unwrap();
     }
 
     fn report_exception(&mut self, ex: Exception) {
-        writeln!(&mut std::io::stderr(), "{:?}", ex).ok();
+        writeln!(&mut std::io::stderr(), "{:?}", ex).ok().unwrap();
     }
 }
 
@@ -286,18 +286,19 @@ impl Drop for ContextGlobals {
                 Ok(mut rref) => match mem::replace(&mut *rref, None) {
                     Some(r) => if !r.is_empty() {
                         // We use ok()--if we can't writeln to stderr, there's no hope for us!
-                        writeln!(&mut std::io::stderr(), "WARNING: javascript errors ignored during unwinding").ok();
+                        writeln!(&mut std::io::stderr(),
+                            "WARNING: javascript errors ignored during unwinding").ok().unwrap();
                         // TODO: print errors to stderr
                     },
                     None => {
                         writeln!(&mut std::io::stderr(),
-                            "WARNING: javascript reporter in invalid state during unwinding").ok();
+                            "WARNING: javascript reporter in invalid state during unwinding").ok().unwrap();
                     }
                 },
                 Err(_) => {
                     // Panic during drop (probably terminating the program), but explain why
                     writeln!(&mut std::io::stderr(),
-                        "FATAL: couldn't access javascript error queue during unwinding").ok();
+                        "FATAL: couldn't access javascript error queue during unwinding").ok().unwrap();
                     panic!();
                 },
             }
@@ -511,18 +512,20 @@ impl<'a> ExecContext<'a> {
         }
     }
 
-    pub fn parse_json<Bytes: alloc::Scoped<[u8]>>(&mut self, b: Bytes) -> Option<RootedVal> {
+    pub fn parse_json<Bytes: alloc::Scoped<[u8]>>(&mut self, b: Bytes) -> Result<RootedVal, TdError> {
         unsafe {
             // TODO: use JSString directly instead?
             let scow = String::from_utf8_lossy(b.get().unwrap());
             let mut r = self.null_value();
             // TODO: str len check
             let u16str = Vec::from_iter(scow.encode_utf16());
-            match jsapi::JS_ParseJSON(
+
+            if jsapi::JS_ParseJSON(
                 self.jscontext, u16str.as_ptr(), u16str.len() as u32, r.handle_mut().inner) {
-                true => Some(r),
-                // TODO: exception handling?
-                false => None,
+                Ok(r)
+            } else {
+                self.check_exception();
+                Err(TdError::EvalError)
             }
         }
     }
@@ -550,7 +553,6 @@ impl<'a> ExecContext<'a> {
                 // maybe_resume_unwind(); // TODO: ???
                 Ok(r)
             } else {
-                // TODO: what is the script result?
                 self.check_exception();
                 Err(TdError::EvalError)
             }
@@ -567,7 +569,7 @@ impl<'a> ExecContext<'a> {
         let thisobj = self.new_object();
         let mut r = self.null_value();
 
-        unsafe {
+        let success = unsafe {
             jsapi::JS_CallFunctionValue(
                 self.jscontext,
                 thisobj.handle().inner, // Function object (aka `this`). TODO: is this correct?
@@ -577,8 +579,12 @@ impl<'a> ExecContext<'a> {
             )
         };
 
-        // TODO: errors
-        Ok(r)
+        if success {
+            Ok(r)
+        } else {
+            self.check_exception();
+            Err(TdError::EvalError)
+        }
     }
 }
 
@@ -625,13 +631,7 @@ impl Processor {
         let mut cx = self.env.context();
         let fmut = self.f.handle();
 
-        let call_value = match cx.parse_json(value_bytes.get().unwrap()) {
-            Some(v) => v,
-            // TODO better error handling
-            None => return Err(TdError::EvalError),
-        };
-
-        cx.call_fval_one(&fmut, &call_value)
+        cx.parse_json(value_bytes.get().unwrap()).and_then(|v| cx.call_fval_one(&fmut, &v))
     }
 
     pub fn to_string(&mut self, str: RootedVal) -> Result<String, TdError> {
@@ -654,10 +654,10 @@ mod test {
         let mut r = RuntimeHandle::new_runtime();
         let mut env = r.new_environment();
         let mut cx = env.context();
-        cx.parse_json("{}".as_ref());
+        cx.parse_json("{}".as_ref()).ok().unwrap();
 
         cx.parse_json(r#"{"rpc": "2.0", "fn": "add", "callback": true, "params": [42, 23], "id": 1,
-        "callback_to": {"site": "www.foo.bar", "port": 8888}}"#.as_ref());
+        "callback_to": {"site": "www.foo.bar", "port": 8888}}"#.as_ref()).ok().unwrap();
         // TODO test result
     }
 }

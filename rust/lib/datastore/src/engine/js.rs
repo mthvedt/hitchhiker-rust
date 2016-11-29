@@ -61,10 +61,14 @@ impl<T> Rooted<T> {
 
 impl RootedVal {
     // TODO: make the context compartment safe
-    fn to_string(&self, cx: &mut JSContext) -> Result<String, TdError> {
+    fn to_string(&self, cx: &mut JSContext, force: bool) -> Result<String, TdError> {
         unsafe {
-            if self.inner.ptr.is_string() {
-                let js_str = self.inner.ptr.to_string();
+            if self.inner.ptr.is_string() || force {
+                let js_str = if force {
+                    rust::ToString(cx, self.handle().inner)
+                } else {
+                    self.inner.ptr.to_string()
+                };
                 // TODO: write to buffer instead
                 let mut buf = [0 as u8; 65536];
                 let v = jsapi::JS_EncodeStringToBuffer(cx, js_str, &mut buf[0] as *mut u8 as *mut i8, 65536);
@@ -128,6 +132,7 @@ pub enum ErrorType {
 
 // TODO: should not be js-specific
 // TODO: pretty-printing for errors
+// TODO: unify error and exception
 #[derive(Debug)]
 pub struct Error {
     filename: String,
@@ -169,9 +174,15 @@ impl Error {
     }
 }
 
+#[derive(Debug)]
+pub struct Exception {
+    message: String,
+}
+
 trait ErrorReporter {
     fn is_empty(&self) -> bool;
-    fn report(&mut self, e: Error);
+    fn report_warning(&mut self, e: Error);
+    fn report_exception(&mut self, ex: Exception);
 }
 
 /// An error reporter that logs to stderr. It never takes ownership of errors, so it is always empty.
@@ -184,8 +195,12 @@ impl ErrorReporter for LoggingErrorReporter {
         true
     }
 
-    fn report(&mut self, e: Error) {
+    fn report_warning(&mut self, e: Error) {
         writeln!(&mut std::io::stderr(), "{:?}", e).ok();
+    }
+
+    fn report_exception(&mut self, ex: Exception) {
+        writeln!(&mut std::io::stderr(), "{:?}", ex).ok();
     }
 }
 
@@ -254,6 +269,13 @@ impl ContextGlobals {
 
         ContextGlobals
     }
+
+    fn report_exception(&self, cx: *mut JSContext, ex: Exception) {
+        // The current context and error queue *must* be set.
+        // TODO: when ptr_eq is stable, use that
+        assert!(CURRENT_CONTEXT.with(|cx_p_cell| cx_p_cell.get() == cx));
+        CURRENT_ERROR_REPORTER.with(|e| e.borrow_mut().as_mut().unwrap().report_exception(ex));
+    }
 }
 
 impl Drop for ContextGlobals {
@@ -262,7 +284,7 @@ impl Drop for ContextGlobals {
         CURRENT_ERROR_REPORTER.with(|r| {
             match r.try_borrow_mut() {
                 Ok(mut rref) => match mem::replace(&mut *rref, None) {
-                    Some(r) => if r.is_empty() {
+                    Some(r) => if !r.is_empty() {
                         // We use ok()--if we can't writeln to stderr, there's no hope for us!
                         writeln!(&mut std::io::stderr(), "WARNING: javascript errors ignored during unwinding").ok();
                         // TODO: print errors to stderr
@@ -326,8 +348,8 @@ impl Runtime {
         // The current context and error queue *must* be set.
         // TODO: when ptr_eq is stable, use that
         assert!(CURRENT_CONTEXT.with(|cx_p_cell| cx_p_cell.get() == cx));
-        let e = Error::from_js(message, report);
-        CURRENT_ERROR_REPORTER.with(|eq_c| eq_c.borrow_mut().as_mut().unwrap().report(e));
+        let err = Error::from_js(message, report);
+        CURRENT_ERROR_REPORTER.with(|e| e.borrow_mut().as_mut().unwrap().report_warning(err));
     }
 
     fn new() -> Self {
@@ -446,10 +468,10 @@ impl Environment {
 
         ExecContext {
             jscontext: cx,
+            // TODO: custom error reporters
+            g: ContextGlobals::set_scoped(cxp, LoggingErrorReporter),
             // global: &mut self.global,
             _cpt: cpt,
-            // TODO: custom error reporters
-            _g: ContextGlobals::set_scoped(cxp, LoggingErrorReporter),
         }
     }
 }
@@ -459,11 +481,12 @@ pub struct ExecContext<'a> {
     // global: &'a mut RootedObj,
 
     // Used for JS scoping.
+    g: ContextGlobals,
     _cpt: JSAutoCompartment,
-    _g: ContextGlobals,
 }
 
 impl<'a> ExecContext<'a> {
+    // TODO: why are these pub?
     pub fn new_object(&mut self) -> RootedObj {
         // second argument is class--null class means vanilla object
         unsafe {
@@ -471,8 +494,21 @@ impl<'a> ExecContext<'a> {
         }
     }
 
+    // TODO: why are these pub?
     pub fn null_value(&mut self) -> RootedVal {
         Rooted::new(jsval::NullValue(), self.jscontext)
+    }
+
+    fn check_exception(&mut self) {
+        let mut ex = self.null_value();
+        unsafe {
+            if jsapi::JS_GetPendingException(self.jscontext, ex.handle_mut().inner) {
+                jsapi::JS_ClearPendingException(self.jscontext);
+                let eobj = Exception { message: ex.to_string(self.jscontext, true).ok().unwrap() };
+                // TODO: don't panic on err, instead report and exit!
+                self.g.report_exception(self.jscontext, eobj);
+            }
+        }
     }
 
     pub fn parse_json<Bytes: alloc::Scoped<[u8]>>(&mut self, b: Bytes) -> Option<RootedVal> {
@@ -515,6 +551,7 @@ impl<'a> ExecContext<'a> {
                 Ok(r)
             } else {
                 // TODO: what is the script result?
+                self.check_exception();
                 Err(TdError::EvalError)
             }
         }
@@ -599,7 +636,7 @@ impl Processor {
 
     pub fn to_string(&mut self, str: RootedVal) -> Result<String, TdError> {
         let mut cx = self.env.context();
-        str.to_string(cx.jscontext)
+        str.to_string(cx.jscontext, false)
     }
 }
 

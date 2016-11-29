@@ -76,9 +76,13 @@ pub trait Sink<T: ?Sized + 'static>: Source<T> {
 }
 
 pub trait KvSource: Source<[u8]> {}
+impl<S> KvSource for S where S: Source<[u8]> {}
 
 pub trait KvSink: Sink<[u8]> + KvSource {}
+impl<S> KvSink for S where S: Sink<[u8]> {}
 
 pub trait StringSource: Source<str> {}
+impl<S> StringSource for S where S: Source<str> {}
 
 pub trait StringSink: Sink<str> + StringSource {}
+impl<S> StringSink for S where S: Sink<str> {}

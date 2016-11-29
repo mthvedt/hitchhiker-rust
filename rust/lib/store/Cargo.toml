@@ -16,9 +16,12 @@ typed-arena = "1.2.0"
 rand = "0.3"
 time = "0.1"
 
+# Test deps. TODO: isolate.
+bytebuffer = "0.2"
+
 [dev-dependencies]
 
-bytebuffer = "0.2"
+# bytebuffer = "0.2"
 
 # TODO: scrub quickcheck.
 

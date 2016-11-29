@@ -1,21 +1,25 @@
 use std;
-use std::cell::RefCell;
-use std::ffi::CString;
-use std::io;
+use std::{io, mem, ptr, slice};
+use std::cell::{Cell, RefCell};
+use std::ffi::{CStr, CString};
+use std::io::Write;
 use std::iter::FromIterator;
 use std::marker::PhantomData;
-use std::ptr;
 use std::ptr::Unique;
 use std::rc::Rc;
 
-use libc::{c_uint, size_t};
+use libc::{c_char, c_uint, size_t};
 
 use thunderhead_store::{StringSource, TdError};
 use thunderhead_store::alloc;
 use thunderhead_store::tdfuture::{BoxFuture, FutureExt};
 
 use js::jsapi;
-use js::jsapi::{HandleValueArray, JSAutoCompartment, JSContext, JSFunction, JSObject, JSRuntime, Value};
+use js::jsapi::{
+    HandleValueArray,
+    JSAutoCompartment, JSContext, JSErrorReport, JSFunction, JSObject, JSRuntime,
+    Value
+};
 use js::jsval;
 use js::rust;
 
@@ -116,6 +120,169 @@ const SYSTEM_CODE_STACK_BUFFER: usize = 32 * 1024;
 // /// Borrowed from Gecko. Gives us stack space for trusted script calls.
 const TRUSTED_SCRIPT_STACK_BUFFER: usize = 128 * 1024;
 
+pub enum ErrorType {
+    Error = 0x0,
+    Warning = 0x1,
+    UncaughtException = 0x2,
+}
+
+// TODO: should not be js-specific
+// TODO: pretty-printing for errors
+#[derive(Debug)]
+pub struct Error {
+    filename: String,
+    line: String,
+    lineno: c_uint,
+    column: c_uint,
+    is_muted: bool,
+    // TODO: why two messages?
+    message: String,
+    message2: String,
+    js_flags: c_uint,
+    js_errno: c_uint,
+    js_exntype: i16,
+}
+
+impl Error {
+    fn from_js(message: *const c_char, report: *const JSErrorReport) -> Error {
+        // TODO: JSREPORT_EXCEPTION?
+        assert!(report != ptr::null());
+        let report = unsafe { &*report };
+        assert!(!report.isMuted); // We don't know how to handle this yet
+
+        let message2_len = 65536;
+
+        Error {
+            filename: unsafe { CStr::from_ptr(report.filename).to_string_lossy().into_owned() },
+            line: String::from_utf16_lossy(unsafe { slice::from_raw_parts( report.linebuf_, report.linebufLength_) }),
+            lineno: report.lineno,
+            column: report.column,
+            is_muted: report.isMuted,
+            js_flags: report.flags,
+            js_errno: report.errorNumber,
+            message: unsafe { CStr::from_ptr(message).to_string_lossy().into_owned() },
+            // TODO: We have to use JS to parse the error message. Yuck.
+            // TODO: incredibly unsafe! probably remove this!
+            message2: String::from_utf16_lossy(unsafe { slice::from_raw_parts( report.ucmessage, message2_len) }),
+            js_exntype: report.exnType,
+        }
+    }
+}
+
+trait ErrorReporter {
+    fn is_empty(&self) -> bool;
+    fn report(&mut self, e: Error);
+}
+
+/// An error reporter that logs to stderr. It never takes ownership of errors, so it is always empty.
+/// Useful for bootstrapping.
+// TODO: should probably log to a master 'TDContext' instead.
+struct LoggingErrorReporter;
+
+impl ErrorReporter for LoggingErrorReporter {
+    fn is_empty(&self) -> bool {
+        true
+    }
+
+    fn report(&mut self, e: Error) {
+        writeln!(&mut std::io::stderr(), "{:?}", e).ok();
+    }
+}
+
+// // TODO: eventually, this should be configurable
+// const ERROR_QUEUE_MAX: usize = 20;
+//
+// struct ErrorQueue {
+//     warnings: Vec<Error>,
+//     extra_warnings: usize,
+//     errors: Vec<Error>,
+//     extra_errors: usize,
+// }
+//
+// impl ErrorQueue {
+//     fn new() -> Self {
+//         ErrorQueue {
+//             warnings: Vec::with_capacity(ERROR_QUEUE_MAX),
+//             extra_warnings: 0,
+//             errors: Vec::with_capacity(ERROR_QUEUE_MAX),
+//             extra_errors: 0,
+//         }
+//     }
+//
+//     fn is_empty(&self) -> bool {
+//         self.inner.len() == 0
+//     }
+//
+//     fn drain_errors(&mut self) -> Vec<Error> {
+//         let mut r = Vec::with_capacity(ERROR_QUEUE_MAX);
+//         mem::swap(&mut r, &mut self.errors);
+//         self.saturated = false;
+//
+//         r
+//     }
+// }
+//
+// impl ErrorReporter for ErrorQueue {
+//     fn push(&mut self, e: Error) {
+//         if self.inner.len() > ERROR_QUEUE_MAX {
+//             self.saturated = true;
+//         } else if is_error {
+//             self.errors.push(e);
+//         }
+//     }
+// }
+
+thread_local! {
+    // Safety check. Must be equal to the executing context.
+    // TODO: we will probably need this to be a stack.
+    static CURRENT_CONTEXT: Cell<*const JSContext> = Cell::new(ptr::null());
+
+    // The error reporter for the currently executing context. Must be set while JS is executing.
+    // TODO: we will probably need this to be an 'option stack', where contexts may optionally push/pop.
+    static CURRENT_ERROR_REPORTER: RefCell<Option<Box<ErrorReporter>>> = RefCell::new(None);
+}
+
+struct ContextGlobals;
+
+impl ContextGlobals {
+    fn set_scoped<E: ErrorReporter + 'static>(cx_p: *const JSContext, reporter: E) -> ContextGlobals {
+        assert!(CURRENT_CONTEXT.with(|cx_p_cell| cx_p_cell.get() == ptr::null()));
+        assert!(CURRENT_ERROR_REPORTER.with(|r| r.borrow().is_none()));
+
+        CURRENT_CONTEXT.with(|cx_p_cell| cx_p_cell.set(cx_p));
+        CURRENT_ERROR_REPORTER.with(|r| *r.borrow_mut() = Some(Box::new(reporter)));
+
+        ContextGlobals
+    }
+}
+
+impl Drop for ContextGlobals {
+    fn drop(&mut self) {
+        CURRENT_CONTEXT.with(|cx_p_cell| cx_p_cell.set(ptr::null()));
+        CURRENT_ERROR_REPORTER.with(|r| {
+            match r.try_borrow_mut() {
+                Ok(mut rref) => match mem::replace(&mut *rref, None) {
+                    Some(r) => if r.is_empty() {
+                        // We use ok()--if we can't writeln to stderr, there's no hope for us!
+                        writeln!(&mut std::io::stderr(), "WARNING: javascript errors ignored during unwinding").ok();
+                        // TODO: print errors to stderr
+                    },
+                    None => {
+                        writeln!(&mut std::io::stderr(),
+                            "WARNING: javascript reporter in invalid state during unwinding").ok();
+                    }
+                },
+                Err(_) => {
+                    // Panic during drop (probably terminating the program), but explain why
+                    writeln!(&mut std::io::stderr(),
+                        "FATAL: couldn't access javascript error queue during unwinding").ok();
+                    panic!();
+                },
+            }
+        });
+    }
+}
+
 /// The master runtime for all JS runtimes in Thunderhead.
 fn master_runtime() -> *mut JSRuntime {
     struct MasterRuntime(*mut JSRuntime);
@@ -155,10 +322,18 @@ pub struct Runtime {
 }
 
 impl Runtime {
-    pub fn new() -> Self {
+    extern "C" fn report_warning(cx: *mut JSContext, message: *const c_char, report: *mut JSErrorReport) {
+        // The current context and error queue *must* be set.
+        // TODO: when ptr_eq is stable, use that
+        assert!(CURRENT_CONTEXT.with(|cx_p_cell| cx_p_cell.get() == cx));
+        let e = Error::from_js(message, report);
+        CURRENT_ERROR_REPORTER.with(|eq_c| eq_c.borrow_mut().as_mut().unwrap().report(e));
+    }
+
+    fn new() -> Self {
         unsafe {
             let js_runtime = jsapi::JS_NewRuntime(DEFAULT_HEAP_SIZE, DEFAULT_CHUNK_SIZE, master_runtime());
-            assert!(!js_runtime.is_null(), "Out of memory allocating JS runtime");
+            assert!(!js_runtime.is_null(), "Could not build JS runtime");
 
             // This next line (and the below comments) were taken from Servo's mozjs project.
             // Unconstrain the runtime's threshold on nominal heap size, to avoid
@@ -171,6 +346,10 @@ impl Runtime {
 
             let js_context = jsapi::JS_GetContext(js_runtime);
             assert!(!js_context.is_null(), "Could not get JS context");
+
+            jsapi::SetWarningReporter(js_runtime, Some(Self::report_warning));
+
+            let _g = ContextGlobals::set_scoped(js_context, LoggingErrorReporter);
 
             // I'm not really sure how requests work in SpiderMonkey. They seem to be
             // about preventing GC in multithreaded contexts, but threads are turned off by default?
@@ -192,8 +371,6 @@ impl Runtime {
             // (*runtimeopts).set_ion_(true);
             // (*runtimeopts).set_nativeRegExp_(true);
 
-            // TODO
-            // jsapi::SetWarningReporter(js_runtime, Some(report_warning));
 
             Runtime {
                 inner_runtime: Unique::new(js_runtime),
@@ -218,7 +395,7 @@ pub struct RuntimeHandle {
 }
 
 impl RuntimeHandle {
-    fn new() -> Self {
+    pub fn new_runtime() -> Self {
         RuntimeHandle {
             inner: Rc::new(RefCell::new(Runtime::new())),
         }
@@ -264,12 +441,15 @@ impl Environment {
 
     fn context<'a>(&'a mut self) -> ExecContext<'a> {
         let cx = self.parent.context();
+        let cxp = cx as *const _;
         let cpt = JSAutoCompartment::new(cx, self.global.inner.ptr);
 
         ExecContext {
             jscontext: cx,
             // global: &mut self.global,
-            cpt: cpt,
+            _cpt: cpt,
+            // TODO: custom error reporters
+            _g: ContextGlobals::set_scoped(cxp, LoggingErrorReporter),
         }
     }
 }
@@ -279,8 +459,8 @@ pub struct ExecContext<'a> {
     // global: &'a mut RootedObj,
 
     // Used for JS scoping.
-    #[allow(dead_code)]
-    cpt: JSAutoCompartment,
+    _cpt: JSAutoCompartment,
+    _g: ContextGlobals,
 }
 
 impl<'a> ExecContext<'a> {
@@ -428,13 +608,13 @@ mod test {
     use super::RuntimeHandle;
 
     #[test]
-    fn context_smoke_test() {
-        RuntimeHandle::new();
+    fn runtime_smoke_test() {
+        RuntimeHandle::new_runtime().new_environment().context();
     }
 
     #[test]
     fn json_smoke_test() {
-        let mut r = RuntimeHandle::new();
+        let mut r = RuntimeHandle::new_runtime();
         let mut env = r.new_environment();
         let mut cx = env.context();
         cx.parse_json("{}".as_ref());

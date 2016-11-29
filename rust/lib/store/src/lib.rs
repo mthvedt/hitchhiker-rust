@@ -26,7 +26,8 @@
 extern crate futures;
 extern crate typed_arena;
 
-#[cfg(test)]
+// #[cfg(test)]
+// TODO isolate
 extern crate bytebuffer;
 #[cfg(test)]
 extern crate test;
@@ -51,8 +52,9 @@ pub use data::Range;
 
 pub mod tdfuture;
 
-#[cfg(test)]
-mod testlib;
+// #[cfg(test)]
+// TODO: isolate
+pub mod testlib;
 
 mod traits;
 pub use traits::*;

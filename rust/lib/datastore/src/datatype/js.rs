@@ -3,11 +3,11 @@ use std::marker::PhantomData;
 use std::mem;
 use std::rc::{Rc, Weak};
 
-use futures::{Future, future, Poll};
+use futures::{Future, Poll};
 
 use thunderhead_store::{KvSource, KvSink, TdError};
 use thunderhead_store::alloc::Scoped;
-use thunderhead_store::tdfuture::{AndThenFuture, FutureCont, FutureMap, MapFuture};
+use thunderhead_store::tdfuture::{BoxFuture, FutureExt, FutureMap};
 
 use datatype::io::Lens;
 use engine::js::Processor;
@@ -20,11 +20,11 @@ use engine::js::Processor;
 // Design: A 'wire' type, a 'binary' type, and a 'JSON' type, and lenses for each.
 // Some kinda combined lens can yield both.
 
-/// A Json-wrapping type. It's intentionally opaque, since its inner fields are not intended for Rust.
-/// (Not yet anyway.)
-struct TdJson {
-
-}
+// /// A Json-wrapping type. It's intentionally opaque, since its inner fields are not intended for Rust.
+// /// (Not yet anyway.)
+// struct TdJson {
+//
+// }
 
 // This is not yet supported. Instead we use SpiderMonkey directly.
 // /// A lens for text JSON, which is what TD currently sends/receives over the wire.
@@ -45,9 +45,6 @@ struct TdJson {
 
 //     }
 // }
-
-/// A lens that turns binary JSON blobs into Spidermonkey JS.
-struct JsonIntakeLens;
 
 /// A lens that turns REST wire-format JSON into Spidermonkey JS.
 struct SmTextJsonLens;
@@ -102,22 +99,39 @@ impl<F: Future> Future for ErrorPropogator<F> {
 
 #[derive(Clone)]
 struct JsToTextProcessorLens {
-    read: Rc<RefCell<Processor>>,
+    // read: Rc<RefCell<Processor>>,
     write: Rc<RefCell<Processor>>,
+}
+
+impl JsToTextProcessorLens {
+    fn new(write_processor: Processor) -> Self {
+        JsToTextProcessorLens {
+            write: Rc::new(RefCell::new(write_processor)),
+        }
+    }
 }
 
 impl<S: KvSource + KvSink> Lens<S> for JsToTextProcessorLens {
     type Target = String;
 
-    type ReadResult = MapFuture<S::GetF, ProcessorRead<S::Get, S::GetF>>;
+    // type ReadResult = MapFuture<S::GetF, ProcessorRead<S::Get, S::GetF>>;
+    //
+    // fn read(&self, source: &mut S) -> Self::ReadResult {
+    //     let pr = ProcessorRead {
+    //         inner: Rc::downgrade(&self.read),
+    //         _p: PhantomData,
+    //     };
+    //
+    //     MapFuture::new(source.get([]), pr)
+    // }
+
+    // TODO: this is slow
+    type ReadResult = BoxFuture<Option<String>, TdError>;
 
     fn read(&self, source: &mut S) -> Self::ReadResult {
-        let pr = ProcessorRead {
-            inner: Rc::downgrade(&self.read),
-            _p: PhantomData,
-        };
-
-        MapFuture::new(source.get([]), pr)
+        source.get([]).map(|bytes_opt| {
+            bytes_opt.map(|bytes| String::from_utf8_lossy(bytes.get().unwrap()).into_owned())
+        }).td_boxed()
     }
 
     type WriteResult = ErrorPropogator<S::PutF>;
@@ -136,5 +150,22 @@ impl<S: KvSource + KvSink> Lens<S> for JsToTextProcessorLens {
 
 #[cfg(test)]
 mod test {
+    use super::JsToTextProcessorLens;
 
+    use futures::Future;
+
+    use thunderhead_store::testlib::NullKeyDummyKvSink;
+
+    use engine::js::{Processor, RuntimeHandle};
+    use system::SystemScripts;
+
+    #[test]
+    fn test_json_processor() {
+        let mut r = RuntimeHandle::new_runtime();
+        let pxr = Processor::from_source(r.new_environment(), "js/serialize_json", SystemScripts).wait().ok().unwrap();
+
+        let lens = JsToTextProcessorLens::new(pxr);
+
+        let s = NullKeyDummyKvSink::new();
+    }
 }

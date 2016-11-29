@@ -4,7 +4,7 @@ use futures::future;
 
 // For god-knows-what reason, importing Scoped breaks lazy_static.
 use thunderhead_store::alloc;
-use thunderhead_store::{Range, Source, StringSource, TdError};
+use thunderhead_store::{Range, Source, TdError};
 
 // // TODO: move BTreeSource to store.
 // struct BTreeSource<K, V> {
@@ -37,7 +37,7 @@ lazy_static! {
         let mut m = BTreeMap::new();
 
         // TODO: a macro
-        m.insert("js/parse_json".as_ref(), include_str!("js/parse_json.js"));
+        m.insert("js/serialize_json".as_ref(), include_str!("js/serialize_json.js"));
 
         m
     };
@@ -63,5 +63,3 @@ impl Source<str> for SystemScripts {
         panic!("not implemented")
     }
 }
-
-impl StringSource for SystemScripts {}

@@ -1,61 +1,86 @@
-// use bytebuffer::ByteBuffer;
+use std::cell::RefCell;
+use std::io;
+use std::rc::Rc;
 
-// use alloc::Scoped;
-// use data::Range;
-// use tdfuture::Waiter;
-// use traits::{Source, Sink};
+use bytebuffer::ByteBuffer;
 
-// enum Void {}
+use futures::future;
+use futures::future::{FutureResult, Ok};
 
-// pub struct VoidFuture<Item, Error> {
-//     v: Void,
-//     phantom: PhantomData<(Item, Error)>,
-// }
+use alloc::Scoped;
+use data::Range;
+use traits::{Source, Sink, TdError};
 
-// impl<Item, Error> Future for VoidFuture<Item, Error> {
-//     type Item = Item;
-//     type Error = Error;
+/// A KvSink with only one supported key/value: the null one.
+pub struct NullKeyDummyKvSink {
+    ok: bool,
+    buf: Option<Rc<RefCell<ByteBuffer>>>,
+}
 
-//     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-//         unreachable!()
-//     }
-// }
+impl NullKeyDummyKvSink {
+    pub fn new() -> Self {
+        NullKeyDummyKvSink {
+            ok: true,
+            buf: None,
+        }
+    }
 
-// /// A KvSink with only one supported key/value: the null one.
-// pub struct NullKeyDummyKvSink {
-//     buf: ByteBuffer,
-// }
+    fn check_key<K: Scoped<[u8]>>(&self, k: K) -> bool {
+        self.ok && k.get().unwrap() == []
+    }
+}
 
-// impl NullKeyDummyKvSink {
-//     pub fn new() -> Self {
-//         NullKeyDummyKvSink {
-//             buf: ByteBuffer::new(),
-//         }
-//     }
+impl Source<[u8]> for NullKeyDummyKvSink {
+    type Get = Box<[u8]>;
+    type GetF = Ok<Option<Self::Get>, TdError>;
 
-//     fn check_key<K: Scoped<[u8]>>(k: K) -> bool {
-//         k.get().unwrap() == []
-//     }
-// }
+    fn get<K: Scoped<[u8]>>(&mut self, k: K) -> Self::GetF {
+        if self.check_key(k) {
+            match self.buf {
+                Some(ref buf) => {
+                    let mut buf = buf.borrow_mut();
+                    let len = buf.len();
+                    buf.set_rpos(0);
+                    let r = buf.read_bytes(len).into_boxed_slice();
+                    future::ok(Some(r))
+                },
+                None => future::ok(None),
+            }
+        } else {
+            future::ok(None)
+        }
+    }
 
-// impl Source<[u8]> for NullKeyDummyKvSink {
-//     type Get = Box<[u8]>;
+    fn subtree<K: Scoped<[u8]>>(&mut self, k: K) -> Self {
+        NullKeyDummyKvSink {
+            ok: k.get().unwrap() == [],
+            buf: None,
+        }
+    }
 
-//     fn get<K: Scoped<[u8]>, W: Waiter<Option<Self::Get>>>(&mut self, k: K, w: W) {
-//         if Self::check_key(k) {
-//             let len = self.buf.len();
-//             w.recv_ok(Some(self.buf.read_bytes(len).into_boxed_slice()))
-//         } else {
-//             w.recv_ok(None)
-//         }
-//     }
+    fn subrange(&mut self, range: Range) -> Self {
+        NullKeyDummyKvSink {
+            ok: false,
+            buf: None,
+        }
+    }
+}
 
-//     fn subtree<K: Scoped<[u8]>>(&mut self, k: K) -> Self {
-//         panic!("not yet implemented")
-//         // panic!("key not supported in this test class");
-//     }
+impl Sink<[u8]> for NullKeyDummyKvSink {
+    type PutF = FutureResult<(), TdError>;
 
-//     fn subrange(&mut self, range: Range) -> Self {
-//         panic!("not yet implemented")
-//     }
-// }
+    fn max_value_size(&self) -> u64 {
+        65536
+    }
+
+    fn put_small<K: Scoped<[u8]>, V: Scoped<[u8]>>(&mut self, k: K, v: V) -> Self::PutF {
+        if self.check_key(k) {
+            // TODO: check value length
+            self.buf = Some(Rc::new(RefCell::new(ByteBuffer::from_bytes(v.get().unwrap()))));
+            future::result(Ok(()))
+        } else {
+            // TODO: should be a kv-specific error
+            future::result(Err(TdError::IoError(io::Error::new(io::ErrorKind::NotFound, "Key not supported"))))
+        }
+    }
+}

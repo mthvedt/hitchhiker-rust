@@ -7,9 +7,9 @@ use futures::{Future, Poll};
 
 use thunderhead_store::{KvSource, KvSink, TdError};
 use thunderhead_store::alloc::Scoped;
-use thunderhead_store::tdfuture::{BoxFuture, FutureExt, FutureMap};
+use thunderhead_store::tdfuture::FutureMap;
 
-use datatype::io::Lens;
+use lens::{Lens, StringLens};
 use engine::js::Processor;
 
 // PLAN FOR JS:
@@ -46,11 +46,11 @@ use engine::js::Processor;
 //     }
 // }
 
-/// A lens that turns REST wire-format JSON into Spidermonkey JS.
-struct SmTextJsonLens;
-
-/// A lens that turns REST JSON into JSON blobs.
-struct JsonTextDataLens;
+// /// A lens that turns REST wire-format JSON into Spidermonkey JS.
+// struct SmTextJsonLens;
+//
+// /// A lens that turns REST JSON into JSON blobs.
+// struct JsonTextDataLens;
 
 pub struct ProcessorRead<I, GetF> {
     inner: Weak<RefCell<Processor>>,
@@ -126,12 +126,11 @@ impl<S: KvSource + KvSink> Lens<S> for JsToTextProcessorLens {
     // }
 
     // TODO: this is slow
-    type ReadResult = BoxFuture<Option<String>, TdError>;
+    type ReadResult = <StringLens as Lens<S>>::ReadResult;
 
     fn read(&self, source: &mut S) -> Self::ReadResult {
-        source.get([]).map(|bytes_opt| {
-            bytes_opt.map(|bytes| String::from_utf8_lossy(bytes.get().unwrap()).into_owned())
-        }).td_boxed()
+        // TODO: debug verify javascript?
+        StringLens.read(source)
     }
 
     type WriteResult = ErrorPropogator<S::PutF>;
@@ -142,7 +141,7 @@ impl<S: KvSource + KvSink> Lens<S> for JsToTextProcessorLens {
         let result_str = result.and_then(|result| pxrref.to_string(result));
 
         match result_str {
-            Ok(result_str) => ErrorPropogator::Ok(sink.put_small([], result_str.as_ref())),
+            Ok(result_str) => ErrorPropogator::Ok(StringLens.write(result_str, sink)),
             Err(e) => ErrorPropogator::Err(e),
         }
     }
@@ -157,7 +156,7 @@ mod test {
     use thunderhead_store::testlib::NullKeyDummyKvSink;
 
     use engine::js::{Processor, RuntimeHandle};
-    use datatype::io::Lens;
+    use lens::Lens;
     use system::SystemScripts;
 
     #[test]

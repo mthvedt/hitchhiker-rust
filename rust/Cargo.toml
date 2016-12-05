@@ -4,16 +4,12 @@ version = "0.1.0"
 authors = ["Mike Thvedt <mike.thvedt@gmail.com>"]
 
 [dependencies]
-thunderhead-datastore = { path = "lib/datastore" }
-thunderhead-store = { path = "lib/store" }
-# thunderhead-rocksdb = { path = "extern/thunderhead/rocksdb" }
-
 env_logger = "0.3"
-futures = { git = "https://github.com/alexcrichton/futures-rs" }
-rustc-serialize = "0.3"
-openssl = "0.8"
-url = { git = "https://github.com/servo/rust-url" }
-time = "0.1"
+tokio-proto = { git = "https://github.com/tokio-rs/tokio-proto"}
+
+thunderhead-datastore = { path = "lib/datastore" }
+thunderhead-server = { path = "lib/server" }
+thunderhead-store = { path = "lib/store" }
 
 [profile.release]
 # TODO: should have a profiling profile instead of debug = true.

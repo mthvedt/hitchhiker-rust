@@ -12,6 +12,7 @@ use tokio_proto::pipeline::ServerProto;
 use tokio_service::Service;
 
 use http::{TdMethod, TdRequest, TdRequestParse, TdResponse, TdStatus};
+use util::Handle;
 
 #[derive(Clone, Default)]
 pub struct TdCodec;
@@ -100,8 +101,8 @@ impl Codec for TdCodec {
 
     fn encode(&mut self, resp: TdResponse, buf: &mut Vec<u8>) -> Result<(), io::Error> {
         write!(buf, "\
-            HTTP/1.1 {} \r\n\
-            Content-Length: {}\r\n\
+            HTTP/1.1 {} \n\
+            Content-Length: {}\n\
         ", resp.status_http_str(), resp.body().len()).unwrap();
 
         // for &(ref k, ref v) in &msg.headers {
@@ -137,7 +138,17 @@ impl Service for TdService {
     }
 }
 
-pub struct TdProto;
+pub struct TdProto {
+    handle: Handle,
+}
+
+impl TdProto {
+    pub fn new(handle: &Handle) -> Self {
+        TdProto {
+            handle: handle.clone(),
+        }
+    }
+}
 
 impl<T: 'static + Io> ServerProto<T> for TdProto {
     type Request = TdRequestParse;

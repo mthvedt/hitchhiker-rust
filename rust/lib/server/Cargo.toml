@@ -7,6 +7,7 @@ authors = ["Mike Thvedt <mike.thvedt@gmail.com>"]
 # bincode = "0.6.0"
 futures = "0.1.6"
 httparse = "1.2.0"
+log = "*"
 # hyper = { git = "https://github.com/hyperium/hyper.git" }
 # lazy_static = "0.2.1"
 # js = { git = "https://github.com/servo/rust-mozjs" }
@@ -22,5 +23,7 @@ thunderhead-datastore = { path = "../datastore" }
 thunderhead-store = { path = "../store" }
 
 [dev-dependencies]
+env_logger = "0.3"
+lazy_static = "0.1.*"
 # quickcheck = "0.4"
 # quickcheck_macros = "0.4"

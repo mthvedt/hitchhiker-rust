@@ -1,3 +1,5 @@
+#![cfg_attr(test, feature(test))]
+
 extern crate futures;
 extern crate httparse;
 #[macro_use]
@@ -15,13 +17,17 @@ mod react;
 mod server;
 pub use server::*;
 
+mod thunderhead;
+
 pub mod util;
 
+#[cfg(test)]
+extern crate env_logger;
 #[cfg(test)]
 #[macro_use]
 extern crate lazy_static;
 #[cfg(test)]
-extern crate env_logger;
+extern crate test;
 
 #[cfg(test)]
 mod tests;

@@ -7,10 +7,10 @@ use futures::{Future, Poll};
 
 use thunderhead_store::{KvSource, KvSink, TdError};
 use thunderhead_store::alloc::Scoped;
-use thunderhead_store::tdfuture::FutureMap;
+use thunderhead_store::tdfuture::{BoxFuture, FutureExt, FutureMap};
 
-use lens::{Lens, StringLens};
-use engine::js::Processor;
+use engine::{self, spidermonkey};
+use lens::{ReadLens, StringLens, WriteLens};
 
 // PLAN FOR JS:
 //
@@ -52,27 +52,29 @@ use engine::js::Processor;
 // /// A lens that turns REST JSON into JSON blobs.
 // struct JsonTextDataLens;
 
-pub struct ProcessorRead<I, GetF> {
-    inner: Weak<RefCell<Processor>>,
-    _p: PhantomData<(*const I, *const GetF)>,
-}
+type ProcessorHandle = engine::ProcessorHandle<spidermonkey::Engine>;
 
-impl<I: Scoped<[u8]>, GetF: Future<Item = Option<I>>> FutureMap for ProcessorRead<I, GetF> {
-    type Input = GetF::Item;
-    type Output = Option<String>;
-    type Error = TdError;
-
-    fn apply(&mut self, iopt: Self::Input) -> Result<Self::Output, TdError> {
-        match iopt {
-            Some(i) => {
-                let rc_pxr = self.inner.upgrade().unwrap();
-                let vr = rc_pxr.borrow_mut().apply(i);
-                vr.and_then(|v| rc_pxr.borrow_mut().to_string(v).map(|x| Some(x)))
-            },
-            None => Ok(None),
-        }
-    }
-}
+// pub struct ProcessorRead<I, GetF> {
+//     inner: Weak<RefCell<Processor>>,
+//     _p: PhantomData<(*const I, *const GetF)>,
+// }
+//
+// impl<I: Scoped<[u8]>, GetF: Future<Item = Option<I>>> FutureMap for ProcessorRead<I, GetF> {
+//     type Input = GetF::Item;
+//     type Output = Option<String>;
+//     type Error = TdError;
+//
+//     fn apply(&mut self, iopt: Self::Input) -> Result<Self::Output, TdError> {
+//         match iopt {
+//             Some(i) => {
+//                 let rc_pxr = self.inner.upgrade().unwrap();
+//                 let vr = rc_pxr.borrow_mut().apply(i);
+//                 vr.and_then(|v| rc_pxr.borrow_mut().to_string(v).map(|x| Some(x)))
+//             },
+//             None => Ok(None),
+//         }
+//     }
+// }
 
 pub enum ErrorPropogator<F: Future> {
     Ok(F),
@@ -97,21 +99,23 @@ impl<F: Future> Future for ErrorPropogator<F> {
     }
 }
 
+/// A (read, write) lens, wrapping a Processor that maps JSON input to JSON output.
+/// Note that this is NOT a bidirectional lens; the read value is simply the identity.
 #[derive(Clone)]
 struct JsToTextProcessorLens {
     // read: Rc<RefCell<Processor>>,
-    write: Rc<RefCell<Processor>>,
+    write: ProcessorHandle,
 }
 
 impl JsToTextProcessorLens {
-    fn new(write_processor: Processor) -> Self {
+    fn new(write_processor: ProcessorHandle) -> Self {
         JsToTextProcessorLens {
-            write: Rc::new(RefCell::new(write_processor)),
+            write: write_processor,
         }
     }
 }
 
-impl<S: KvSource + KvSink> Lens<S> for JsToTextProcessorLens {
+impl<S: KvSource> ReadLens<S> for JsToTextProcessorLens {
     type Target = String;
 
     // type ReadResult = MapFuture<S::GetF, ProcessorRead<S::Get, S::GetF>>;
@@ -126,50 +130,52 @@ impl<S: KvSource + KvSink> Lens<S> for JsToTextProcessorLens {
     // }
 
     // TODO: this is slow
-    type ReadResult = <StringLens as Lens<S>>::ReadResult;
+    type ReadResult = <StringLens as ReadLens<S>>::ReadResult;
 
-    fn read(&self, source: &mut S) -> Self::ReadResult {
+    fn read(&self, source: S) -> Self::ReadResult {
         // TODO: debug verify javascript?
         StringLens.read(source)
     }
+}
 
-    type WriteResult = ErrorPropogator<S::PutF>;
+impl<S: KvSink + 'static> WriteLens<S> for JsToTextProcessorLens {
+    type Target = String;
 
-    fn write<V: Scoped<Self::Target>>(&self, target: V, sink: &mut S) -> Self::WriteResult {
-        let mut pxrref = self.write.borrow_mut();
-        let result = pxrref.apply(target.get().unwrap().as_ref());
-        let result_str = result.and_then(|result| pxrref.to_string(result));
+    type WriteResult = BoxFuture<(), TdError>;
 
-        match result_str {
-            Ok(result_str) => ErrorPropogator::Ok(StringLens.write(result_str, sink)),
-            Err(e) => ErrorPropogator::Err(e),
-        }
+    fn write<V: Scoped<Self::Target>>(&self, target: V, sink: S) -> Self::WriteResult {
+        // TODO: can we assert output is json?
+        self.write.apply_and_write(target.get().unwrap().as_ref()).and_then(|(_, rs)| {
+            StringLens.write(rs, sink)
+        }).td_boxed()
     }
 }
 
-#[cfg(test)]
-mod test {
-    use super::JsToTextProcessorLens;
-
-    use futures::Future;
-
-    use thunderhead_store::testlib::NullKeyDummyKvSink;
-
-    use engine::js::{Processor, RuntimeHandle};
-    use lens::Lens;
-    use system::SystemScripts;
-
-    #[test]
-    fn test_json_processor() {
-        let mut r = RuntimeHandle::new_runtime();
-        let pxr = Processor::from_source(r.new_environment(), "js/serialize_json", SystemScripts).wait().ok().unwrap();
-
-        let lens = JsToTextProcessorLens::new(pxr);
-
-        let mut s = NullKeyDummyKvSink::new();
-
-        lens.write(String::from("{\"x\": 1}"), &mut s).wait().ok();
-        let r = lens.read(&mut s).wait().ok().unwrap().unwrap();
-        assert!(r == "{\"x\":1}");
-    }
-}
+// #[cfg(test)]
+// mod test {
+//
+//     use futures::Future;
+//
+//     use thunderhead_store::testlib::NullKeyDummyKvSink;
+//
+//     use lens::{ReadLens, WriteLens};
+//     use system::SystemScripts;
+//
+//     use super::Processor;
+//     use super::JsToTextProcessorLens;
+//
+//
+//     #[test]
+//     fn test_json_processor() {
+//         let mut r = RuntimeHandle::new_runtime();
+//         let pxr = Processor::from_source(r.new_environment(), "js/serialize_json", SystemScripts).wait().ok().unwrap();
+//
+//         let lens = JsToTextProcessorLens::new(pxr);
+//
+//         let mut s = NullKeyDummyKvSink::new();
+//
+//         lens.write(String::from("{\"x\": 1}"), &mut s).wait().ok();
+//         let r = lens.read(&mut s).wait().ok().unwrap().unwrap();
+//         assert!(r == "{\"x\":1}");
+//     }
+// }

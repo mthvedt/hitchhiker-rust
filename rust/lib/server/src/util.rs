@@ -16,6 +16,7 @@ struct HandleInner {
     joiners: Mutex<Vec<Thread>>,
 }
 
+// TODO: this should not be in util.
 #[derive(Clone)]
 pub struct Handle {
     inner: Arc<HandleInner>,

@@ -1,15 +1,15 @@
 use thunderhead_store::{KvSource, KvSink, Range, Source, Sink};
 use thunderhead_store::alloc::Scoped;
 
-use lens::Lens;
+use lens::{ReadLens, WriteLens};
 
-struct MapStore<S, L> {
+pub struct MapStore<S, L> {
     underlying: S,
     lens: L,
 }
 
 impl<S, L> MapStore<S, L> {
-    fn new(s: S, l: L) -> Self {
+    pub fn new(s: S, l: L) -> Self {
         MapStore {
             underlying: s,
             lens: l,
@@ -17,13 +17,18 @@ impl<S, L> MapStore<S, L> {
     }
 }
 
-impl<S: KvSource, L: Lens<S>> Source<L::Target> for MapStore<S, L> where L::Target: 'static {
+impl<S, L, T> Source<T> for MapStore<S, L> where
+S: KvSource,
+L: ReadLens<S>,
+L::Target: Scoped<T>,
+T: ?Sized + 'static
+{
     type Get = L::Target;
     type GetF = L::ReadResult;
 
     fn get<K: Scoped<[u8]>>(&mut self, k: K) -> Self::GetF {
         let mut subtree = self.underlying.subtree(k);
-        self.lens.read(&mut subtree)
+        self.lens.read(subtree)
     }
 
     // type GetMany: Stream<Item = Self::GetValue, Error = io::Error>;
@@ -35,7 +40,6 @@ impl<S: KvSource, L: Lens<S>> Source<L::Target> for MapStore<S, L> where L::Targ
     // fn get_range<K: Scoped<[u8]>>(&mut self, range: Range) -> Self::GetRange {
 
     // }
-
 
     fn subtree<K: Scoped<[u8]>>(&mut self, k: K) -> Self {
         MapStore {
@@ -52,17 +56,22 @@ impl<S: KvSource, L: Lens<S>> Source<L::Target> for MapStore<S, L> where L::Targ
     }
 }
 
-impl<S: KvSink, L: Lens<S>> Sink<L::Target> for MapStore<S, L> where L::Target: 'static {
+impl<S, L, T> Sink<<L as WriteLens<S>>::Target> for MapStore<S, L> where
+S: KvSink,
+L: ReadLens<S> + WriteLens<S, Target = T>,
+<L as ReadLens<S>>::Target: Scoped<T>,
+T: 'static,
+{
     type PutF = L::WriteResult;
 
     fn max_value_size(&self) -> u64 {
         self.underlying.max_value_size()
     }
 
-    fn put_small<K: Scoped<[u8]>, V: Scoped<L::Target>>(&mut self, k: K, v: V) -> Self::PutF {
+    fn put_small<K: Scoped<[u8]>, V: Scoped<T>>(&mut self, k: K, v: V) -> Self::PutF {
         let mut subtree = self.underlying.subtree(k);
         // TODO: This should only succeed if the subtree is empty.
-        self.lens.write(v, &mut subtree)
+        self.lens.write(v, subtree)
     }
 }
 

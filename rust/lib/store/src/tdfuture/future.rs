@@ -223,8 +223,7 @@ F: FnOnce(A::Item) -> Result<B, A::Error>,
 }
 
 pub trait FutureExt: Future + Sized {
-    // TODO: move and_then, map, &c into special fns here. maybe called and_then_t, map_t?
-
+    /// Like Future::map, except where f may return an error.
     fn lift<F, B>(self, f: F) -> Lift<Self, F> where
     F: FnOnce(Self::Item) -> Result<B, Self::Error>
     {
@@ -234,6 +233,7 @@ pub trait FutureExt: Future + Sized {
         }
     }
 
+    /// Box a Future. This is like BoxFuture, except the Send constraint is not required.
     fn td_boxed(self) -> BoxFuture<Self::Item, Self::Error> where Self: 'static {
         Box::new(self)
     }

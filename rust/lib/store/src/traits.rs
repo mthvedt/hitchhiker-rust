@@ -9,6 +9,7 @@ use data::Range;
 
 // TODO improve this.
 // TODO: hide details
+#[derive(Debug)]
 pub enum TdError {
     EvalError,
     // TODO: distinguish by error role. EvalError, DbError &c
@@ -24,13 +25,15 @@ impl From<io::Error> for TdError {
 
 /// N.B.: We would ideally like T to be an associated type, not a generic type.
 /// However, this makes Rust's constraint checker go nuts once we get subtraits (KvSource, KvSink).
-/// In particular, it starts demanding manual constraints for GetValue everywhere, even though
+/// In particular, it starts demanding manual constraints for T everywhere, even though
 /// those constraints should be inferable.
 
 // TODO: we might want to make keys generic
 // TODO: do we want subtree/subrange to be part of source?
 // TODO: do we want to expose Scoped? why not Borrow?
 // TODO: T should be associated type
+// TODO: can we make KvSource a Scoped source?
+// TODO: can we make subtrees/subranges borrowed? like: subtree(&'b mut self) -> Self<'b>?
 pub trait Source<T: ?Sized + 'static> {
 	type Get: Scoped<T> + 'static;
     type GetF: Future<Item = Option<Self::Get>, Error = TdError> + 'static;
@@ -74,6 +77,8 @@ pub trait Sink<T: ?Sized + 'static>: Source<T> {
     /// Not that we don't have put_many or put_range. This use case should be handled
     fn put_small<K: Scoped<[u8]>, V: Scoped<T>>(&mut self, k: K, v: V) -> Self::PutF;
 }
+
+// TODO: Sink doesn't need to implement Source
 
 pub trait KvSource: Source<[u8]> {}
 impl<S> KvSource for S where S: Source<[u8]> {}

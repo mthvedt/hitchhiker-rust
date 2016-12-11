@@ -1,8 +1,11 @@
+#![feature(integer_atomics)]
 #![feature(proc_macro)]
 #![feature(unique)]
 
+#![feature(conservative_impl_trait)]
+
 #![cfg_attr(test, feature(plugin))]
-#![cfg_attr(test, plugin(quickcheck_macros))]
+// #![cfg_attr(test, plugin(quickcheck_macros))]
 
 extern crate bincode;
 extern crate futures;
@@ -22,7 +25,7 @@ extern crate quickcheck;
 
 // TODO flatten
 mod datatype;
-// mod engine;
 pub mod engine;
+pub mod frontend;
 mod lens;
 mod system;

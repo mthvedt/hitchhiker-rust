@@ -17,41 +17,59 @@ use thunderhead_store::alloc::Scoped;
 use thunderhead_store::util::{ByteReader, ByteWriter};
 use thunderhead_store::tdfuture::{FutureMap, MapFuture};
 
-// TODO rename to Lens
+// TODO: this is wrong. The whole concept of Lens is wrong because they're not bidirectional. Fuck fuck fuck
 
-/// A Lens is a bidirectional map from one type to another.
-///
-/// In normal usage, DataLenses are parametric over their source/target stores. (Why?)
-///
-/// N.B. What we really want is a LensRead and LensWrite pair of traits, where Lens
-/// implements Read and Write. Hmm... is it possible?
-pub trait Lens<S>: Clone + Sized {
+/*
+TODO
+
+Use stream transformers that can be composed, not lenses.
+Something like nom, but the input is always a stream.
+
+trait Transformer<Io> {
+  type Target: 'static;
+
+  fn pipe<W: Write>(&self, io: &Io, w: &W) -> Result of some kind
+
+  fn read(&self, io: &Io) -> Result<Option<Scoped result>, TdError>
+
+  fn write<W: Write>(&self, t: &Scoped<Target>, w: &W) -> Result of some kind
+}
+*/
+
+// TODO: all this lens crap is overengineered. This library (and map) both need massive simplification.
+
+/// TODO: add lenses for streaming sources. We want BOTH static lenses and streaming lenses (why?)
+
+// TODO: how about ReadLens -> Read, WriteLens -> Write? Because these are not actually lenses.
+pub trait ReadLens<S>: Clone + Sized {
     type Target: 'static;
 
     type ReadResult: Future<Item = Option<Self::Target>, Error = TdError> + 'static;
 
-    fn read(&self, source: &mut S) -> Self::ReadResult;
+    fn read(&self, source: S) -> Self::ReadResult;
+}
+
+pub trait WriteLens<S>: Clone + Sized {
+    type Target: 'static;
 
     type WriteResult: Future<Item = (), Error = TdError> + 'static;
 
-    fn write<V: Scoped<Self::Target>>(&self, target: V, sink: &mut S) -> Self::WriteResult;
+    fn write<V: Scoped<Self::Target>>(&self, target: V, sink: S) -> Self::WriteResult;
 }
 
-/// A simpler data lens, wrapping a Serde serializable.
-///
-/// TODO: This may be suboptimal for allocated types. Fortunately, the main path of Thunderhead
-/// uses fixed-size types or types which require allocation anyway. Implementing a better story
-/// for types which may use Scoped is a low-priority todo.
+/// A simple implementation of `ReadLens` and `WriteLens`, for a type that can be converted
+/// to/from bytes directly.
+
+// TODO: this blocks, and is therefore bad.
 pub trait SimpleLens: Clone + Sized + 'static {
     type Target;
 
-    /// TODO: we might consider making some kind of 'BorrowOrScoped' enum.
-    fn read<Bytes: AsRef<[u8]>>(&self, source: Bytes) -> Self::Target;
+    fn read<Bytes: AsRef<[u8]>>(&self, source: &Bytes) -> Self::Target;
 
     fn write<W: Write, V: Scoped<Self::Target>>(&self, t: V, sink: &mut W);
 
-    /// Reify this into a Lens.
-    /// (SimpleLens doesn't impl Lens for coherency reasons.)
+    /// Reify this into a Read+WriteLens.
+    /// (SimpleLens doesn't impl these for coherency reasons.)
     fn to_lens<S>(&self) -> SimpleLensWrapper<S, Self> {
         SimpleLensWrapper {
             inner: self.clone(),
@@ -61,25 +79,25 @@ pub trait SimpleLens: Clone + Sized + 'static {
 }
 
 /// Implementation detail for SimpleLens::read.
-pub struct SimpleLensRead<L: SimpleLens, B: Scoped<[u8]>> {
+pub struct SimpleLensReadMap<L: SimpleLens, B: Scoped<[u8]>> {
     lens: L,
     _p: PhantomData<B>,
 }
 
-impl<L: SimpleLens, B: Scoped<[u8]>> FutureMap for SimpleLensRead<L, B> {
+impl<L: SimpleLens, B: Scoped<[u8]>> FutureMap for SimpleLensReadMap<L, B> {
     type Input = Option<B>;
     type Output = Option<L::Target>;
     type Error = TdError;
 
     fn apply(&mut self, iopt: Self::Input) -> Result<Self::Output, TdError> {
         match iopt {
-            Some(i) => Ok(Some(self.lens.read(i.get().unwrap()))),
+            Some(i) => Ok(Some(self.lens.read(&i.get().unwrap()))),
             None => Ok(None),
         }
     }
 }
 
-/// Implementation detail for SimpleLens::to_lens.
+/// Implementation detail for `SimpleLens::to_lens`.
 pub struct SimpleLensWrapper<S, L: SimpleLens> {
     inner: L,
     _phantom: PhantomData<S>,
@@ -94,21 +112,25 @@ impl<S, L: SimpleLens> Clone for SimpleLensWrapper<S, L> {
     }
 }
 
-impl<S: KvSource + KvSink, L: SimpleLens> Lens<S> for SimpleLensWrapper<S, L> {
+impl<S: KvSource, L: SimpleLens> ReadLens<S> for SimpleLensWrapper<S, L> {
     type Target = L::Target;
 
-    type ReadResult = MapFuture<S::GetF, SimpleLensRead<L, S::Get>>;
+    type ReadResult = MapFuture<S::GetF, SimpleLensReadMap<L, S::Get>>;
 
-    fn read(&self, source: &mut S) -> Self::ReadResult {
-        MapFuture::new(source.get([]), SimpleLensRead {
+    fn read(&self, mut source: S) -> Self::ReadResult {
+        MapFuture::new((&mut source).get([]), SimpleLensReadMap {
             lens: self.inner.clone(),
             _p: PhantomData,
         })
     }
+}
+
+impl<S: KvSink, L: SimpleLens> WriteLens<S> for SimpleLensWrapper<S, L> {
+    type Target = L::Target;
 
     type WriteResult = S::PutF;
 
-    fn write<V: Scoped<Self::Target>>(&self, target: V, sink: &mut S) -> Self::WriteResult {
+    fn write<V: Scoped<Self::Target>>(&self, target: V, mut sink: S) -> Self::WriteResult {
         // Unavoidable heap allocation :(
         // TODO: KvSink should support 'opening a writer'.
         // TODO get capacity
@@ -146,16 +168,20 @@ impl<T: ?Sized> Clone for BincodeLens<T> {
     }
 }
 
-impl<S: KvSource + KvSink, T: 'static + ?Sized + Serialize + Deserialize> Lens<S> for BincodeLens<T> {
+impl<S: KvSource, T: 'static + ?Sized + Serialize + Deserialize> ReadLens<S> for BincodeLens<T> {
     type Target = T;
-    type ReadResult = <SimpleLensWrapper<S, BincodeLensInner<T>> as Lens<S>>::ReadResult;
-    type WriteResult = <SimpleLensWrapper<S, BincodeLensInner<T>> as Lens<S>>::WriteResult;
+    type ReadResult = <SimpleLensWrapper<S, BincodeLensInner<T>> as ReadLens<S>>::ReadResult;
 
-    fn read(&self, source: &mut S) -> Self::ReadResult {
+    fn read(&self, source: S) -> Self::ReadResult {
         self.inner.to_lens().read(source)
     }
+}
 
-    fn write<V: Scoped<Self::Target>>(&self, target: V, sink: &mut S) -> Self::WriteResult {
+impl<S: KvSink, T: 'static + ?Sized + Serialize + Deserialize> WriteLens<S> for BincodeLens<T> {
+    type Target = T;
+    type WriteResult = <SimpleLensWrapper<S, BincodeLensInner<T>> as WriteLens<S>>::WriteResult;
+
+    fn write<V: Scoped<Self::Target>>(&self, target: V, sink: S) -> Self::WriteResult {
         self.inner.to_lens().write(target, sink)
     }
 }
@@ -183,7 +209,7 @@ impl<T: 'static + ?Sized + Serialize + Deserialize> SimpleLens for BincodeLensIn
     type Target = T;
 
     /// TODO: we might consider making some kind of 'BorrowOrScoped' enum.
-    fn read<Bytes: AsRef<[u8]>>(&self, source: Bytes) -> Self::Target {
+    fn read<Bytes: AsRef<[u8]>>(&self, source: &Bytes) -> Self::Target {
         // TODO: size check
         let len = source.as_ref().len() as u64;
         let mut reader = ByteReader::wrap(source.as_ref());
@@ -203,20 +229,26 @@ impl<T: 'static + ?Sized + Serialize + Deserialize> SimpleLens for BincodeLensIn
 #[derive(Clone)]
 pub struct StringLens;
 
-impl<S: KvSource + KvSink> Lens<S> for StringLens {
+// TODO: this copies, which is inefficient.
+impl<S: KvSource> ReadLens<S> for StringLens {
     type Target = String;
-    type ReadResult = <SimpleLensWrapper<S, StringLensInner> as Lens<S>>::ReadResult;
-    type WriteResult = <SimpleLensWrapper<S, StringLensInner> as Lens<S>>::WriteResult;
+    type ReadResult = <SimpleLensWrapper<S, StringLensInner> as ReadLens<S>>::ReadResult;
 
     /// TODO: consume the bytes directly in StringLens, instead of copying.
-    fn read(&self, source: &mut S) -> Self::ReadResult {
+    fn read(&self, source: S) -> Self::ReadResult {
         StringLensInner.to_lens().read(source)
     }
+}
 
-    fn write<V: Scoped<Self::Target>>(&self, target: V, sink: &mut S) -> Self::WriteResult {
+impl<S: KvSink> WriteLens<S> for StringLens {
+    type Target = String;
+    type WriteResult = <SimpleLensWrapper<S, StringLensInner> as WriteLens<S>>::WriteResult;
+
+    fn write<V: Scoped<Self::Target>>(&self, target: V, sink: S) -> Self::WriteResult {
         StringLensInner.to_lens().write(target, sink)
     }
 }
+
 
 /// Implementation detail for StringLens.
 #[derive(Clone)]
@@ -227,7 +259,7 @@ impl SimpleLens for StringLensInner {
 
     /// TODO: consume the bytes directly in StringLens, instead of copying.
     /// TODO: support errors.
-    fn read<Bytes: AsRef<[u8]>>(&self, source: Bytes) -> Self::Target {
+    fn read<Bytes: AsRef<[u8]>>(&self, source: &Bytes) -> Self::Target {
         String::from_utf8_lossy(source.as_ref()).into_owned()
     }
 
@@ -235,5 +267,12 @@ impl SimpleLens for StringLensInner {
         sink.write_all(t.get().unwrap().as_ref()).ok().unwrap();
     }
 }
+
+// // TODO: this is why we want LensRead
+// pub trait ScopedLensRead<A, B> {
+//     type Read: Scoped<A>;
+//
+//     fn read<SB: Scoped<B>>(&self, sb: SB) -> Self::Read;
+// }
 
 // No tests here. Tests are on implementations of Lens.

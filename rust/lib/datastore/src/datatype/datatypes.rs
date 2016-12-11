@@ -1,6 +1,4 @@
 /// 32-bit markers for datatypes, one for each.
-
-// TODO: maybe separate general-purpose lenses from TD lenses?
 #[derive(Clone, Copy, Deserialize, Debug, Eq, PartialEq, Serialize)]
 #[repr(u32)]
 pub enum DatatypeId {

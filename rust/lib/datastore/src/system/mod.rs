@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::collections::BTreeMap;
 
 use futures::future;
@@ -45,12 +46,24 @@ lazy_static! {
 
 pub struct SystemScripts;
 
-impl Source<str> for SystemScripts {
-	type Get = &'static str;
+pub struct StrWrapper {
+    inner: &'static str,
+}
+
+impl Borrow<[u8]> for StrWrapper {
+    fn borrow(&self) -> &[u8] {
+        self.inner.as_ref()
+    }
+}
+
+impl Source<[u8]> for SystemScripts {
+	type Get = StrWrapper;
     type GetF = future::Ok<Option<Self::Get>, TdError>;
 
     fn get<K: alloc::Scoped<[u8]>>(&mut self, k: K) -> Self::GetF {
-        future::ok(SYSTEM_SCRIPTS.get(k.get().unwrap()).cloned())
+        future::ok(SYSTEM_SCRIPTS.get(k.get().unwrap()).cloned().map(|s| StrWrapper {
+            inner: s,
+        }))
     }
 
     #[allow(unused_variables)]

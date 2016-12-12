@@ -11,10 +11,11 @@ use js::jsapi::{self, JSRuntime};
 use thunderhead_store::TdError;
 
 use engine::error::{ErrorReporter, LoggingErrorReporter};
-use engine::spidermonkey;
-use engine::spidermonkey::engine::{self, EngineInner};
-use engine::spidermonkey::globals::ActiveGlobals;
 use engine::traits::{self, Engine};
+
+use super::engine::{self, EngineInner};
+use super::globals::{self, ActiveGlobals};
+use super::spec::Spec;
 
 // TODO: what do these do?
 const DEFAULT_HEAP_SIZE: u32 = 32 * 1024 * 1024;
@@ -49,9 +50,7 @@ pub struct Factory {
     _desend: PhantomData<*mut JSRuntime>,
 }
 
-impl traits::Factory for Factory {
-    type Engine = engine::Engine;
-
+impl traits::Factory<Spec> for Factory {
     fn new() -> Result<Self, TdError> {
         unsafe {
             // I'm not sure if we need mutexes for these, but might as well be safe.
@@ -118,9 +117,7 @@ impl Drop for FactoryHandle {
     }
 }
 
-impl traits::FactoryHandle for FactoryHandle {
-    type Engine = engine::Engine;
-
+impl traits::FactoryHandle<Spec> for FactoryHandle {
     fn new_engine(&mut self) -> Result<engine::Engine, String> {
         unsafe {
             let js_runtime = jsapi::JS_NewRuntime(
@@ -141,7 +138,7 @@ impl traits::FactoryHandle for FactoryHandle {
             let js_context = jsapi::JS_GetContext(js_runtime);
             assert!(!js_context.is_null(), "Could not get JS context");
 
-            jsapi::SetWarningReporter(js_runtime, Some(spidermonkey::globals::ActiveGlobals::report_warning));
+            jsapi::SetWarningReporter(js_runtime, Some(globals::ActiveGlobals::report_warning));
 
             let _g = ActiveGlobals::set_scoped(js_context, LoggingErrorReporter);
 

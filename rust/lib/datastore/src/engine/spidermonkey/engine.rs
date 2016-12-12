@@ -10,6 +10,7 @@ use thunderhead_store::TdError;
 use engine::{LoggingErrorReporter, spidermonkey, traits};
 
 use super::context;
+use super::spec::Spec;
 
 pub struct EngineInner {
     inner: Unique<JSContext>,
@@ -58,14 +59,8 @@ pub fn js_context(e: &mut Engine) -> &mut JSContext {
     }
 }
 
-impl traits::Engine for Engine {
-    type ActiveContext = super::active_context::ActiveContext;
-    type Context = spidermonkey::context::Context;
-    type Factory = spidermonkey::factory::Factory;
-    type FactoryHandle = spidermonkey::factory::FactoryHandle;
-    type Value = spidermonkey::value::RootedVal;
-
-    fn new_context(&mut self) -> Result<Self::Context, TdError> {
+impl traits::Engine<Spec> for Engine {
+    fn new_context(&mut self) -> Result<context::Context, TdError> {
         Ok(context::new_context(self))
     }
 }

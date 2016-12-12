@@ -17,6 +17,7 @@ use engine::traits::{self, Engine};
 use super::active_context;
 use super::engine::{self, EngineInner};
 use super::globals::ActiveGlobals;
+use super::spec::Spec;
 use super::value::{self, HandleVal, Rooted, RootedObj, RootedVal};
 
 pub struct Context {
@@ -26,19 +27,23 @@ pub struct Context {
 
 pub fn new_context(parent: &mut engine::Engine) -> Context {
     unsafe {
-        let engine = engine::clone_engine(parent);
-        let cx = engine::js_context(engine);
-        
-        let g = jsapi::JS_NewGlobalObject(cx,
-            &rust::SIMPLE_GLOBAL_CLASS, // Default global class. TODO: investigate.
-            ptr::null_mut(), // Principals. Obsolete.
-            jsapi::OnNewGlobalHookOption::FireOnNewGlobalHook, // Allow debugger to activate immediately.
-            &jsapi::CompartmentOptions::default() // Compartment options. TODO: investigate.
-        );
+        let mut engine = engine::clone_engine(parent);
+        let g_rooted;
 
-        assert!(!g.is_null(), "Could not build JS global object"); // TODO record error instead
+        {
+            let cx = engine::js_context(&mut engine);
 
-        let g_rooted = value::new_rooted(g, cx);
+            let g = jsapi::JS_NewGlobalObject(cx,
+                &rust::SIMPLE_GLOBAL_CLASS, // Default global class. TODO: investigate.
+                ptr::null_mut(), // Principals. Obsolete.
+                jsapi::OnNewGlobalHookOption::FireOnNewGlobalHook, // Allow debugger to activate immediately.
+                &jsapi::CompartmentOptions::default() // Compartment options. TODO: investigate.
+            );
+
+            assert!(!g.is_null(), "Could not build JS global object"); // TODO record error instead
+
+            g_rooted = value::new_rooted(g, cx);
+        }
 
         Context {
             parent: engine,
@@ -47,10 +52,8 @@ pub fn new_context(parent: &mut engine::Engine) -> Context {
     }
 }
 
-impl traits::Context for Context {
-    type Engine = engine::Engine;
-
-    fn exec<R, F: FnOnce(&mut <Self::Engine as Engine>::ActiveContext) -> R>(&mut self, f: F) -> R {
+impl traits::Context<Spec> for Context {
+    fn exec<R, F: FnOnce(&mut active_context::ActiveContext) -> R>(&mut self, f: F) -> R {
         let jcx = engine::js_context(&mut self.parent);
         let cpt = jsapi::JSAutoCompartment::new(jcx, value::rooted_inner(&mut self.global).ptr);
 

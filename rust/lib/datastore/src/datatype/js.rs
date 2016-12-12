@@ -52,7 +52,7 @@ use lens::{ReadLens, StringLens, WriteLens};
 // /// A lens that turns REST JSON into JSON blobs.
 // struct JsonTextDataLens;
 
-type ProcessorHandle = engine::ProcessorHandle<spidermonkey::Engine>;
+type ProcessorHandle = engine::ProcessorHandle<spidermonkey::Spec>;
 
 // pub struct ProcessorRead<I, GetF> {
 //     inner: Weak<RefCell<Processor>>,

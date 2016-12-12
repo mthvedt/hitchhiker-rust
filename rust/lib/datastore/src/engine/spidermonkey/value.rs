@@ -6,11 +6,13 @@ use libc::size_t;
 
 use thunderhead_store::TdError;
 
+use engine::traits;
+use engine::value::NativeValue;
+
 use super::active_context::{self, ActiveContext};
 use super::context::Context;
 use super::engine::Engine;
-use engine::traits;
-use engine::value::NativeValue;
+use super::spec::Spec;
 
 // TODO: name. Make this not dependent on SpiderMonkey.
 pub struct Rooted<T> {
@@ -86,9 +88,7 @@ pub fn rooted_val_to_string(val: &RootedVal, cx: &mut ActiveContext, force: bool
     }
 }
 
-impl traits::Value for RootedVal {
-    type Engine = Engine;
-
+impl traits::Value<Spec> for RootedVal {
     fn is_function(&self) -> bool {
         panic!()
     }

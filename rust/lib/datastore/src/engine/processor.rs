@@ -23,11 +23,11 @@ use thunderhead_store::{KvSource, TdError};
 use thunderhead_store::alloc;
 use thunderhead_store::tdfuture::{BoxFuture, FutureExt};
 
-use super::traits::{ActiveContext, Context, Engine, Value};
+use super::traits::{ActiveContext, Context, Engine, EngineSpec, Value};
 
 fn eval_script_from_source<E, Source, Str>(mut cx: E::Context, mut name: Str, mut source: Source) ->
 impl Future<Item = (E::Context, E::Value), Error = TdError> where
-E: Engine,
+E: EngineSpec,
 Source: KvSource,
 Str: alloc::Scoped<str> + 'static
 {
@@ -45,17 +45,17 @@ Str: alloc::Scoped<str> + 'static
     })
 }
 
-struct ProcessorInner<E: Engine + 'static> {
+struct ProcessorInner<E: EngineSpec + 'static> {
     cx: E::Context,
     /// Actually a function mapping (what to what)?
     f: E::Value,
 }
 
-pub struct ProcessorHandle<E: Engine + 'static> {
+pub struct ProcessorHandle<E: EngineSpec + 'static> {
     inner: Rc<RefCell<ProcessorInner<E>>>,
 }
 
-impl<E: Engine + 'static> ProcessorHandle<E> {
+impl<E: EngineSpec + 'static> ProcessorHandle<E> {
     fn new_processor(mut cx: E::Context, mut f: E::Value) -> Result<Self, TdError> {
         if !f.is_function() {
             // TODO: use s
@@ -118,7 +118,7 @@ impl<E: Engine + 'static> ProcessorHandle<E> {
     }
 }
 
-impl<E: Engine + 'static> Clone for ProcessorHandle<E> {
+impl<E: EngineSpec + 'static> Clone for ProcessorHandle<E> {
     fn clone(&self) -> Self {
         ProcessorHandle {
             inner: self.inner.clone(),

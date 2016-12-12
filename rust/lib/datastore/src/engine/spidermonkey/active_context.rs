@@ -18,6 +18,7 @@ use engine::traits::{self, Engine};
 use super::context::Context;
 use super::engine::{self, EngineInner};
 use super::globals::ActiveGlobals;
+use super::spec::Spec;
 use super::value::{self, HandleVal, Rooted, RootedObj, RootedVal};
 
 pub struct ActiveContext {
@@ -148,17 +149,15 @@ pub fn js_context(ac: &mut ActiveContext) -> &mut JSContext {
     ac.js_context()
 }
 
-impl traits::ActiveContext for ActiveContext {
-    type Engine = engine::Engine;
-
+impl traits::ActiveContext<Spec> for ActiveContext {
     fn eval_script(&mut self, name: &str, source: &[u8]) ->
-    Result<<Self::Engine as traits::Engine>::Value, TdError>
+    Result<value::RootedVal, TdError>
     {
         self.evaluate_script(name, source)
     }
 
-    fn eval_fn(&mut self, f: &mut <Self::Engine as traits::Engine>::Value, value_bytes: &[u8]) ->
-    Result<<Self::Engine as traits::Engine>::Value, TdError> {
+    fn eval_fn(&mut self, f: &mut value::RootedVal, value_bytes: &[u8]) ->
+    Result<value::RootedVal, TdError> {
         self.parse_json(value_bytes).and_then(|v| self.call_fval_one(&value::handle_from_rooted(f), &v))
     }
 }

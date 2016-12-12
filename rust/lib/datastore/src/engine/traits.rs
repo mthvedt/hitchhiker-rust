@@ -14,6 +14,10 @@ pub trait EngineSpec: Sized {
     type Factory: Factory<Self>;
     type FactoryHandle: FactoryHandle<Self> + Send;
     type Value: Value<Self>;
+
+    fn new_factory() -> Result<Self::Factory, TdError> {
+        Self::Factory::new()
+    }
 }
 
 /// 'Activating' a Context may incur a context-switch penalty, so we want to activate

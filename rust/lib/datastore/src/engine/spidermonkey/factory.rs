@@ -35,53 +35,54 @@ struct RuntimeSync(*mut JSRuntime);
 unsafe impl Send for RuntimeSync {}
 unsafe impl Sync for RuntimeSync {}
 
+struct _JSInit(Result<(), &'static str>);
+
+// Unfortunately, Mozilla js doesn't allow initting/destroying JS multiple times in one process.
+// So we must init and destroy it as a global. JS_Shutdown cleans up resources on some platforms.
 lazy_static! {
-    static ref MASTER_MUTEX: Mutex<()> = Mutex::new(());
+    static ref _JS_INIT: _JSInit = {
+        unsafe {
+            if jsapi::JS_Init() {
+                _JSInit(Ok(()))
+            } else {
+                _JSInit(Err("FATAL: Could not init JS"))
+            }
+        }
+    };
+}
+
+impl Drop for _JSInit {
+    fn drop(&mut self) {
+        unsafe {
+            jsapi::JS_ShutDown();
+        }
+    }
 }
 
 pub struct FactoryInner {
-    master_runtime: RuntimeSync,
     num_handles: AtomicU64,
 }
 
 pub struct Factory {
+    // Ideally Factory should have a master JSRuntime.
+    // However, this seems to break multithreading in undocumented ways.
+    // We retain safety-checking for Factory because we want to make sure we use code patterns
+    // that support other kinds of Factories in the future.
+    // But this class doesn't do anything except safety check.
     inner: Arc<FactoryInner>,
-    // So that Factory is not send+sync. TODO: does this work?
-    _desend: PhantomData<*mut JSRuntime>,
 }
 
 impl traits::Factory<Spec> for Factory {
     fn new() -> Result<Self, TdError> {
-        unsafe {
-            // I'm not sure if we need mutexes for these, but might as well be safe.
-            let _guard = MASTER_MUTEX.lock().unwrap_or(panic!("FATAL: JS master mutex is poisoned"));
+        let inner = FactoryInner {
+            num_handles: AtomicU64::new(0),
+        };
 
-            assert!(jsapi::JS_Init(), "FATAL: Could not init JS");
-            let runtime = jsapi::JS_NewRuntime(
-                DEFAULT_HEAP_SIZE,
-                DEFAULT_CHUNK_SIZE,
-                ptr::null_mut() // Parent runtime--none
-            );
-            assert!(!runtime.is_null(), "FATAL: Could not allocate master JS runtime");
+        let r = Factory {
+            inner: Arc::new(inner),
+        };
 
-            let context = jsapi::JS_GetContext(runtime);
-            jsapi::JS_BeginRequest(context);
-            assert!(!context.is_null(), "FATAL: Could not get master JS context");
-            jsapi::InitSelfHostedCode(context);
-            jsapi::JS_EndRequest(context);
-
-            let inner = FactoryInner {
-                master_runtime: RuntimeSync(runtime),
-                num_handles: AtomicU64::new(0),
-            };
-
-            let r = Factory {
-                inner: Arc::new(inner),
-                _desend: PhantomData,
-            };
-
-            Ok(r)
-        }
+        Ok(r)
     }
 
     fn handle(&self) -> FactoryHandle {
@@ -100,10 +101,6 @@ impl Drop for Factory {
             // something that doesn't terminate.
             panic!("FATAL: Dropping factory while handles are extant");
         }
-
-        unsafe {
-            jsapi::JS_DestroyRuntime(self.inner.master_runtime.0);
-        }
     }
 }
 
@@ -120,10 +117,12 @@ impl Drop for FactoryHandle {
 impl traits::FactoryHandle<Spec> for FactoryHandle {
     fn new_engine(&mut self) -> Result<engine::Engine, String> {
         unsafe {
+            _JS_INIT.0.map_err(|s| panic!(s)).unwrap();
+            
             let js_runtime = jsapi::JS_NewRuntime(
                 DEFAULT_HEAP_SIZE,
                 DEFAULT_CHUNK_SIZE,
-                self.inner.master_runtime.0);
+                ptr::null_mut());
             assert!(!js_runtime.is_null(), "Could not build JS runtime");
 
             // This next line (and the below comments) were taken from Servo's mozjs project.

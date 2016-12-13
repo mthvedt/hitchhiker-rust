@@ -61,5 +61,5 @@ pub trait Value<E: EngineSpec<Value = Self>>: Sized {
 
     fn serialize(&mut self, &mut E::ActiveContext) -> Result<String, TdError>;
 
-    fn is_function(&self) -> bool;
+    fn is_function(&self, &mut E::ActiveContext) -> bool;
 }

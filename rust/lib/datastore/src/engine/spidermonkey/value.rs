@@ -87,11 +87,17 @@ pub fn rooted_val_to_string(val: &RootedVal, cx: &mut ActiveContext, force: bool
 }
 
 impl traits::Value<Spec> for RootedVal {
-    fn is_function(&self) -> bool {
-        panic!()
+    fn is_function(&self, acx: &mut ActiveContext) -> bool {
+        if self.inner.ptr.is_object() {
+            unsafe {
+                jsapi::JS_ObjectIsFunction(active_context::js_context(acx), self.inner.ptr.to_object())
+            }
+        } else {
+            false
+        }
     }
 
-    fn to_native_value(&mut self, cx: &mut ActiveContext) -> Result<NativeValue, TdError> {
+    fn to_native_value(&mut self, acx: &mut ActiveContext) -> Result<NativeValue, TdError> {
         let v = self.inner.ptr;
 
         let r = if v.is_null() {
@@ -103,7 +109,7 @@ impl traits::Value<Spec> for RootedVal {
         } else if v.is_int32() {
             NativeValue::Int(v.to_int32())
         } else if v.is_string() {
-            NativeValue::String(rooted_val_to_string(self, cx, false).unwrap())
+            NativeValue::String(rooted_val_to_string(self, acx, false).unwrap())
         } else if v.is_object() {
             panic!()
         } else {
@@ -114,15 +120,15 @@ impl traits::Value<Spec> for RootedVal {
         Ok(r)
     }
 
-    fn debug_string(&mut self, cx: &mut ActiveContext) -> Result<String, TdError> {
+    fn debug_string(&mut self, acx: &mut ActiveContext) -> Result<String, TdError> {
         // TODO: shorter strings
-        rooted_val_to_string(self, cx, true)
+        rooted_val_to_string(self, acx, true)
     }
 
     // TODO: write to bytes
-    fn serialize(&mut self, cx: &mut ActiveContext) -> Result<String, TdError> {
+    fn serialize(&mut self, acx: &mut ActiveContext) -> Result<String, TdError> {
         // TODO: shorter strings
-        rooted_val_to_string(self, cx, true)
+        rooted_val_to_string(self, acx, true)
     }
 }
 

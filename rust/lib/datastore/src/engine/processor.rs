@@ -42,17 +42,21 @@ pub struct ProcessorHandle<E: EngineSpec + 'static> {
 
 impl<E: EngineSpec + 'static> ProcessorHandle<E> {
     fn new_processor(mut cx: E::Context, mut f: E::Value) -> Result<Self, TdError> {
-        if !f.is_function() {
-            // TODO: use s
-            let _s = cx.exec(|mut acx| match f.debug_string(acx) {
+        let s = cx.exec(|mut acx| if !f.is_function(acx) {
+            Some(match f.debug_string(acx) {
                 Ok(s) => format!("ERROR: {} is not a function", s),
                 // TODO propogate interior error
                 Err(_s) => "ERROR: given value is not a function. Additionally, could not generate debug string for given value".into(),
-            });
+            })
+        } else {
+            None
+        });
 
+        if s.is_some() {
+            // TODO: use contents of s
             return Err(TdError::EvalError);
         }
-        // TODO: verify f. Separate verifier environment?
+
         // TODO: also verify (debug assert?) f belongs to environment.
 
         let p = ProcessorInner {

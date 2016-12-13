@@ -4,6 +4,7 @@ mod datatypes;
 pub use self::datatypes::*;
 
 mod js;
+pub use self::js::*;
 
 mod map;
 

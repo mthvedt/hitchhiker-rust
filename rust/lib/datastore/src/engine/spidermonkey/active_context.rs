@@ -6,7 +6,7 @@ use js::jsapi::{self, HandleValueArray, JSAutoCompartment, JSContext};
 use js::{jsval, rust};
 use libc::{c_uint, size_t};
 
-use thunderhead_store::{TdError, alloc};
+use thunderhead_store::TdError;
 
 use engine::error::{Exception, LoggingErrorReporter};
 use engine::traits;

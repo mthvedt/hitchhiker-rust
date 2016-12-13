@@ -11,6 +11,7 @@ use data::Range;
 use traits::{KvSource, Source, Sink, TdError};
 
 /// A KvSink with only one supported key/value: the null one.
+#[derive(Clone)]
 pub struct NullKeyDummyKvSink {
     ok: bool,
     buf: Option<Rc<RefCell<Option<ByteBuffer>>>>,

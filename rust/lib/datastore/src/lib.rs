@@ -24,7 +24,7 @@ extern crate thunderhead_store;
 extern crate quickcheck;
 
 // TODO flatten
-mod datatype;
+pub mod datatype;
 pub mod engine;
 pub mod frontend;
 mod lens;

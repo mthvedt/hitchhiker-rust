@@ -1,25 +1,19 @@
-use std::cell::RefMut;
 use std::ffi::CString;
-use std::io;
 use std::iter::FromIterator;
 use std::ptr;
 
-use futures::Future;
 use js::jsapi::{self, HandleValueArray, JSAutoCompartment, JSContext};
 use js::{jsval, rust};
 use libc::{c_uint, size_t};
 
-use thunderhead_store::{StringSource, TdError, alloc};
-use thunderhead_store::tdfuture::BoxFuture;
+use thunderhead_store::{TdError, alloc};
 
 use engine::error::{Exception, LoggingErrorReporter};
-use engine::traits::{self, Engine};
+use engine::traits;
 
-use super::context::Context;
-use super::engine::{self, EngineInner};
 use super::globals::ActiveGlobals;
 use super::spec::Spec;
-use super::value::{self, HandleVal, Rooted, RootedObj, RootedVal};
+use super::value::{self, HandleVal, RootedObj, RootedVal};
 
 pub struct ActiveContext {
     // TODO: we really want this to be an &'a mut. See comments about HKTs in traits.rs

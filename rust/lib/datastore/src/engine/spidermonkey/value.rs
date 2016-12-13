@@ -10,8 +10,6 @@ use engine::traits;
 use engine::value::NativeValue;
 
 use super::active_context::{self, ActiveContext};
-use super::context::Context;
-use super::engine::Engine;
 use super::spec::Spec;
 
 // TODO: name. Make this not dependent on SpiderMonkey.

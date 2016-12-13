@@ -1,37 +1,22 @@
-use std;
-use std::{io, mem, ptr, slice};
-use std::cell::{Cell, RefCell};
-use std::ffi::{CStr, CString};
-use std::io::Write;
-use std::iter::FromIterator;
-use std::marker::PhantomData;
-use std::ptr::Unique;
+use std::io;
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use futures::{Future, IntoFuture};
-use futures::future;
-use js::jsapi;
-use js::jsapi::{
-    HandleValueArray,
-    JSAutoCompartment, JSContext, JSErrorReport, JSFunction, JSObject, JSRuntime,
-};
-use js::jsval;
-use js::rust;
-use libc::{c_char, c_uint, size_t};
 
 use thunderhead_store::{KvSource, TdError};
 use thunderhead_store::alloc;
 use thunderhead_store::tdfuture::{BoxFuture, FutureExt};
 
-use super::traits::{ActiveContext, Context, Engine, EngineSpec, Value};
+use super::traits::{ActiveContext, Context, EngineSpec, Value};
 
-fn eval_script_from_source<E, Source, Str>(mut cx: E::Context, mut name: Str, mut source: Source) ->
+fn eval_script_from_source<E, Source, Str>(mut cx: E::Context, name: Str, mut source: Source) ->
 impl Future<Item = (E::Context, E::Value), Error = TdError> where
 E: EngineSpec,
 Source: KvSource,
 Str: alloc::Scoped<str> + 'static
 {
-    source.get(name.get().unwrap().as_ref()).lift(move |scriptopt| {
+    source.get(name.get().unwrap().as_ref()).and_then(move |scriptopt| {
         use thunderhead_store::alloc::Scoped; // This breaks get() type inference for some reason.
 
         let script_result = scriptopt.ok_or(TdError::from(
@@ -62,7 +47,7 @@ impl<E: EngineSpec + 'static> ProcessorHandle<E> {
             let _s = cx.exec(|mut acx| match f.debug_string(acx) {
                 Ok(s) => format!("ERROR: {} is not a function", s),
                 // TODO propogate interior error
-                Err(s) => "ERROR: given value is not a function. Additionally, could not generate debug string for given value".into(),
+                Err(_s) => "ERROR: given value is not a function. Additionally, could not generate debug string for given value".into(),
             });
 
             return Err(TdError::EvalError);
@@ -88,7 +73,7 @@ impl<E: EngineSpec + 'static> ProcessorHandle<E> {
     Str: alloc::Scoped<str> + 'static
     {
         // TODO verify type of f
-        eval_script_from_source::<E, Source, Str>(cx, name, source).lift(|(cx, f)| Self::new_processor(cx, f))
+        eval_script_from_source::<E, Source, Str>(cx, name, source).and_then(|(cx, f)| Self::new_processor(cx, f))
     }
 
     // Right now, these return an immediate Done (with an unfortunate alloc).

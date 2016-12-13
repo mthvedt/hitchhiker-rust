@@ -5,7 +5,6 @@
 #![feature(conservative_impl_trait)]
 
 #![cfg_attr(test, feature(plugin))]
-#![cfg_attr(test, feature(thread_id))]
 // #![cfg_attr(test, plugin(quickcheck_macros))]
 
 extern crate bincode;

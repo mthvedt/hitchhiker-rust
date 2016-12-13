@@ -1,24 +1,11 @@
-use std::cell::RefMut;
-use std::ffi::CString;
-use std::io;
 use std::ptr;
 
-use futures::Future;
-use js::jsapi::{self, HandleValueArray, JSAutoCompartment, JSContext};
-use js::{jsval, rust};
-use libc::{c_uint, size_t};
+use js::{jsapi, rust};
 
-use thunderhead_store::{StringSource, TdError, alloc};
-use thunderhead_store::tdfuture::BoxFuture;
+use engine::traits;
 
-use engine::error::{Exception, LoggingErrorReporter};
-use engine::traits::{self, Engine};
-
-use super::active_context;
-use super::engine::{self, EngineInner};
-use super::globals::ActiveGlobals;
+use super::{active_context, engine, value};
 use super::spec::Spec;
-use super::value::{self, HandleVal, Rooted, RootedObj, RootedVal};
 
 pub struct Context {
     parent: engine::Engine,

@@ -1,6 +1,4 @@
-use std::ffi::CStr;
 use std::io::{Write, stderr};
-use std::slice;
 
 use libc::c_uint;
 

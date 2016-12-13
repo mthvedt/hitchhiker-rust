@@ -27,7 +27,7 @@ T: ?Sized + 'static
     type GetF = L::ReadResult;
 
     fn get<K: Scoped<[u8]>>(&mut self, k: K) -> Self::GetF {
-        let mut subtree = self.underlying.subtree(k);
+        let subtree = self.underlying.subtree(k);
         self.lens.read(subtree)
     }
 
@@ -69,7 +69,7 @@ T: 'static,
     }
 
     fn put_small<K: Scoped<[u8]>, V: Scoped<T>>(&mut self, k: K, v: V) -> Self::PutF {
-        let mut subtree = self.underlying.subtree(k);
+        let subtree = self.underlying.subtree(k);
         // TODO: This should only succeed if the subtree is empty.
         self.lens.write(v, subtree)
     }

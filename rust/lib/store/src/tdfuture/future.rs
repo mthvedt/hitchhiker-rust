@@ -199,40 +199,7 @@ impl<F: Future, C: FutureCont<Input = F::Item, Error = F::Error>> Future for And
 
 pub type BoxFuture<T, E> = Box<Future<Item = T, Error = E>>;
 
-#[must_use = "futures do nothing unless polled"]
-pub struct Lift<A, F> {
-    future: A,
-    f: Option<F>,
-}
-
-impl<A, B, F> Future for Lift<A, F> where
-A: Future,
-F: FnOnce(A::Item) -> Result<B, A::Error>,
-{
-    type Item = B;
-    type Error = A::Error;
-
-    fn poll(&mut self) -> Poll<B, A::Error> {
-        let e = match self.future.poll() {
-            Ok(Async::NotReady) => return Ok(Async::NotReady),
-            Ok(Async::Ready(e)) => Ok(e),
-            Err(e) => Err(e),
-        };
-        e.and_then(self.f.take().expect("cannot poll a completed future twice")).map(Async::Ready)
-    }
-}
-
 pub trait FutureExt: Future + Sized {
-    /// Like Future::map, except where f may return an error.
-    fn lift<F, B>(self, f: F) -> Lift<Self, F> where
-    F: FnOnce(Self::Item) -> Result<B, Self::Error>
-    {
-        Lift {
-            future: self,
-            f: Some(f),
-        }
-    }
-
     /// Box a Future. This is like BoxFuture, except the Send constraint is not required.
     fn td_boxed(self) -> BoxFuture<Self::Item, Self::Error> where Self: 'static {
         Box::new(self)

@@ -6,7 +6,7 @@ use std::ptr;
 use js::jsapi::{JSContext, JSErrorReport};
 use libc::c_char;
 
-use engine::error::{self, Exception, Error, ErrorReporter};
+use engine::error::{Exception, ErrorReporter};
 
 use super::error::error_from_js;
 

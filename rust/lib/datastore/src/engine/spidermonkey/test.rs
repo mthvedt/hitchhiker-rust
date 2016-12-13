@@ -5,7 +5,7 @@ use super::Spec;
 #[test]
 fn runtime_smoke_test() {
     let f = Spec::new_factory().unwrap();
-    let mut cx = f.handle().new_engine().unwrap().new_context().unwrap();
+    let _cx = f.handle().new_engine().unwrap().new_context().unwrap();
 }
 
 #[test]

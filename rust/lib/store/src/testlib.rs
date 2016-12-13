@@ -4,12 +4,11 @@ use std::rc::Rc;
 
 use bytebuffer::ByteBuffer;
 
-use futures::future;
-use futures::future::{FutureResult, Ok};
+use futures::future::{self, Future, FutureResult};
 
 use alloc::Scoped;
 use data::Range;
-use traits::{Source, Sink, TdError};
+use traits::{KvSource, Source, Sink, TdError};
 
 /// A KvSink with only one supported key/value: the null one.
 pub struct NullKeyDummyKvSink {
@@ -32,7 +31,7 @@ impl NullKeyDummyKvSink {
 
 impl Source<[u8]> for NullKeyDummyKvSink {
     type Get = Box<[u8]>;
-    type GetF = Ok<Option<Self::Get>, TdError>;
+    type GetF = future::Ok<Option<Self::Get>, TdError>;
 
     fn get<K: Scoped<[u8]>>(&mut self, k: K) -> Self::GetF {
         if self.check_key(k) {
@@ -85,6 +84,12 @@ impl Sink<[u8]> for NullKeyDummyKvSink {
             future::result(Err(TdError::IoError(io::Error::new(io::ErrorKind::NotFound, "Key not supported"))))
         }
     }
+}
+
+pub fn singleton_source<V: Scoped<[u8]>>(v: V) -> impl KvSource {
+    let mut r = NullKeyDummyKvSink::new();
+    r.put_small([], v).wait().ok(); // guaranteed not to block
+    r
 }
 
 #[cfg(test)]

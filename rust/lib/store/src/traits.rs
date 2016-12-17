@@ -1,4 +1,4 @@
-use std::io;
+use std::{self, io};
 
 use futures::Future;
 
@@ -15,6 +15,12 @@ pub enum TdError {
     // TODO: distinguish by error role. EvalError, DbError &c
     IoError(io::Error),
     RuntimeError(String),
+}
+
+impl TdError {
+    pub fn new_io<E: Into<Box<std::error::Error + Send + Sync>>>(kind: io::ErrorKind, error: E) -> TdError {
+        io::Error::new(kind, error).into()
+    }
 }
 
 impl From<io::Error> for TdError {

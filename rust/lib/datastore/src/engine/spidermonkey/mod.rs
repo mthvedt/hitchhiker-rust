@@ -5,7 +5,8 @@ mod error;
 mod factory;
 mod globals;
 mod spec;
-pub use self::spec::Spec;
+pub use self::spec::{ScriptStore, Spec};
+pub mod testlib;
 mod value;
 
 #[cfg(test)]

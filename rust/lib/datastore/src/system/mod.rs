@@ -7,6 +7,8 @@ use futures::future;
 use thunderhead_store::alloc;
 use thunderhead_store::{Range, Source, TdError};
 
+use engine::spidermonkey::ScriptStore;
+
 // // TODO: move BTreeSource to store.
 // struct BTreeSource<K, V> {
 //     inner: BTreeMap<K, V>,
@@ -38,10 +40,23 @@ lazy_static! {
         let mut m = BTreeMap::new();
 
         // TODO: a macro
-        m.insert("js/serialize_json".as_ref(), include_str!("js/serialize_json.js"));
+        m.insert("js/Td.js".as_ref(), include_str!("js/Td.js"));
+        m.insert("js/serialize_json.js".as_ref(), include_str!("js/serialize_json.js"));
 
         m
     };
+}
+
+pub struct SystemScriptStore;
+
+impl ScriptStore for SystemScriptStore {
+    fn load(&self, s: &str) -> Option<Box<alloc::Scoped<[u8]>>> {
+        let sb: &[u8] = s.as_ref();
+        SYSTEM_SCRIPTS.get(sb).map(|script| {
+            let r: Box<alloc::Scoped<[u8]>> = Box::new(alloc::ScopedRef(script.as_ref()));
+            r
+        })
+    }
 }
 
 pub struct SystemScripts;

@@ -41,7 +41,7 @@ impl ActiveGlobals {
         CURRENT_ERROR_REPORTER.with(|e| e.borrow_mut().as_mut().unwrap().report_warning(err));
     }
 
-    pub fn report_exception(&self, cx: *mut JSContext, ex: Exception) {
+    pub fn report_exception(&mut self, cx: *mut JSContext, ex: Exception) {
         // The current context and error queue *must* be set.
         // TODO: when ptr_eq is stable, use that
         assert!(CURRENT_CONTEXT.with(|cx_p_cell| cx_p_cell.get() == cx));

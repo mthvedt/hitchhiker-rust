@@ -55,8 +55,8 @@ mod test {
 
     use thunderhead_store::testlib::NullKeyDummyKvSink;
 
-    use engine::{Engine, EngineSpec, Factory, FactoryHandle, ProcessorHandle};
-    use engine::spidermonkey::Spec;
+    use engine::{Engine, Factory, FactoryHandle, ProcessorHandle};
+    use engine::spidermonkey::testlib;
     use lens::{ReadLens, WriteLens};
     use system::SystemScripts;
 
@@ -64,9 +64,9 @@ mod test {
 
     #[test]
     fn test_json_processor() {
-        let f = Spec::new_factory().unwrap();
+        let f = testlib::new_factory().unwrap();
         let cx = f.handle().new_engine().unwrap().new_context().unwrap();
-        let pxr = ProcessorHandle::processor_from_source(cx, "js/serialize_json", SystemScripts).wait().unwrap();
+        let pxr = ProcessorHandle::processor_from_source(cx, "js/serialize_json.js", SystemScripts).wait().unwrap();
 
         let lens = JsToTextProcessorLens::new(pxr);
 

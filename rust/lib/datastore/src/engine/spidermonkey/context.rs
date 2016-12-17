@@ -12,6 +12,10 @@ pub struct Context {
     global: value::RootedObj,
 }
 
+pub fn engine(cx: &mut Context) -> &mut engine::Engine {
+    &mut cx.parent
+}
+
 pub fn new_context(parent: &mut engine::Engine) -> Context {
     unsafe {
         let mut engine = engine::clone_engine(parent);
@@ -41,9 +45,11 @@ pub fn new_context(parent: &mut engine::Engine) -> Context {
 
 impl traits::Context<Spec> for Context {
     fn exec<R, F: FnOnce(&mut active_context::ActiveContext) -> R>(&mut self, f: F) -> R {
-        let jcx = engine::js_context(&mut self.parent);
-        let cpt = jsapi::JSAutoCompartment::new(jcx, value::rooted_inner(&mut self.global).ptr);
+        let cpt = {
+            let jcx = engine::js_context(&mut self.parent);
+            jsapi::JSAutoCompartment::new(jcx, value::rooted_inner(&mut self.global).ptr)
+        };
 
-        (f)(&mut active_context::new_active_context(jcx, cpt))
+        (f)(&mut active_context::new_active_context(self, cpt))
     }
 }

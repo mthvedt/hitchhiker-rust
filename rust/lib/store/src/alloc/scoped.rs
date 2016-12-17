@@ -31,3 +31,12 @@ impl<B: ?Sized, T: ?Sized> ScopedMut<T> for B where B: BorrowMut<T> {
     	Some(self.borrow_mut())
     }
 }
+
+pub struct ScopedRef<T: 'static + ?Sized>(pub &'static T);
+
+// Transitively gives us a Scoped
+impl<T: 'static+ ?Sized> Borrow<T> for ScopedRef<T> {
+    fn borrow(&self) -> &T {
+        self.0
+    }
+}

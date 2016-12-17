@@ -1,34 +1,36 @@
+use std::{io, ptr};
 use std::ffi::CString;
 use std::iter::FromIterator;
-use std::ptr;
 
-use js::jsapi::{self, HandleValueArray, JSAutoCompartment, JSContext};
 use js::{jsval, rust};
+use js::jsapi::{self, HandleValueArray, JSAutoCompartment, JSContext};
 use libc::{c_uint, size_t};
 
 use thunderhead_store::TdError;
 
-use engine::error::{Exception, LoggingErrorReporter};
 use engine::traits;
+use engine::error::{Exception, LoggingErrorReporter};
 
+use super::{engine, factory};
+use super::context::{self, Context};
 use super::globals::ActiveGlobals;
 use super::spec::Spec;
 use super::value::{self, HandleVal, RootedObj, RootedVal};
 
 pub struct ActiveContext {
     // TODO: we really want this to be an &'a mut. See comments about HKTs in traits.rs
-    js_context: *mut JSContext,
+    parent: *mut Context,
 
     // Used for JS scoping.
     g: ActiveGlobals,
     _cpt: JSAutoCompartment,
 }
 
-pub fn new_active_context(jcx: &mut JSContext, cpt: JSAutoCompartment) -> ActiveContext {
+pub fn new_active_context(parent: &mut Context, cpt: JSAutoCompartment) -> ActiveContext {
     ActiveContext {
-        js_context: jcx as *mut _,
+        parent: parent as *mut _,
         // TODO: custom error reporters
-        g: ActiveGlobals::set_scoped(jcx, LoggingErrorReporter),
+        g: ActiveGlobals::set_scoped(engine::js_context(context::engine(parent)), LoggingErrorReporter),
         // global: &mut self.global,
         _cpt: cpt,
     }
@@ -36,7 +38,9 @@ pub fn new_active_context(jcx: &mut JSContext, cpt: JSAutoCompartment) -> Active
 
 impl ActiveContext {
     fn js_context(&mut self) -> &mut JSContext {
-        unsafe { &mut *self.js_context }
+        unsafe {
+            engine::js_context(context::engine(&mut *self.parent))
+        }
     }
 
     fn new_object(&mut self) -> RootedObj {
@@ -58,7 +62,8 @@ impl ActiveContext {
                 // TODO handle error
                 let eobj = Exception { message: value::rooted_val_to_string(&ex, self, true).unwrap() };
                 // TODO: don't panic on err, instead report and exit!
-                self.g.report_exception(self.js_context, eobj);
+                let jcx = self.js_context() as *mut _;
+                self.g.report_exception(jcx, eobj);
             }
         }
     }
@@ -92,6 +97,21 @@ pub fn js_context(ac: &mut ActiveContext) -> &mut JSContext {
 }
 
 impl traits::ActiveContext<Spec> for ActiveContext {
+    fn eval_file(&mut self, name: &str) -> Result<value::RootedVal, TdError> {
+        unsafe {
+            engine::exec_for_factory_handle(
+                context::engine(&mut *self.parent),
+                |h| factory::inner(h).store.load(name)
+            )
+            .ok_or(TdError::new_io(io::ErrorKind::NotFound, format!("Source file \'{}\' not found", name)))
+            // TODO: real errors
+            .and_then(|s| {
+                // TODO: real errors
+                (*s).get().ok_or(TdError::EvalError).and_then(|s| self.eval_script(name, s))
+            })
+        }
+    }
+
     fn eval_script(&mut self, name: &str, source: &[u8]) -> Result<value::RootedVal, TdError> {
         let script_utf16: Vec<u16> = String::from_utf8_lossy(source).encode_utf16().collect();
         let name_cstr = CString::new(name.as_bytes()).unwrap();

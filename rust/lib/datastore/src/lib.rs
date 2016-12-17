@@ -26,6 +26,6 @@ extern crate quickcheck;
 // TODO flatten
 pub mod datatype;
 pub mod engine;
-pub mod frontend;
+pub mod platform;
 mod lens;
 mod system;

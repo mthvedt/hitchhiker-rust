@@ -11,6 +11,7 @@ use engine::error::LoggingErrorReporter;
 use engine::traits;
 
 use super::context;
+use super::factory::FactoryHandle;
 use super::globals::{self, ActiveGlobals};
 use super::spec::Spec;
 
@@ -31,6 +32,7 @@ const TRUSTED_SCRIPT_STACK_BUFFER: usize = 128 * 1024;
 pub struct EngineInner {
     inner: Unique<JSContext>,
     inner_runtime: Unique<JSRuntime>,
+    factory: FactoryHandle,
 }
 
 impl Drop for EngineInner {
@@ -43,11 +45,13 @@ impl Drop for EngineInner {
 }
 
 pub struct Engine {
-    // We basically use this RefCell as a checked UnsafeCell.
+    /// We basically use this RefCell as a checked UnsafeCell.
+    /// The invariant must hold that any borrow/mut borrow of this must be in the scope of
+    /// a borrow/mut borrow of Engine.
     inner: Rc<RefCell<EngineInner>>,
 }
 
-pub fn new_engine() -> Result<Engine, String> {
+pub fn new_engine(handle: FactoryHandle) -> Result<Engine, String> {
     unsafe {
         let js_runtime = jsapi::JS_NewRuntime(
             DEFAULT_HEAP_SIZE,
@@ -95,6 +99,7 @@ pub fn new_engine() -> Result<Engine, String> {
         let inner = EngineInner {
             inner_runtime: Unique::new(js_runtime),
             inner: Unique::new(js_context),
+            factory: handle,
         };
 
         Ok(Engine {
@@ -112,10 +117,14 @@ pub fn clone_engine(e: &Engine) -> Engine {
 
 pub fn js_context(e: &mut Engine) -> &mut JSContext {
     unsafe {
-        let mut b = e.inner.borrow_mut();
-        let p: *mut JSContext = b.inner.get_mut();
+        let mut innerref = e.inner.borrow_mut();
+        let p: *mut JSContext = innerref.inner.get_mut();
         &mut *p
     }
+}
+
+pub fn exec_for_factory_handle<R, F: FnOnce(&mut FactoryHandle) -> R>(e: &mut Engine, f: F) -> R {
+    (f)(&mut e.inner.borrow_mut().factory)
 }
 
 impl traits::Engine<Spec> for Engine {

@@ -8,7 +8,7 @@ use thunderhead_store::TdError;
 use engine::traits;
 
 use super::engine;
-use super::spec::Spec;
+use super::spec::{ScriptStore, Spec};
 
 struct _JSInit(Result<(), &'static str>);
 
@@ -34,8 +34,10 @@ impl Drop for _JSInit {
     }
 }
 
+/// FactoryInner is not exported, so it is safe to make its internals `pub`.
 pub struct FactoryInner {
-    num_handles: AtomicU64,
+    pub num_handles: AtomicU64,
+    pub store: Box<ScriptStore>,
 }
 
 pub struct Factory {
@@ -47,19 +49,24 @@ pub struct Factory {
     inner: Arc<FactoryInner>,
 }
 
+pub fn script_store(i: &FactoryInner) -> &ScriptStore {
+    &*i.store
+}
+
+pub fn new_factory<S: ScriptStore>(s: S) -> Result<Factory, TdError> {
+    let inner = FactoryInner {
+        num_handles: AtomicU64::new(0),
+        store: Box::new(s),
+    };
+
+    let r = Factory {
+        inner: Arc::new(inner),
+    };
+
+    Ok(r)
+}
+
 impl traits::Factory<Spec> for Factory {
-    fn new() -> Result<Self, TdError> {
-        let inner = FactoryInner {
-            num_handles: AtomicU64::new(0),
-        };
-
-        let r = Factory {
-            inner: Arc::new(inner),
-        };
-
-        Ok(r)
-    }
-
     fn handle(&self) -> FactoryHandle {
         self.inner.num_handles.fetch_add(1, Ordering::SeqCst);
 
@@ -74,7 +81,7 @@ impl Drop for Factory {
         if self.inner.num_handles.load(Ordering::SeqCst) != 0 {
             // TODO: This will terminate the program. It would be nice to have
             // something that doesn't terminate.
-            panic!("FATAL: Dropping factory while handles are extant");
+            panic!("SEVERE: Dropping factory while handles are extant");
         }
     }
 }
@@ -83,9 +90,23 @@ pub struct FactoryHandle {
     inner: Arc<FactoryInner>,
 }
 
+pub fn inner(h: &FactoryHandle) -> &FactoryInner {
+    &h.inner
+}
+
 impl Drop for FactoryHandle {
     fn drop(&mut self) {
         self.inner.num_handles.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+impl FactoryHandle {
+    fn clone_private(&self) -> Self {
+        self.inner.num_handles.fetch_add(1, Ordering::SeqCst);
+
+        FactoryHandle {
+            inner: self.inner.clone(),
+        }
     }
 }
 
@@ -93,6 +114,6 @@ impl traits::FactoryHandle<Spec> for FactoryHandle {
     fn new_engine(&mut self) -> Result<engine::Engine, String> {
         _JS_INIT.0.map_err(|s| panic!(s)).unwrap();
 
-        engine::new_engine()
+        engine::new_engine(self.clone_private())
     }
 }

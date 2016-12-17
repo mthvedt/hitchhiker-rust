@@ -1,16 +1,16 @@
 use engine::traits::*;
 
-use super::Spec;
+use super::testlib;
 
 #[test]
 fn runtime_smoke_test() {
-    let f = Spec::new_factory().unwrap();
+    let f = testlib::new_factory().unwrap();
     let _cx = f.handle().new_engine().unwrap().new_context().unwrap();
 }
 
 #[test]
 fn json_smoke_test() {
-    let f = Spec::new_factory().unwrap();
+    let f = testlib::new_factory().unwrap();
     let mut cx = f.handle().new_engine().unwrap().new_context().unwrap();
     cx.exec(|acx| {
         acx.eval_script("test", "{}".as_ref()).unwrap();

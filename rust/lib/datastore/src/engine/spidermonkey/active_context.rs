@@ -11,7 +11,7 @@ use thunderhead_store::TdError;
 use engine::traits;
 use engine::error::{Exception, LoggingErrorReporter};
 
-use super::{engine, factory};
+use super::{engine, factory, jscontext};
 use super::context::{self, Context};
 use super::globals::ActiveGlobals;
 use super::spec::Spec;
@@ -30,7 +30,8 @@ pub fn new_active_context(parent: &mut Context, cpt: JSAutoCompartment) -> Activ
     ActiveContext {
         parent: parent as *mut _,
         // TODO: custom error reporters
-        g: ActiveGlobals::set_scoped(engine::js_context(context::engine(parent)), LoggingErrorReporter),
+        g: ActiveGlobals::set_scoped(engine::js_context(context::inner_context(parent).engine()),
+        LoggingErrorReporter),
         // global: &mut self.global,
         _cpt: cpt,
     }
@@ -39,7 +40,7 @@ pub fn new_active_context(parent: &mut Context, cpt: JSAutoCompartment) -> Activ
 impl ActiveContext {
     fn js_context(&mut self) -> &mut JSContext {
         unsafe {
-            engine::js_context(context::engine(&mut *self.parent))
+            engine::js_context(context::inner_context(&mut *self.parent).engine())
         }
     }
 
@@ -100,10 +101,11 @@ impl traits::ActiveContext<Spec> for ActiveContext {
     fn eval_file(&mut self, name: &str) -> Result<value::RootedVal, TdError> {
         unsafe {
             engine::exec_for_factory_handle(
-                context::engine(&mut *self.parent),
-                |h| factory::inner(h).store.load(name)
+                context::inner_context(&mut *self.parent).engine(),
+                |h| factory::inner(h).user_store.load(name)
             )
-            .ok_or(TdError::new_io(io::ErrorKind::NotFound, format!("Source file \'{}\' not found", name)))
+            .and_then(|opt|
+                opt.ok_or(TdError::new_io(io::ErrorKind::NotFound, format!("Source file \'{}\' not found", name))))
             // TODO: real errors
             .and_then(|s| {
                 // TODO: real errors

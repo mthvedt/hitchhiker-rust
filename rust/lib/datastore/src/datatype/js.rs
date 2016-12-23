@@ -49,31 +49,31 @@ impl<S: KvSink + 'static> WriteLens<S> for JsToTextProcessorLens {
     }
 }
 
-#[cfg(test)]
-mod test {
-    use futures::Future;
-
-    use thunderhead_store::testlib::NullKeyDummyKvSink;
-
-    use engine::{Engine, Factory, FactoryHandle, ProcessorHandle};
-    use engine::spidermonkey::testlib;
-    use lens::{ReadLens, WriteLens};
-    use system::SystemScripts;
-
-    use super::JsToTextProcessorLens;
-
-    #[test]
-    fn test_json_processor() {
-        let f = testlib::new_factory().unwrap();
-        let cx = f.handle().new_engine().unwrap().new_context().unwrap();
-        let pxr = ProcessorHandle::processor_from_source(cx, "js/serialize_json.js", SystemScripts).wait().unwrap();
-
-        let lens = JsToTextProcessorLens::new(pxr);
-
-        let s = NullKeyDummyKvSink::new();
-
-        lens.write(String::from("{\"x\": 1}"), s.clone()).wait().ok();
-        let r = lens.read(s.clone()).wait().ok().unwrap().unwrap();
-        assert!(r == "{\"x\":1}");
-    }
-}
+// #[cfg(test)]
+// mod test {
+//     use futures::Future;
+//
+//     use thunderhead_store::testlib::NullKeyDummyKvSink;
+//
+//     use engine::{Engine, Factory, FactoryHandle, ProcessorHandle};
+//     use engine::spidermonkey::testlib;
+//     use lens::{ReadLens, WriteLens};
+//     use system::SystemScripts;
+//
+//     use super::JsToTextProcessorLens;
+//
+//     #[test]
+//     fn test_json_processor() {
+//         let f = testlib::new_factory().unwrap();
+//         let cx = f.handle().new_engine().unwrap().new_context().unwrap();
+//         let pxr = ProcessorHandle::processor_from_source(cx, "js/serialize_json.js", SystemScripts).wait().unwrap();
+//
+//         let lens = JsToTextProcessorLens::new(pxr);
+//
+//         let s = NullKeyDummyKvSink::new();
+//
+//         lens.write(String::from("{\"x\": 1}"), s.clone()).wait().ok();
+//         let r = lens.read(s.clone()).wait().ok().unwrap().unwrap();
+//         assert!(r == "{\"x\":1}");
+//     }
+// }

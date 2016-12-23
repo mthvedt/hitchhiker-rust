@@ -144,5 +144,3 @@ pub struct HandleMut<'a, T: 'a> {
     pub inner: jsapi::MutableHandle<T>,
     _p: PhantomData<&'a T>,
 }
-
-pub type HandleMutVal<'a> = HandleMut<'a, Value>;

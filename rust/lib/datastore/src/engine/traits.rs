@@ -1,12 +1,17 @@
 use thunderhead_store::TdError;
+use thunderhead_store::alloc::Scoped;
 
 use super::value::NativeValue;
 
+/// An engine for use with Thunderhead.
 pub trait EngineSpec: Sized {
     type ActiveContext: ActiveContext<Self>;
     type Context: Context<Self>;
     type Engine: Engine<Self>;
+    type Executor: Executor<Self>;
     /// An engine factory. Typically you only want one.
+
+    // TODO: Factories should have a standard constructor.
     type Factory: Factory<Self>;
     type FactoryHandle: FactoryHandle<Self> + Send;
     type Value: Value<Self>;
@@ -20,8 +25,12 @@ pub trait EngineSpec: Sized {
 /// There may be only one ActiveContext per Context at a given time. We would love for Rust
 /// to enforce this with lifetimes, but you cannot pair universal lifetimes with associated types.
 pub trait ActiveContext<E: EngineSpec<ActiveContext = Self>>: Sized {
+    // TODO: we need to specialize ActiveContext more. Thunderhead requires specific things.
+    // Engines should not be general-purpose execution engines.
+
     fn eval_file(&mut self, name: &str) -> Result<E::Value, TdError>;
 
+    // TODO: eval user script
     fn eval_script(&mut self, name: &str, source: &[u8]) -> Result<E::Value, TdError>;
 
     fn eval_fn(&mut self, f: &mut E::Value, v: &[u8]) -> Result<E::Value, TdError>;
@@ -31,9 +40,20 @@ pub trait ActiveContext<E: EngineSpec<ActiveContext = Self>>: Sized {
 ///
 /// Execution contexts are 'inactive', and must be activated to be used.
 /// Activation may incur some kind of context-switch penalty.
-/// Generally, it is an error to have multiple active contexts at one time. (TODO: this is not enforced, not even by exec()).
 pub trait Context<E: EngineSpec<Context = Self>>: Sized {
     fn exec<R, F: FnOnce(&mut E::ActiveContext) -> R>(&mut self, f: F) -> R;
+}
+
+/// An Engine. An Engine can produce Contexts to execute code.
+/// Engines are not thread-safe; they must live on a single thread.
+pub trait Engine<E: EngineSpec<Engine = Self>>: Sized {
+    fn new_context(&mut self) -> Result<E::Context, TdError>;
+
+    fn new_executor(&mut self) -> Result<E::Executor, TdError>;
+}
+
+pub trait Executor<E: EngineSpec<Executor = Self>>: Sized {
+    fn exec(&mut self, c: &mut E::Context) -> Result<E::Value, TdError>;
 }
 
 /// A source of Engines. Ideally, you want one Factory per EngineSpec per process.
@@ -51,10 +71,13 @@ pub trait FactoryHandle<E: EngineSpec<FactoryHandle = Self>>: Send + Sized {
     fn new_engine(&mut self) -> Result<E::Engine, String>;
 }
 
-/// An Engine. An Engine can produce Contexts to execute code.
-/// Engines are not thread-safe; they must live on a single thread.
-pub trait Engine<E: EngineSpec<Engine = Self>>: Sized {
-    fn new_context(&mut self) -> Result<E::Context, TdError>;
+// TODO: for now, Stores may block. This is because:
+// 1) includes should be rare, and almost never long-blocking
+// 2) for simplicity, user code will generally load/require/include inline
+// 3) doing this with futures requires messy generic allocs
+pub trait ScriptStore: Send + Sync + 'static {
+    // TODO: scoped is kind of messy here. Is there a better option?
+    fn load(&self, s: &str) -> Result<Option<Box<Scoped<[u8]>>>, TdError>;
 }
 
 pub trait Value<E: EngineSpec<Value = Self>>: Sized {

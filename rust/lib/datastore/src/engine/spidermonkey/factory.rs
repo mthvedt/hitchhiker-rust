@@ -5,10 +5,9 @@ use js::jsapi;
 
 use thunderhead_store::TdError;
 
-use engine::traits;
+use engine::{ScriptStore, traits};
 
-use super::engine;
-use super::spec::{ScriptStore, Spec};
+use super::{engine, spec};
 
 struct _JSInit(Result<(), &'static str>);
 
@@ -37,9 +36,10 @@ impl Drop for _JSInit {
 /// FactoryInner is not exported, so it is safe to make its internals `pub`.
 pub struct FactoryInner {
     pub num_handles: AtomicU64,
-    pub store: Box<ScriptStore>,
+    pub user_store: Box<ScriptStore>,
 }
 
+/// Factory for the Spidermonkey JS Engine.
 pub struct Factory {
     // Ideally Factory should have a master JSRuntime.
     // However, this seems to break multithreading in undocumented ways.
@@ -49,14 +49,14 @@ pub struct Factory {
     inner: Arc<FactoryInner>,
 }
 
-pub fn script_store(i: &FactoryInner) -> &ScriptStore {
-    &*i.store
+pub fn user_script_store(i: &FactoryInner) -> &ScriptStore {
+    &*i.user_store
 }
 
-pub fn new_factory<S: ScriptStore>(s: S) -> Result<Factory, TdError> {
+pub fn new_factory<S: ScriptStore>(user_store: S) -> Result<Factory, TdError> {
     let inner = FactoryInner {
         num_handles: AtomicU64::new(0),
-        store: Box::new(s),
+        user_store: Box::new(user_store),
     };
 
     let r = Factory {
@@ -66,7 +66,7 @@ pub fn new_factory<S: ScriptStore>(s: S) -> Result<Factory, TdError> {
     Ok(r)
 }
 
-impl traits::Factory<Spec> for Factory {
+impl traits::Factory<spec::Spec> for Factory {
     fn handle(&self) -> FactoryHandle {
         self.inner.num_handles.fetch_add(1, Ordering::SeqCst);
 
@@ -110,7 +110,7 @@ impl FactoryHandle {
     }
 }
 
-impl traits::FactoryHandle<Spec> for FactoryHandle {
+impl traits::FactoryHandle<spec::Spec> for FactoryHandle {
     fn new_engine(&mut self) -> Result<engine::Engine, String> {
         _JS_INIT.0.map_err(|s| panic!(s)).unwrap();
 

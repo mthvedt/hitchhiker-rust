@@ -1,14 +1,15 @@
 use thunderhead_store::TdError;
 use thunderhead_store::alloc::Scoped;
 
+use engine::ScriptStore;
+
 use super::factory;
-use super::spec::ScriptStore;
 
 pub struct EmptyScriptStore;
 
 impl ScriptStore for EmptyScriptStore {
-    fn load(&self, s: &str) -> Option<Box<Scoped<[u8]>>> {
-        None
+    fn load(&self, s: &str) -> Result<Option<Box<Scoped<[u8]>>>, TdError> {
+        Ok(None)
     }
 }
 

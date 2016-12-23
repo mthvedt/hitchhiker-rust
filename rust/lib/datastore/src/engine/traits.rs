@@ -8,9 +8,6 @@ pub trait EngineSpec: Sized {
     type ActiveContext: ActiveContext<Self>;
     type Context: Context<Self>;
     type Engine: Engine<Self>;
-    type Executor: Executor<Self>;
-    /// An engine factory. Typically you only want one.
-
     // TODO: Factories should have a standard constructor.
     type Factory: Factory<Self>;
     type FactoryHandle: FactoryHandle<Self> + Send;
@@ -25,15 +22,6 @@ pub trait EngineSpec: Sized {
 /// There may be only one ActiveContext per Context at a given time. We would love for Rust
 /// to enforce this with lifetimes, but you cannot pair universal lifetimes with associated types.
 pub trait ActiveContext<E: EngineSpec<ActiveContext = Self>>: Sized {
-    // TODO: we need to specialize ActiveContext more. Thunderhead requires specific things.
-    // Engines should not be general-purpose execution engines.
-
-    fn eval_file(&mut self, name: &str) -> Result<E::Value, TdError>;
-
-    // TODO: eval user script
-    fn eval_script(&mut self, name: &str, source: &[u8]) -> Result<E::Value, TdError>;
-
-    fn eval_fn(&mut self, f: &mut E::Value, v: &[u8]) -> Result<E::Value, TdError>;
 }
 
 /// An execution contet.
@@ -47,13 +35,7 @@ pub trait Context<E: EngineSpec<Context = Self>>: Sized {
 /// An Engine. An Engine can produce Contexts to execute code.
 /// Engines are not thread-safe; they must live on a single thread.
 pub trait Engine<E: EngineSpec<Engine = Self>>: Sized {
-    fn new_context(&mut self) -> Result<E::Context, TdError>;
-
-    fn new_executor(&mut self) -> Result<E::Executor, TdError>;
-}
-
-pub trait Executor<E: EngineSpec<Executor = Self>>: Sized {
-    fn exec(&mut self, c: &mut E::Context) -> Result<E::Value, TdError>;
+    fn new_context(&mut self, root_script: &[u8]) -> Result<E::Context, TdError>;
 }
 
 /// A source of Engines. Ideally, you want one Factory per EngineSpec per process.
@@ -80,6 +62,7 @@ pub trait ScriptStore: Send + Sync + 'static {
     fn load(&self, s: &str) -> Result<Option<Box<Scoped<[u8]>>>, TdError>;
 }
 
+// TODO: maybe get rid of Value
 pub trait Value<E: EngineSpec<Value = Self>>: Sized {
     // fn from_native_value(v: NativeValue) -> Self;
 

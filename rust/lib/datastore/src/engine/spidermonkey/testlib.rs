@@ -9,7 +9,12 @@ pub struct EmptyScriptStore;
 
 impl ScriptStore for EmptyScriptStore {
     fn load(&self, s: &str) -> Result<Option<Box<Scoped<[u8]>>>, TdError> {
-        Ok(None)
+        if s == "" {
+            let scoped_box: Box<&'static [u8]> = Box::new("".as_ref());
+            Ok(Some(scoped_box))
+        } else {
+            Ok(None)
+        }
     }
 }
 

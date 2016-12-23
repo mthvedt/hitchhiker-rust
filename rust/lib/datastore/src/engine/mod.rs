@@ -24,8 +24,8 @@
 mod error;
 pub use self::error::*;
 
-mod processor;
-pub use self::processor::ProcessorHandle;
+// mod processor;
+// pub use self::processor::ProcessorHandle;
 
 pub mod spidermonkey;
 

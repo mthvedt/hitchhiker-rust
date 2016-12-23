@@ -2,7 +2,6 @@ mod active_context;
 mod context;
 mod engine;
 mod error;
-mod executor;
 mod factory;
 mod globals;
 mod jscontext;

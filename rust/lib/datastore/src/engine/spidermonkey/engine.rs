@@ -10,7 +10,7 @@ use thunderhead_store::TdError;
 use engine::error::LoggingErrorReporter;
 use engine::traits;
 
-use super::{context, executor};
+use super::context;
 use super::factory::FactoryHandle;
 use super::globals::{self, ActiveGlobals};
 use super::spec::Spec;
@@ -128,11 +128,7 @@ pub fn exec_for_factory_handle<R, F: FnOnce(&mut FactoryHandle) -> R>(e: &mut En
 }
 
 impl traits::Engine<Spec> for Engine {
-    fn new_context(&mut self) -> Result<context::Context, TdError> {
+    fn new_context(&mut self, root_script: &[u8]) -> Result<context::Context, TdError> {
         Ok(context::new_context(self))
-    }
-
-    fn new_executor(&mut self) -> Result<executor::Executor, TdError> {
-        Ok(executor::new_executor(self))
     }
 }

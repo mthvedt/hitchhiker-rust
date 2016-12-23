@@ -30,7 +30,7 @@ pub fn new_active_context(parent: &mut Context, cpt: JSAutoCompartment) -> Activ
     ActiveContext {
         parent: parent as *mut _,
         // TODO: custom error reporters
-        g: ActiveGlobals::set_scoped(engine::js_context(context::inner_context(parent).engine()),
+        g: ActiveGlobals::set_scoped(engine::js_context(context::engine(parent)),
         LoggingErrorReporter),
         // global: &mut self.global,
         _cpt: cpt,
@@ -40,7 +40,7 @@ pub fn new_active_context(parent: &mut Context, cpt: JSAutoCompartment) -> Activ
 impl ActiveContext {
     fn js_context(&mut self) -> &mut JSContext {
         unsafe {
-            engine::js_context(context::inner_context(&mut *self.parent).engine())
+            engine::js_context(context::engine(&mut *self.parent))
         }
     }
 
@@ -98,68 +98,68 @@ pub fn js_context(ac: &mut ActiveContext) -> &mut JSContext {
 }
 
 impl traits::ActiveContext<Spec> for ActiveContext {
-    fn eval_file(&mut self, name: &str) -> Result<value::RootedVal, TdError> {
-        unsafe {
-            engine::exec_for_factory_handle(
-                context::inner_context(&mut *self.parent).engine(),
-                |h| factory::inner(h).user_store.load(name)
-            )
-            .and_then(|opt|
-                opt.ok_or(TdError::new_io(io::ErrorKind::NotFound, format!("Source file \'{}\' not found", name))))
-            // TODO: real errors
-            .and_then(|s| {
-                // TODO: real errors
-                (*s).get().ok_or(TdError::EvalError).and_then(|s| self.eval_script(name, s))
-            })
-        }
-    }
-
-    fn eval_script(&mut self, name: &str, source: &[u8]) -> Result<value::RootedVal, TdError> {
-        let script_utf16: Vec<u16> = String::from_utf8_lossy(source).encode_utf16().collect();
-        let name_cstr = CString::new(name.as_bytes()).unwrap();
-
-        let script_ptr;
-        let script_len; // Needs to be c_uint although evaluate takes a size_t. I think?
-        if script_utf16.len() == 0 {
-            script_ptr = (&[]).as_ptr();
-            script_len = 0;
-        } else {
-            script_ptr = script_utf16.as_ptr();
-            script_len = script_utf16.len() as c_uint;
-        }
-
-        let mut r = self.null_value();
-        let options = rust::CompileOptionsWrapper::new(self.js_context(), name_cstr.as_ptr(), 0);
-
-        unsafe {
-            if jsapi::Evaluate2(self.js_context(), options.ptr, script_ptr as *const u16,
-                script_len as size_t, value::handle_mut_from_rooted(&mut r).inner) {
-                // maybe_resume_unwind(); // TODO: ???
-                Ok(r)
-            } else {
-                self.check_exception();
-                Err(TdError::EvalError)
-            }
-        }
-    }
-
-    fn eval_fn(&mut self, f: &mut value::RootedVal, value_bytes: &[u8]) -> Result<value::RootedVal, TdError>
-    {
-        unsafe {
-            // TODO: use JSString directly instead?
-            let scow = String::from_utf8_lossy(value_bytes);
-            let mut arg = self.null_value();
-            // TODO: str len check
-            let u16str = Vec::from_iter(scow.encode_utf16());
-
-            if jsapi::JS_ParseJSON(
-                self.js_context(), u16str.as_ptr(), u16str.len() as u32, value::handle_mut_from_rooted(&mut arg).inner) {
-                let args = jsapi::HandleValueArray { length_: 1, elements_: &value::inner_rooted(&arg).ptr, };
-                self.call_fval(&value::handle_from_rooted(f), &args)
-            } else {
-                self.check_exception();
-                Err(TdError::EvalError)
-            }
-        }
-    }
+    // fn eval_file(&mut self, name: &str) -> Result<value::RootedVal, TdError> {
+    //     unsafe {
+    //         engine::exec_for_factory_handle(
+    //             context::inner_context(&mut *self.parent).engine(),
+    //             |h| factory::inner(h).user_store.load(name)
+    //         )
+    //         .and_then(|opt|
+    //             opt.ok_or(TdError::new_io(io::ErrorKind::NotFound, format!("Source file \'{}\' not found", name))))
+    //         // TODO: real errors
+    //         .and_then(|s| {
+    //             // TODO: real errors
+    //             (*s).get().ok_or(TdError::EvalError).and_then(|s| self.eval_script(name, s))
+    //         })
+    //     }
+    // }
+    //
+    // fn eval_script(&mut self, name: &str, source: &[u8]) -> Result<value::RootedVal, TdError> {
+    //     let script_utf16: Vec<u16> = String::from_utf8_lossy(source).encode_utf16().collect();
+    //     let name_cstr = CString::new(name.as_bytes()).unwrap();
+    //
+    //     let script_ptr;
+    //     let script_len; // Needs to be c_uint although evaluate takes a size_t. I think?
+    //     if script_utf16.len() == 0 {
+    //         script_ptr = (&[]).as_ptr();
+    //         script_len = 0;
+    //     } else {
+    //         script_ptr = script_utf16.as_ptr();
+    //         script_len = script_utf16.len() as c_uint;
+    //     }
+    //
+    //     let mut r = self.null_value();
+    //     let options = rust::CompileOptionsWrapper::new(self.js_context(), name_cstr.as_ptr(), 0);
+    //
+    //     unsafe {
+    //         if jsapi::Evaluate2(self.js_context(), options.ptr, script_ptr as *const u16,
+    //             script_len as size_t, value::handle_mut_from_rooted(&mut r).inner) {
+    //             // maybe_resume_unwind(); // TODO: ???
+    //             Ok(r)
+    //         } else {
+    //             self.check_exception();
+    //             Err(TdError::EvalError)
+    //         }
+    //     }
+    // }
+    //
+    // fn eval_fn(&mut self, f: &mut value::RootedVal, value_bytes: &[u8]) -> Result<value::RootedVal, TdError>
+    // {
+    //     unsafe {
+    //         // TODO: use JSString directly instead?
+    //         let scow = String::from_utf8_lossy(value_bytes);
+    //         let mut arg = self.null_value();
+    //         // TODO: str len check
+    //         let u16str = Vec::from_iter(scow.encode_utf16());
+    //
+    //         if jsapi::JS_ParseJSON(
+    //             self.js_context(), u16str.as_ptr(), u16str.len() as u32, value::handle_mut_from_rooted(&mut arg).inner) {
+    //             let args = jsapi::HandleValueArray { length_: 1, elements_: &value::inner_rooted(&arg).ptr, };
+    //             self.call_fval(&value::handle_from_rooted(f), &args)
+    //         } else {
+    //             self.check_exception();
+    //             Err(TdError::EvalError)
+    //         }
+    //     }
+    // }
 }

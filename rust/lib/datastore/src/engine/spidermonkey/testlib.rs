@@ -11,7 +11,7 @@ use super::system;
 pub struct EmptyScriptStore;
 
 impl ScriptStore for EmptyScriptStore {
-    fn load(&self, s: &[u8]) -> Result<Option<Box<Scoped<[u8]>>>, TdError> {
+    fn load(&self, _: &[u8]) -> Result<Option<Box<Scoped<[u8]>>>, TdError> {
         Ok(Some(Box::new("".as_ref())))
     }
 }

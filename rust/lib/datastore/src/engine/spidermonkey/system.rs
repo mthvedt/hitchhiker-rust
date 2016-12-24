@@ -5,7 +5,7 @@ use futures::future;
 
 // For god-knows-what reason, importing Scoped breaks lazy_static.
 use thunderhead_store::alloc;
-use thunderhead_store::{Range, Source, TdError};
+use thunderhead_store::{Range, TdError};
 
 use engine::ScriptStore;
 use engine::script_store::StaticMapScriptStore;

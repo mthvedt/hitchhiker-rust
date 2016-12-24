@@ -33,4 +33,6 @@ var Td = (function() {
       this.substores[name] = Td.Table(name);
     }
   }
+
+  return Td;
 })();

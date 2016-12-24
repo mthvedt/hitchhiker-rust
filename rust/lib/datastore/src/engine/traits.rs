@@ -22,6 +22,8 @@ pub trait EngineSpec: Sized {
 /// There may be only one ActiveContext per Context at a given time. We would love for Rust
 /// to enforce this with lifetimes, but you cannot pair universal lifetimes with associated types.
 pub trait ActiveContext<E: EngineSpec<ActiveContext = Self>>: Sized {
+    // TODO return a native value. We should never see JS-specific values.
+    fn get_schema(&mut self) -> Result<E::Value, TdError>;
 }
 
 /// An execution contet.

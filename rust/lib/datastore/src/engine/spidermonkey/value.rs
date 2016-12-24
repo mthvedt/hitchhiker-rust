@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use js::jsapi::{self, JSContext, JSObject, Value};
+use js::jsapi::{self, JSContext, JSObject, JSScript, Value};
 use js::rust;
 use libc::size_t;
 
@@ -18,6 +18,7 @@ pub struct Rooted<T> {
 }
 
 pub type RootedObj = Rooted<*mut JSObject>;
+pub type RootedScript = Rooted<*mut JSScript>;
 pub type RootedVal = Rooted<Value>;
 
 // Because Rust doesn't allow unexported self impls...

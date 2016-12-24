@@ -1,4 +1,4 @@
-use std::ptr;
+use std::{mem, ptr};
 
 use js::{jsapi, rust};
 
@@ -7,12 +7,25 @@ use thunderhead_store::TdError;
 
 use engine::traits;
 
-use super::{active_context, engine, value};
+use super::{engine, value};
+use super::active_context::{self, compile_file, eval_file};
 use super::spec::Spec;
 
 pub struct Context {
+    /// Our copy of an Engine.
+    /// It turns out Engines are just shared references to EngineInners.
     parent: engine::Engine,
     global: value::RootedObj,
+    /// The script that creates the Td object.
+    td_script: value::RootedScript,
+}
+
+fn new_active_context(e: &mut engine::Engine, g: &mut value::RootedObj) -> active_context::ActiveContext {
+    unsafe {
+        let cpt = jsapi::JSAutoCompartment::new(engine::js_context(e), value::rooted_inner(g).ptr);
+
+        active_context::new_active_context(e, cpt)
+    }
 }
 
 pub fn engine(cx: &mut Context) -> &mut engine::Engine {
@@ -22,10 +35,11 @@ pub fn engine(cx: &mut Context) -> &mut engine::Engine {
 pub fn new_context(parent: &mut engine::Engine, base: &[u8]) -> Result<Context, TdError> {
     unsafe {
         let mut engine = engine::clone_engine(parent);
-        let g_rooted;
+        let mut g_rooted;
+        let mut td_script;
 
         {
-            let cx = engine::js_context(&mut engine);
+            let mut cx = engine::js_context(&mut engine);
 
             let g = jsapi::JS_NewGlobalObject(cx,
                 &rust::SIMPLE_GLOBAL_CLASS, // Default global class. TODO: investigate.
@@ -39,35 +53,24 @@ pub fn new_context(parent: &mut engine::Engine, base: &[u8]) -> Result<Context, 
             g_rooted = value::new_rooted(g, cx);
         }
 
-        let mut c = Context {
+        {
+            let mut acx = new_active_context(&mut engine, &mut g_rooted);
+
+            td_script = try!(compile_file(&mut acx, "td/Td.js".as_ref()));
+        }
+
+        Ok(Context {
             parent: engine,
             global: g_rooted,
-        };
-
-        c.load(base).map(|_| c)
-    }
-}
-
-impl Context {
-    fn load(&mut self, base: &[u8]) -> Result<(), TdError> {
-        use super::active_context::eval_file;
-        use engine::traits::Context;
-
-        self.exec(|acx| {
-            eval_file(acx, "td/Td.js".as_ref())
-            .and_then(|_| eval_file(acx, base))
-            .map(|_| ())
+            td_script: td_script,
         })
     }
 }
 
 impl traits::Context<Spec> for Context {
     fn exec<R, F: FnOnce(&mut active_context::ActiveContext) -> R>(&mut self, f: F) -> R {
-        let cpt = {
-            let jcx = engine::js_context(&mut self.parent);
-            jsapi::JSAutoCompartment::new(jcx, value::rooted_inner(&mut self.global).ptr)
-        };
-
-        (f)(&mut active_context::new_active_context(self, cpt))
+        unsafe {
+            (f)(&mut new_active_context(&mut self.parent, &mut self.global))
+        }
     }
 }

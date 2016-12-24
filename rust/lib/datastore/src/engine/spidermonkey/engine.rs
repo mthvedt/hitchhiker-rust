@@ -115,12 +115,10 @@ pub fn clone_engine(e: &Engine) -> Engine {
     }
 }
 
-pub fn js_context(e: &mut Engine) -> &mut JSContext {
-    unsafe {
-        let mut innerref = e.inner.borrow_mut();
-        let p: *mut JSContext = innerref.inner.get_mut();
-        &mut *p
-    }
+pub unsafe fn js_context(e: &mut Engine) -> &mut JSContext {
+    let mut innerref = e.inner.borrow_mut();
+    let p: *mut JSContext = innerref.inner.get_mut();
+    &mut *p
 }
 
 pub fn exec_for_factory_handle<R, F: FnOnce(&mut FactoryHandle) -> R>(e: &mut Engine, f: F) -> R {

@@ -12,6 +12,7 @@ lazy_static! {
         // TODO: a macro
         m.insert("test/empty.js".as_ref(), include_str!("js/test/empty.js").as_ref());
         m.insert("test/environment_smoke_test.js".as_ref(), include_str!("js/test/environment_smoke_test.js").as_ref());
+        m.insert("test/schema_smoke_test.js".as_ref(), include_str!("js/test/schema_smoke_test.js").as_ref());
 
         m
     };
@@ -42,16 +43,13 @@ fn script_store_smoke_test() {
 }
 
 #[test]
-fn td_environmet_smoke_test() {
-    test_store_factory().handle().new_engine().unwrap().new_context("test/environment_smoke_test.js".as_ref()).unwrap();
-    // let f = testlib::new_factory().unwrap();
-    // let mut cx = f.handle().new_engine().unwrap().new_context().unwrap();
-    // cx.exec(|acx| {
-    //     acx.eval_script("test", "{}".as_ref()).unwrap();
-    //     // Oddly, {} is a valid JS statement while {...object...} is not.
-    //     acx.eval_script("test",
-    //         r#"x = {"rpc": "2.0", "fn": "add", "callback": true, "params": [42, 23], "id": 1,
-    //         "callback_to": {"site": "www.foo.bar", "port": 8888}}"#.as_ref()).unwrap();
-    // });
-    // // TODO test the return value
+fn schema_smoke_test() {
+    test_store_factory().handle().new_engine().unwrap().new_context("test/schema_smoke_test.js".as_ref()).unwrap();
+
+    // TODO: test the schema
 }
+
+// #[test]
+// fn td_environment_smoke_test() {
+//     test_store_factory().handle().new_engine().unwrap().new_context("test/environment_smoke_test.js".as_ref()).unwrap();
+// }

@@ -4,7 +4,6 @@ mod engine;
 mod error;
 mod factory;
 mod globals;
-mod jscontext;
 mod spec;
 pub use self::spec::Spec;
 mod system;

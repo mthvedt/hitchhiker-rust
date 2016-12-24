@@ -2,4 +2,6 @@
 //
 // Used to make sure we can access the td object.
 
-var foo = Td.Store();
+// TODO: make this an include smoke test instead. Environments were eliminated.
+
+// var foo = Td.Store();

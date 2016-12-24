@@ -1,11 +1,16 @@
-// db.js
+// td.js
 //
-// The master Javascript store.
+// Td.js is a special file, in that it is the master file for
 
-var Td = (function() {
-  var Td = {};
+// TODO: make sure everything optimizes. The following should optimize:
+// * Access to each function slot (obj.Table, obj.Store...) should be single dispatch
+// (at least Spidermonkey GetProp_DefiniteSlot but preferably GetProp_InferredConstant)
+// * Access to each function slot, when declared at the top level, should optimize to a constant
+// (Spidermonkey GetProp_InferredConstant)
+// * The functions themselves
 
-  Td.Table = function(name) {
+({
+  Table(name) {
     return {
       store: {
         type: "table",
@@ -13,10 +18,10 @@ var Td = (function() {
       name: "name",
       mode: "create_or_set",
     }
-  };
+  },
 
   // TODO is this even right?
-  Td.Store = function() {
+  Store() {
     this.store = {
       type: "multi",
     };
@@ -33,6 +38,4 @@ var Td = (function() {
       this.substores[name] = Td.Table(name);
     }
   }
-
-  return Td;
-})();
+})

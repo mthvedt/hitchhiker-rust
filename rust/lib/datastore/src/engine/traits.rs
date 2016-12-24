@@ -59,7 +59,7 @@ pub trait FactoryHandle<E: EngineSpec<FactoryHandle = Self>>: Send + Sized {
 // 3) doing this with futures requires messy generic allocs
 pub trait ScriptStore: Send + Sync + 'static {
     // TODO: scoped is kind of messy here. Is there a better option?
-    fn load(&self, s: &str) -> Result<Option<Box<Scoped<[u8]>>>, TdError>;
+    fn load(&self, s: &[u8]) -> Result<Option<Box<Scoped<[u8]>>>, TdError>;
 }
 
 // TODO: maybe get rid of Value

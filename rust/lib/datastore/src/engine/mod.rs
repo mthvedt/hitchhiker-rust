@@ -27,6 +27,8 @@ pub use self::error::*;
 // mod processor;
 // pub use self::processor::ProcessorHandle;
 
+pub mod script_store;
+
 pub mod spidermonkey;
 
 mod traits;

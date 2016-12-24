@@ -2,6 +2,9 @@ use std::ptr;
 
 use js::{jsapi, rust};
 
+// TODO: need a thunderhead_lib crate
+use thunderhead_store::TdError;
+
 use engine::traits;
 
 use super::{active_context, engine, value};
@@ -16,7 +19,7 @@ pub fn engine(cx: &mut Context) -> &mut engine::Engine {
     &mut cx.parent
 }
 
-pub fn new_context(parent: &mut engine::Engine) -> Context {
+pub fn new_context(parent: &mut engine::Engine, base: &[u8]) -> Result<Context, TdError> {
     unsafe {
         let mut engine = engine::clone_engine(parent);
         let g_rooted;
@@ -36,10 +39,25 @@ pub fn new_context(parent: &mut engine::Engine) -> Context {
             g_rooted = value::new_rooted(g, cx);
         }
 
-        Context {
+        let mut c = Context {
             parent: engine,
             global: g_rooted,
-        }
+        };
+
+        c.load(base).map(|_| c)
+    }
+}
+
+impl Context {
+    fn load(&mut self, base: &[u8]) -> Result<(), TdError> {
+        use super::active_context::eval_file;
+        use engine::traits::Context;
+
+        self.exec(|acx| {
+            eval_file(acx, "td/Td.js".as_ref())
+            .and_then(|_| eval_file(acx, base))
+            .map(|_| ())
+        })
     }
 }
 

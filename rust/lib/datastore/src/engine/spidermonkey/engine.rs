@@ -129,6 +129,6 @@ pub fn exec_for_factory_handle<R, F: FnOnce(&mut FactoryHandle) -> R>(e: &mut En
 
 impl traits::Engine<Spec> for Engine {
     fn new_context(&mut self, root_script: &[u8]) -> Result<context::Context, TdError> {
-        Ok(context::new_context(self))
+        context::new_context(self, root_script)
     }
 }

@@ -8,23 +8,26 @@ use thunderhead_store::TdError;
 use engine::traits;
 
 use super::{engine, value};
-use super::active_context::{self, compile_file, eval_file};
+use super::active_context;
 use super::spec::Spec;
+
+pub struct ContextEnv {
+    /// The script that creates the Td object.
+    td_script: value::RootedScript,
+}
 
 pub struct Context {
     /// Our copy of an Engine.
     /// It turns out Engines are just shared references to EngineInners.
     parent: engine::Engine,
     global: value::RootedObj,
-    /// The script that creates the Td object.
-    td_script: value::RootedScript,
+    env: ContextEnv,
 }
 
-fn new_active_context(e: &mut engine::Engine, g: &mut value::RootedObj) -> active_context::ActiveContext {
+fn new_active_context_inner(e: &mut engine::Engine, g: &mut value::RootedObj) -> active_context::ActiveContextInner {
     unsafe {
         let cpt = jsapi::JSAutoCompartment::new(engine::js_context(e), value::rooted_inner(g).ptr);
-
-        active_context::new_active_context(e, cpt)
+        active_context::ActiveContextInner::new(e, cpt)
     }
 }
 
@@ -54,15 +57,17 @@ pub fn new_context(parent: &mut engine::Engine, base: &[u8]) -> Result<Context, 
         }
 
         {
-            let mut acx = new_active_context(&mut engine, &mut g_rooted);
+            let mut acx = new_active_context_inner(&mut engine, &mut g_rooted);
 
-            td_script = try!(compile_file(&mut acx, "td/Td.js".as_ref()));
+            td_script = try!(acx.compile_file("td/Td.js".as_ref()));
         }
 
         Ok(Context {
             parent: engine,
             global: g_rooted,
-            td_script: td_script,
+            env: ContextEnv {
+                td_script: td_script,
+            },
         })
     }
 }
@@ -70,7 +75,8 @@ pub fn new_context(parent: &mut engine::Engine, base: &[u8]) -> Result<Context, 
 impl traits::Context<Spec> for Context {
     fn exec<R, F: FnOnce(&mut active_context::ActiveContext) -> R>(&mut self, f: F) -> R {
         unsafe {
-            (f)(&mut new_active_context(&mut self.parent, &mut self.global))
+            let acx_inner = new_active_context_inner(&mut self.parent, &mut self.global);
+            (f)(&mut active_context::new_active_context(acx_inner, &mut self.env))
         }
     }
 }

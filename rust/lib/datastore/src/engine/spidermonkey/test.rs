@@ -44,7 +44,8 @@ fn script_store_smoke_test() {
 
 #[test]
 fn schema_smoke_test() {
-    test_store_factory().handle().new_engine().unwrap().new_context("test/schema_smoke_test.js".as_ref()).unwrap();
+    let f = test_store_factory();
+    let foo = f.handle().new_engine().unwrap().new_context("test/schema_smoke_test.js".as_ref()).unwrap();
 
     // TODO: test the schema
 }

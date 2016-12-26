@@ -9,7 +9,7 @@ use thunderhead_store::TdError;
 use engine::traits;
 use engine::value::NativeValue;
 
-use super::active_context::{self, ActiveContext};
+use super::active_context::{self, ActiveContext, ActiveContextInner};
 use super::spec::Spec;
 
 // TODO: name. Make this not dependent on SpiderMonkey.
@@ -56,9 +56,9 @@ pub fn rooted_inner<'a, T>(r: &'a mut Rooted<T>) -> &'a mut jsapi::Rooted<T> {
     &mut r.inner
 }
 
-pub fn rooted_val_to_string(val: &RootedVal, cx: &mut ActiveContext, force: bool) -> Result<String, TdError> {
+pub fn rooted_val_to_string(val: &RootedVal, cx: &mut ActiveContextInner, force: bool) -> Result<String, TdError> {
     unsafe {
-        let jcx = active_context::js_context(cx);
+        let jcx = cx.js_context();
 
         if val.inner.ptr.is_string() || force {
             let js_str = if force {
@@ -91,7 +91,7 @@ impl traits::Value<Spec> for RootedVal {
     fn is_function(&self, acx: &mut ActiveContext) -> bool {
         if self.inner.ptr.is_object() {
             unsafe {
-                jsapi::JS_ObjectIsFunction(active_context::js_context(acx), self.inner.ptr.to_object())
+                jsapi::JS_ObjectIsFunction(active_context::inner(acx).js_context(), self.inner.ptr.to_object())
             }
         } else {
             false
@@ -110,7 +110,7 @@ impl traits::Value<Spec> for RootedVal {
         } else if v.is_int32() {
             NativeValue::Int(v.to_int32())
         } else if v.is_string() {
-            NativeValue::String(rooted_val_to_string(self, acx, false).unwrap())
+            NativeValue::String(rooted_val_to_string(self, active_context::inner(acx), false).unwrap())
         } else if v.is_object() {
             panic!()
         } else {
@@ -123,13 +123,13 @@ impl traits::Value<Spec> for RootedVal {
 
     fn debug_string(&mut self, acx: &mut ActiveContext) -> Result<String, TdError> {
         // TODO: shorter strings
-        rooted_val_to_string(self, acx, true)
+        rooted_val_to_string(self, active_context::inner(acx), true)
     }
 
     // TODO: write to bytes
     fn serialize(&mut self, acx: &mut ActiveContext) -> Result<String, TdError> {
         // TODO: shorter strings
-        rooted_val_to_string(self, acx, true)
+        rooted_val_to_string(self, active_context::inner(acx), true)
     }
 }
 

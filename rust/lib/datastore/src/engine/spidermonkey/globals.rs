@@ -33,6 +33,7 @@ impl ActiveGlobals {
         ActiveGlobals
     }
 
+    /// we wish cx were *const, but the C api requires it be *mut.
     pub extern "C" fn report_warning(cx: *mut JSContext, message: *const c_char, report: *mut JSErrorReport) {
         // The current context and error queue *must* be set.
         // TODO: when ptr_eq is stable, use that
@@ -41,7 +42,8 @@ impl ActiveGlobals {
         CURRENT_ERROR_REPORTER.with(|e| e.borrow_mut().as_mut().unwrap().report_warning(err));
     }
 
-    pub fn report_exception(&mut self, cx: *mut JSContext, ex: Exception) {
+    /// cx is *const because it's just a safety check, we don't actually use it.
+    pub fn report_exception(&mut self, cx: *const JSContext, ex: Exception) {
         // The current context and error queue *must* be set.
         // TODO: when ptr_eq is stable, use that
         assert!(CURRENT_CONTEXT.with(|cx_p_cell| cx_p_cell.get() == cx));

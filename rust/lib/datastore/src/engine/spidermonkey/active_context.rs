@@ -1,4 +1,5 @@
 use std::{io, ptr};
+use std::cell::{RefMut};
 use std::ffi::CString;
 
 use js::{jsval, rust};
@@ -63,7 +64,7 @@ impl LoadMode for CompileOnly {
         call_jsapi(
             |acx, mut script| unsafe {
                 jsapi::Compile2(
-                    acx.js_context(),
+                    &mut *acx.js_context(),
                     options,
                     chars.as_ptr(),
                     len,
@@ -94,7 +95,7 @@ impl LoadMode for Eval {
         call_jsapi(
             |acx, mut r| unsafe {
                 jsapi::Evaluate2(
-                    acx.js_context(),
+                    &mut *acx.js_context(),
                     options,
                     chars.as_ptr(),
                     len,
@@ -126,21 +127,26 @@ pub struct ActiveContextInner {
 
 impl ActiveContextInner {
     pub fn new(parent: &mut Engine, global_obj: &mut value::RootedObj) -> Self {
-        let jcx = unsafe { engine::js_context(parent) } as *mut _;
-        let cpt = jsapi::JSAutoCompartment::new(jcx, *value::inner_ref(global_obj));
+        let active_globals;
+        let cpt;
+        {
+            let mut jcx = engine::js_context(parent);
+            cpt = jsapi::JSAutoCompartment::new(&mut *jcx, *value::inner_ref(global_obj));
+            active_globals = ActiveGlobals::set_scoped(&mut *jcx, LoggingErrorReporter);
+        }
 
         ActiveContextInner {
             parent: parent,
             global_obj: global_obj,
             // TODO: custom error reporters
-            active_globals: ActiveGlobals::set_scoped(jcx, LoggingErrorReporter),
+            active_globals: active_globals,
             // global: &mut self.global,
             _cpt: cpt,
         }
     }
 
-    pub fn js_context(&mut self) -> &mut JSContext {
-        unsafe { engine::js_context(self.parent_engine()) }
+    pub fn js_context<'a>(&'a mut self) -> RefMut<'a, JSContext> {
+        engine::js_context(self.parent_engine())
     }
 
     fn parent_engine(&mut self) -> &mut Engine {
@@ -150,27 +156,30 @@ impl ActiveContextInner {
     fn new_object(&mut self) -> RootedObj {
         // second argument is class--null class means vanilla object
         unsafe {
-            value::new_rooted(jsapi::JS_NewObject(self.js_context(), ptr::null_mut()), self.js_context())
+            let obj = jsapi::JS_NewObject(&mut *self.js_context(), ptr::null_mut());
+            value::new_rooted(obj, &mut *self.js_context())
         }
     }
 
     fn null_value(&mut self) -> RootedVal {
-        value::new_rooted(jsval::NullValue(), self.js_context())
+        value::new_rooted(jsval::NullValue(), &mut *self.js_context())
     }
 
     fn null_script(&mut self) -> RootedScript {
-        value::new_rooted(ptr::null_mut(), self.js_context())
+        value::new_rooted(ptr::null_mut(), &mut *self.js_context())
     }
 
     fn check_exception(&mut self) {
         let mut ex = self.null_value();
         unsafe {
-            if jsapi::JS_GetPendingException(self.js_context(), value::handle_mut_from_rooted(&mut ex).inner) {
-                jsapi::JS_ClearPendingException(self.js_context());
+            if jsapi::JS_GetPendingException(&mut *self.js_context(), value::handle_mut_from_rooted(&mut ex).inner) {
+                jsapi::JS_ClearPendingException(&mut *self.js_context());
                 // TODO handle error
                 let eobj = Exception { message: value::rooted_val_to_string(&ex, self, true).unwrap() };
                 // TODO: don't panic on err, instead report and exit!
-                let jcx = self.js_context() as *mut _;
+
+                let jcx;
+                { jcx = &*self.js_context() as *const _; }
                 self.active_globals.report_exception(jcx, eobj);
             }
         }
@@ -186,7 +195,7 @@ impl ActiveContextInner {
         call_jsapi(
             |acx, mut r| unsafe {
                 jsapi::JS_CallFunctionValue(
-                    acx.js_context(),
+                    &mut *acx.js_context(),
                     value::handle_from_rooted(&thisobj).inner, // Function object (aka `this`). TODO: is this correct?
                     fobj.inner, // The function itself.
                     args,
@@ -202,7 +211,7 @@ impl ActiveContextInner {
         call_jsapi(
             |acx, mut r| unsafe {
                 jsapi::JS_ExecuteScript(
-                    acx.js_context(),
+                    &mut *acx.js_context(),
                     value::handle_from_rooted(&script.jsval).inner,
                     value::handle_mut_from_rooted(&mut r).inner,
                 )
@@ -224,7 +233,7 @@ impl ActiveContextInner {
             script_len = script_utf16.len() as c_uint;
         }
 
-        let options = rust::CompileOptionsWrapper::new(self.js_context(), name_cstr.as_ptr(), 0);
+        let options = rust::CompileOptionsWrapper::new(&mut *self.js_context(), name_cstr.as_ptr(), 0);
 
         T::load(path.as_ref(), self, unsafe { &*options.ptr }, script_slice, script_len as size_t)
     }

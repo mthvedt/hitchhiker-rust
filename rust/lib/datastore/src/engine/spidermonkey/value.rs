@@ -54,18 +54,18 @@ pub fn handle_mut_from_rooted<'a, T>(r: &'a mut Rooted<T>) -> HandleMut<'a, T> {
 
 pub fn rooted_val_to_string(val: &RootedVal, cx: &mut ActiveContextInner, force: bool) -> Result<String, TdError> {
     unsafe {
-        let jcx = cx.js_context();
+        let mut jcx = cx.js_context();
 
         if val.inner.ptr.is_string() || force {
             let js_str = if force {
-                rust::ToString(jcx, handle_from_rooted(val).inner)
+                rust::ToString(&mut *jcx, handle_from_rooted(val).inner)
             } else {
                 val.inner.ptr.to_string()
             };
 
             // TODO: write to buffer instead. this is dumb.
             let mut buf = [0 as u8; 65536];
-            let v = jsapi::JS_EncodeStringToBuffer(jcx, js_str, &mut buf[0] as *mut u8 as *mut i8, 65536);
+            let v = jsapi::JS_EncodeStringToBuffer(&mut *jcx, js_str, &mut buf[0] as *mut u8 as *mut i8, 65536);
 
             if v > 65536 {
                 // Err("string too big".into())
@@ -87,7 +87,7 @@ impl traits::Value<Spec> for RootedVal {
     fn is_function(&self, acx: &mut ActiveContext) -> bool {
         if self.inner.ptr.is_object() {
             unsafe {
-                jsapi::JS_ObjectIsFunction(active_context::inner(acx).js_context(), self.inner.ptr.to_object())
+                jsapi::JS_ObjectIsFunction(&mut *active_context::inner(acx).js_context(), self.inner.ptr.to_object())
             }
         } else {
             false

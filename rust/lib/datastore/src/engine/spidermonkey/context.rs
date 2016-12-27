@@ -33,7 +33,7 @@ pub fn new_context(parent: &mut engine::Engine, base: &[u8]) -> Result<Context, 
         {
             let mut cx = engine::js_context(&mut engine);
 
-            let g = jsapi::JS_NewGlobalObject(cx,
+            let g = jsapi::JS_NewGlobalObject(&mut *cx,
                 &rust::SIMPLE_GLOBAL_CLASS, // Default global class. TODO: investigate.
                 ptr::null_mut(), // Principals. Obsolete.
                 jsapi::OnNewGlobalHookOption::FireOnNewGlobalHook, // Allow debugger to activate immediately.
@@ -42,7 +42,7 @@ pub fn new_context(parent: &mut engine::Engine, base: &[u8]) -> Result<Context, 
 
             assert!(!g.is_null(), "Could not build JS global object"); // TODO record error instead
 
-            g_rooted = value::new_rooted(g, cx);
+            g_rooted = value::new_rooted(g, &mut *cx);
         }
 
         {

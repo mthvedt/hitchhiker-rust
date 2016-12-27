@@ -1,5 +1,5 @@
 use std;
-use std::cell::RefCell;
+use std::cell::{RefCell, RefMut};
 use std::ptr::{self, Unique};
 use std::rc::Rc;
 
@@ -30,7 +30,7 @@ const SYSTEM_CODE_STACK_BUFFER: usize = 32 * 1024;
 const TRUSTED_SCRIPT_STACK_BUFFER: usize = 128 * 1024;
 
 pub struct EngineInner {
-    inner: Unique<JSContext>,
+    inner_context: Unique<JSContext>,
     inner_runtime: Unique<JSRuntime>,
     factory: FactoryHandle,
 }
@@ -38,7 +38,7 @@ pub struct EngineInner {
 impl Drop for EngineInner {
     fn drop(&mut self) {
         unsafe {
-            jsapi::JS_EndRequest(self.inner.get_mut());
+            jsapi::JS_EndRequest(self.inner_context.get_mut());
             jsapi::JS_DestroyRuntime(self.inner_runtime.get_mut());
         }
     }
@@ -97,8 +97,8 @@ pub fn new_engine(handle: FactoryHandle) -> Result<Engine, String> {
         // (*runtimeopts).set_nativeRegExp_(true);
 
         let inner = EngineInner {
+            inner_context: Unique::new(js_context),
             inner_runtime: Unique::new(js_runtime),
-            inner: Unique::new(js_context),
             factory: handle,
         };
 
@@ -115,11 +115,11 @@ pub fn clone_engine(e: &Engine) -> Engine {
     }
 }
 
-// TODO: consider returning a std::cell::RefMut.
-pub unsafe fn js_context(e: &mut Engine) -> &mut JSContext {
-    let mut innerref = e.inner.borrow_mut();
-    let p: *mut JSContext = innerref.inner.get_mut();
-    &mut *p
+pub fn js_context<'a>(e: &'a mut Engine) -> RefMut<'a, JSContext> {
+    let innerref = e.inner.borrow_mut();
+    // Safe because borrow_mut prevents aliasing the inner unique pointer.
+    // See 'a note on shared pointers' in README.md.
+    RefMut::map(innerref, |inner| unsafe { &mut *inner.inner_context.get_mut() })
 }
 
 pub fn exec_for_factory_handle<R, F: FnOnce(&mut FactoryHandle) -> R>(e: &mut Engine, f: F) -> R {

@@ -8,14 +8,14 @@ pub struct MapStore<S, L> {
     lens: L,
 }
 
-impl<S, L> MapStore<S, L> {
-    pub fn new(s: S, l: L) -> Self {
-        MapStore {
-            underlying: s,
-            lens: l,
-        }
-    }
-}
+// impl<S, L> MapStore<S, L> {
+//     pub fn new(s: S, l: L) -> Self {
+//         MapStore {
+//             underlying: s,
+//             lens: l,
+//         }
+//     }
+// }
 
 impl<S, L, T> Source<T> for MapStore<S, L> where
 S: KvSource,

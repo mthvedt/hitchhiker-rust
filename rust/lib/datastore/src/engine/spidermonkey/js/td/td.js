@@ -10,7 +10,7 @@
 // * The functions themselves
 
 ({
-  Table(name) {
+  Table: function(name) {
     return {
       store: {
         type: "table",
@@ -21,7 +21,7 @@
   },
 
   // TODO is this even right?
-  Store() {
+  Store: function() {
     this.store = {
       type: "multi",
     };

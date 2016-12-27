@@ -49,10 +49,6 @@ pub struct Factory {
     inner: Arc<FactoryInner>,
 }
 
-pub fn user_script_store(i: &FactoryInner) -> &ScriptStore {
-    &*i.user_store
-}
-
 pub fn new_factory<S: ScriptStore>(user_store: S) -> Result<Factory, TdError> {
     let inner = FactoryInner {
         num_handles: AtomicU64::new(0),

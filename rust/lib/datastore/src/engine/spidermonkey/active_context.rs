@@ -1,28 +1,46 @@
 use std::{io, ptr};
 use std::ffi::CString;
-use std::iter::FromIterator;
 
 use js::{jsval, rust};
 use js::jsapi::{self, HandleValueArray, JSAutoCompartment, JSContext, ReadOnlyCompileOptions};
-use libc::{c_uint, c_ushort, size_t};
+use libc::{c_uint, size_t};
 
 use thunderhead_store::TdError;
 
 use engine::traits;
 use engine::error::{Exception, LoggingErrorReporter};
 
-use super::context::{self, Context, ContextEnv};
+use super::context::ContextEnv;
 use super::engine::{self, Engine};
 use super::factory;
 use super::globals::ActiveGlobals;
 use super::spec::Spec;
-use super::value::{self, HandleVal, RootedObj, RootedScript, RootedVal};
+use super::value::{self, HandleVal, RootedObj, RootedScript, RootedVal, inner_ref};
+
+pub struct Script {
+    // TODO: can/should we use path in error reporting?
+    _path: Vec<u8>,
+    jsval: value::RootedScript,
+}
+
+/// Executes a function. If it returns false, checks for exceptions and returns an EvalError.
+fn call_jsapi<F, R>(f: F, acx: &mut ActiveContextInner, mut r: R) -> Result<R, TdError> where
+F: FnOnce(&mut ActiveContextInner, &mut R) -> bool,
+{
+    if (f)(acx, &mut r) {
+        Ok(r)
+    } else {
+        acx.check_exception();
+        Err(TdError::EvalError)
+    }
+}
 
 /// Helper trait to specialize load_file.
 trait LoadMode {
     type Result;
 
-    fn load(cx: &mut ActiveContextInner,
+    fn load(path: &[u8],
+        cx: &mut ActiveContextInner,
         options: &ReadOnlyCompileOptions,
         chars: &[u16],
         len: usize) -> Result<Self::Result, TdError>;
@@ -32,48 +50,58 @@ enum CompileOnly {}
 enum Eval {}
 
 impl LoadMode for CompileOnly {
-    type Result = value::RootedScript;
+    type Result = Script;
 
-    fn load(acx: &mut ActiveContextInner,
+    fn load(path: &[u8],
+        acx: &mut ActiveContextInner,
         options: &ReadOnlyCompileOptions,
         chars: &[u16],
         len: usize) -> Result<Self::Result, TdError>
     {
-        let mut r = acx.null_script();
+        let script = acx.null_script();
 
-        unsafe {
-            if jsapi::Compile2(acx.js_context(), options, chars.as_ptr(),
-                len, value::handle_mut_from_rooted(&mut r).inner) {
-                // maybe_resume_unwind(); // TODO: ???
-                Ok(r)
-            } else {
-                acx.check_exception();
-                Err(TdError::EvalError)
+        call_jsapi(
+            |acx, mut script| unsafe {
+                jsapi::Compile2(
+                    acx.js_context(),
+                    options,
+                    chars.as_ptr(),
+                    len,
+                    value::handle_mut_from_rooted(&mut script).inner
+                )
+            }, acx, script
+        ).map(|script| {
+            Script {
+                _path: Vec::from(path),
+                jsval: script
             }
-        }
+        })
     }
 }
 
 impl LoadMode for Eval {
     type Result = value::RootedVal;
 
-    fn load(acx: &mut ActiveContextInner,
+    // TODO: should we use _path as error reporting?
+    fn load(_path: &[u8],
+        acx: &mut ActiveContextInner,
         options: &ReadOnlyCompileOptions,
         chars: &[u16],
         len: usize) -> Result<Self::Result, TdError>
     {
-        let mut r = acx.null_value();
+        let r = acx.null_value();
 
-        unsafe {
-            if jsapi::Evaluate2(acx.js_context(), options, chars.as_ptr(),
-                len, value::handle_mut_from_rooted(&mut r).inner) {
-                // maybe_resume_unwind(); // TODO: ???
-                Ok(r)
-            } else {
-                acx.check_exception();
-                Err(TdError::EvalError)
-            }
-        }
+        call_jsapi(
+            |acx, mut r| unsafe {
+                jsapi::Evaluate2(
+                    acx.js_context(),
+                    options,
+                    chars.as_ptr(),
+                    len,
+                    value::handle_mut_from_rooted(&mut r).inner
+                )
+            }, acx, r
+        )
     }
 }
 
@@ -81,39 +109,41 @@ impl LoadMode for Eval {
 /// Container/manager for a Javascript execution context.
 /// Spidermonkey contexts should only be used via one of these.
 pub struct ActiveContextInner {
-    /// Ideally this would be a &mut, but we can't combine that with Traits conveniently
-    /// due to Rust's lack of support for lifetime-kinded types.
+    /// The parent Javascript engine.
+    /// This is really a borrowed &mut Engine, but since this is a member of an associated type,
+    /// we can't lifetime it.
 
-    // TODO: make this a RefMut<'static Engine>
+    // TODO: due to LLVM's aliasing rules, it's illegal to have two pointers to the same EngineInner
+    // or any part of it in the same stack frame. Right now we don't enforce that, but we should.
     parent: *mut Engine,
+    /// This is really a borrow also.
+    global_obj: *mut value::RootedObj,
 
     // Used for JS scoping.
-    g: ActiveGlobals,
+    active_globals: ActiveGlobals,
     _cpt: JSAutoCompartment,
 }
 
 impl ActiveContextInner {
-    /// Important: Engine must not have any aliased clones.
-    pub fn new(parent: &mut Engine, cpt: JSAutoCompartment) -> Self {
+    pub fn new(parent: &mut Engine, global_obj: &mut value::RootedObj) -> Self {
         let jcx = unsafe { engine::js_context(parent) } as *mut _;
+        let cpt = jsapi::JSAutoCompartment::new(jcx, *value::inner_ref(global_obj));
 
         ActiveContextInner {
             parent: parent,
+            global_obj: global_obj,
             // TODO: custom error reporters
-            g: ActiveGlobals::set_scoped(jcx, LoggingErrorReporter),
+            active_globals: ActiveGlobals::set_scoped(jcx, LoggingErrorReporter),
             // global: &mut self.global,
             _cpt: cpt,
         }
     }
 
     pub fn js_context(&mut self) -> &mut JSContext {
-        // Safe because of the precondition that engine has no aliased clones,
-        // together with the fact that constructing this places a mut borrow on JsEngine.
         unsafe { engine::js_context(self.parent_engine()) }
     }
 
     fn parent_engine(&mut self) -> &mut Engine {
-        // Safe because of the borrow on self, and the precondition that that engine isn't concurrently accessed
         unsafe { &mut *self.parent }
     }
 
@@ -141,37 +171,48 @@ impl ActiveContextInner {
                 let eobj = Exception { message: value::rooted_val_to_string(&ex, self, true).unwrap() };
                 // TODO: don't panic on err, instead report and exit!
                 let jcx = self.js_context() as *mut _;
-                self.g.report_exception(jcx, eobj);
+                self.active_globals.report_exception(jcx, eobj);
             }
         }
     }
 
-    fn call_fval(&mut self, fobj: &HandleVal, args: &HandleValueArray) -> Result<RootedVal, TdError> {
+    /// HandleValueArray doesn't need to be mut for API purposes, but it should be mut to prevent the the
+    /// (unlikely) possibility of aliasing unsafety.
+    fn call_fval(&mut self, fobj: HandleVal, args: &mut HandleValueArray) -> Result<RootedVal, TdError> {
         // TODO: what is the right function object to pass?
         let thisobj = self.new_object();
-        let mut r = self.null_value();
+        let r = self.null_value();
 
-        let success = unsafe {
-            jsapi::JS_CallFunctionValue(
-                self.js_context(),
-                value::handle_from_rooted(&thisobj).inner, // Function object (aka `this`). TODO: is this correct?
-                fobj.inner, // The function itself.
-                args,
-                value::handle_mut_from_rooted(&mut r).inner,
-            )
-        };
-
-        if success {
-            Ok(r)
-        } else {
-            self.check_exception();
-            Err(TdError::EvalError)
-        }
+        call_jsapi(
+            |acx, mut r| unsafe {
+                jsapi::JS_CallFunctionValue(
+                    acx.js_context(),
+                    value::handle_from_rooted(&thisobj).inner, // Function object (aka `this`). TODO: is this correct?
+                    fobj.inner, // The function itself.
+                    args,
+                    value::handle_mut_from_rooted(&mut r).inner,
+                )
+            }, self, r
+        )
     }
 
-    fn load<T: LoadMode>(&mut self, name: &str, source: &[u8]) -> Result<T::Result, TdError> {
+    fn exec_script(&mut self, script: &mut Script) -> Result<RootedVal, TdError> {
+        let r = self.null_value();
+
+        call_jsapi(
+            |acx, mut r| unsafe {
+                jsapi::JS_ExecuteScript(
+                    acx.js_context(),
+                    value::handle_from_rooted(&script.jsval).inner,
+                    value::handle_mut_from_rooted(&mut r).inner,
+                )
+            }, self, r
+        )
+    }
+
+    fn load<T: LoadMode>(&mut self, path: &str, source: &[u8]) -> Result<T::Result, TdError> {
         let script_utf16: Vec<u16> = String::from_utf8_lossy(source).encode_utf16().collect();
-        let name_cstr = CString::new(name.as_bytes()).unwrap();
+        let name_cstr = CString::new(path.as_bytes()).unwrap();
         let script_slice: &[u16];
         let script_len; // Needs to be c_uint although evaluate takes a size_t. I think?
 
@@ -185,46 +226,43 @@ impl ActiveContextInner {
 
         let options = rust::CompileOptionsWrapper::new(self.js_context(), name_cstr.as_ptr(), 0);
 
-        T::load(self, unsafe { &*options.ptr }, script_slice, script_len as size_t)
+        T::load(path.as_ref(), self, unsafe { &*options.ptr }, script_slice, script_len as size_t)
     }
 
-    fn load_file<T: LoadMode>(&mut self, name: &[u8]) -> Result<T::Result, TdError> {
-        unsafe {
-            engine::exec_for_factory_handle(
-                self.parent_engine(),
-                |h| factory::inner(h).user_store.load(name)
-            )
-            .and_then(|opt|
-                opt.ok_or(TdError::new_io(io::ErrorKind::NotFound,
-                    format!("Source file \'{}\' not found", String::from_utf8_lossy(name)))))
+    fn load_file<T: LoadMode>(&mut self, path: &[u8]) -> Result<T::Result, TdError> {
+        engine::exec_for_factory_handle(
+            self.parent_engine(),
+            |h| factory::inner(h).user_store.load(path)
+        )
+        .and_then(|opt|
+            opt.ok_or(TdError::new_io(io::ErrorKind::NotFound,
+                format!("Source file \'{}\' not found", String::from_utf8_lossy(path)))))
+        // TODO: real errors
+        .and_then(|s| {
+            // TODO: error if path is not a valid str? Should we require strs everywhere?
             // TODO: real errors
-            .and_then(|s| {
-                // TODO: real errors
-                (*s).get().ok_or(TdError::EvalError).and_then(
-                    |s| self.load::<T>(String::from_utf8_lossy(name).as_ref(), s))
-            })
-        }
+            (*s).get().ok_or(TdError::EvalError).and_then(
+                |s| self.load::<T>(String::from_utf8_lossy(path).as_ref(), s))
+        })
     }
 
     pub fn eval_file(&mut self, name: &[u8]) -> Result<value::RootedVal, TdError> {
         self.load_file::<Eval>(name)
     }
 
-    pub fn compile_file(&mut self, name: &[u8]) -> Result<value::RootedScript, TdError> {
+    pub fn compile_file(&mut self, name: &[u8]) -> Result<Script, TdError> {
         self.load_file::<CompileOnly>(name)
     }
 }
 
 pub struct ActiveContext {
     inner: ActiveContextInner,
-    parent_env: *mut ContextEnv,
-}
 
-impl ActiveContext {
-    fn env(&mut self) -> &mut ContextEnv {
-        // Safe because building an ActiveContext requires a borrow on ContextEnv.
-        unsafe { &mut *self.parent_env }
-    }
+    /// The parent Context's environment.
+    /// This is really a borrowed &mut ContextEnv, but since this is a member of an associated type,
+    /// we can't lifetime it.
+    // TODO: find a safer way to do this.
+    parent_env: *mut ContextEnv,
 }
 
 pub fn new_active_context(inner: ActiveContextInner, parent_env: &mut ContextEnv) -> ActiveContext {
@@ -241,9 +279,21 @@ pub fn inner(cx: &mut ActiveContext) -> &mut ActiveContextInner {
 
 impl traits::ActiveContext<Spec> for ActiveContext {
     fn get_schema(&mut self) -> Result<value::RootedVal, TdError> {
-        let f = self.inner.load::<Eval>("system://get_store.js", include_str!("js/system/get_store.js").as_ref());
-        panic!()
-        // self.call_fval(f, args: &HandleValueArray)
+        // To clarify what's happening here, JSVals are always just pointers or raw values.
+        // It's safe to copy the JSVal as long as it's rooted in the same scope.
+        // So we copy the pointers and/or raw values into an array, a HandleValueArray, and pass it
+        // to SpiderMonkey.
+        let globalobj_val = unsafe { jsval::ObjectOrNullValue(inner_ref(&mut *self.inner.global_obj).clone()) };
+        let mut td = try!(self.inner.exec_script(unsafe { &mut (*self.parent_env).td_script }));
+        let tdval = inner_ref(&mut td).clone();
+        let f = try!(self.inner.load::<Eval>(
+            "system://get_store.js",
+            include_str!("js/system/get_store.js").as_ref()));
+
+        let arr: [jsapi::Value; 2] = [globalobj_val, tdval];
+        let mut args = unsafe { jsapi::HandleValueArray::from_rooted_slice(&arr) };
+
+        self.inner.call_fval(value::handle_from_rooted(&f), &mut args)
     }
 
     //

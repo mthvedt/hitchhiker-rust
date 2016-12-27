@@ -34,8 +34,8 @@ pub fn new_rooted<T>(t: T, cx: &mut JSContext) -> Rooted<T> where T: rust::RootK
     }
 }
 
-pub fn inner_rooted<'a, T>(r: &'a Rooted<T>) -> &'a jsapi::Rooted<T> {
-    &r.inner
+pub fn inner_ref<'a, T>(r: &'a mut Rooted<T>) -> &'a mut T {
+    &mut r.inner.ptr
 }
 
 pub fn handle_from_rooted<'a, T>(r: &'a Rooted<T>) -> Handle<'a, T> {
@@ -50,10 +50,6 @@ pub fn handle_mut_from_rooted<'a, T>(r: &'a mut Rooted<T>) -> HandleMut<'a, T> {
         inner: unsafe { jsapi::MutableHandle::from_marked_location(&mut r.inner.ptr) },
         _p: PhantomData,
     }
-}
-
-pub fn rooted_inner<'a, T>(r: &'a mut Rooted<T>) -> &'a mut jsapi::Rooted<T> {
-    &mut r.inner
 }
 
 pub fn rooted_val_to_string(val: &RootedVal, cx: &mut ActiveContextInner, force: bool) -> Result<String, TdError> {

@@ -115,6 +115,7 @@ pub fn clone_engine(e: &Engine) -> Engine {
     }
 }
 
+// TODO: consider returning a std::cell::RefMut.
 pub unsafe fn js_context(e: &mut Engine) -> &mut JSContext {
     let mut innerref = e.inner.borrow_mut();
     let p: *mut JSContext = innerref.inner.get_mut();

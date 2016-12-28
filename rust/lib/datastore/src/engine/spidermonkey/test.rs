@@ -12,6 +12,7 @@ lazy_static! {
         // TODO: a macro
         m.insert("test/empty.js".as_ref(), include_str!("js/test/empty.js").as_ref());
         m.insert("test/environment_smoke_test.js".as_ref(), include_str!("js/test/environment_smoke_test.js").as_ref());
+        m.insert("test/simple_schema.js".as_ref(), include_str!("js/test/simple_schema.js").as_ref());
         m.insert("test/schema_smoke_test.js".as_ref(), include_str!("js/test/schema_smoke_test.js").as_ref());
 
         m
@@ -49,7 +50,9 @@ fn schema_smoke_test() {
     cx.exec(|acx| acx.get_schema()).unwrap();
 }
 
-// #[test]
-// fn td_environment_smoke_test() {
-//     test_store_factory().handle().new_engine().unwrap().new_context("test/environment_smoke_test.js".as_ref()).unwrap();
-// }
+#[test]
+fn test_simple_schema() {
+    let f = test_store_factory();
+    let mut cx = f.handle().new_engine().unwrap().new_context("test/simple_schema.js".as_ref()).unwrap();
+    cx.exec(|acx| acx.get_schema()).unwrap();
+}

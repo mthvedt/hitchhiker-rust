@@ -9,8 +9,8 @@
 // (Spidermonkey GetProp_InferredConstant)
 // * The functions themselves
 
-({
-  Table: function(name) {
+(function() {
+  this.Table = function(name) {
     return {
       store: {
         type: "table",
@@ -21,7 +21,7 @@
   },
 
   // TODO is this even right?
-  Store: function() {
+  this.Store = function() {
     this.store = {
       type: "multi",
     };
@@ -30,12 +30,14 @@
 
     this.add_store = function(name) {
       // TODO: validation
-      this.substores[name] = Td.Store(name);
+      this.substores[name] = new Store();
     }
 
     this.add_table = function(name) {
       // TODO: validation
-      this.substores[name] = Td.Table(name);
+      this.substores[name] = new Table(name);
     }
   }
-})
+
+  return this;
+}())

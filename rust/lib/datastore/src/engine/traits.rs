@@ -4,6 +4,7 @@ use thunderhead_store::alloc::Scoped;
 use super::value::NativeValue;
 
 /// An engine for use with Thunderhead.
+// TODO: maybe engines should always be single threaded. No factories/FactoryHandles.
 pub trait EngineSpec: Sized {
     type ActiveContext: ActiveContext<Self>;
     type Context: Context<Self>;
@@ -11,7 +12,7 @@ pub trait EngineSpec: Sized {
     // TODO: Factories should have a standard constructor.
     type Factory: Factory<Self>;
     type FactoryHandle: FactoryHandle<Self> + Send;
-    type Value: Value<Self>;
+    // type Value: Value<Self>;
 }
 
 /// An active execution context.
@@ -22,8 +23,8 @@ pub trait EngineSpec: Sized {
 /// There may be only one ActiveContext per Context at a given time. We would love for Rust
 /// to enforce this with lifetimes, but you cannot pair universal lifetimes with associated types.
 pub trait ActiveContext<E: EngineSpec<ActiveContext = Self>>: Sized {
-    // TODO return a native value. We should never see JS-specific values.
-    fn get_schema(&mut self) -> Result<E::Value, TdError>;
+    // TODO: native value -> schema value?
+    fn get_schema(&mut self) -> Result<NativeValue, TdError>;
 }
 
 /// An execution contet.
@@ -65,17 +66,18 @@ pub trait ScriptStore: Send + Sync + 'static {
 }
 
 // TODO: maybe get rid of Value
-pub trait Value<E: EngineSpec<Value = Self>>: Sized {
-    // fn from_native_value(v: NativeValue) -> Self;
-
-    // TODO: a real error type
-    fn to_native_value(&mut self, &mut E::ActiveContext) -> Result<NativeValue, TdError>;
-
-    // TODO: a better story for errors
-    fn debug_string(&mut self, &mut E::ActiveContext) -> Result<String, TdError>;
-
-    fn serialize(&mut self, &mut E::ActiveContext) -> Result<String, TdError>;
-
-    // TODO: this probably could use a refactor.
-    fn is_function(&self, &mut E::ActiveContext) -> bool;
-}
+// TODO: we need a way to encapsulate 'data values'--intermediate data formats
+// pub trait Value<E: EngineSpec<Value = Self>>: Sized {
+//     // fn from_native_value(v: NativeValue) -> Self;
+//
+//     // TODO: a real error type
+//     fn to_native_value(&mut self, &mut E::ActiveContext) -> Result<NativeValue, TdError>;
+//
+//     // TODO: a better story for errors
+//     fn debug_string(&mut self, &mut E::ActiveContext) -> Result<String, TdError>;
+//
+//     fn serialize(&mut self, &mut E::ActiveContext) -> Result<String, TdError>;
+//
+//     // TODO: this probably could use a refactor.
+//     fn is_function(&self, &mut E::ActiveContext) -> bool;
+// }

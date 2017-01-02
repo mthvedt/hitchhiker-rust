@@ -28,6 +28,7 @@ lazy_static! {
 impl Drop for _JSInit {
     fn drop(&mut self) {
         unsafe {
+            println!("Shutting down");
             jsapi::JS_ShutDown();
         }
     }

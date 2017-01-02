@@ -30,6 +30,8 @@ const SYSTEM_CODE_STACK_BUFFER: usize = 32 * 1024;
 const TRUSTED_SCRIPT_STACK_BUFFER: usize = 128 * 1024;
 
 pub struct EngineInner {
+    /// Because JSContexts are always pointers opaque to Rust, we don't need to worry about aliasing,
+    /// and don't need to use UnsafeCells.
     inner_context: Unique<JSContext>,
     inner_runtime: Unique<JSRuntime>,
     factory: FactoryHandle,
@@ -45,9 +47,6 @@ impl Drop for EngineInner {
 }
 
 pub struct Engine {
-    /// We basically use this RefCell as a checked UnsafeCell.
-    /// The invariant must hold that any borrow/mut borrow of this must be in the scope of
-    /// a borrow/mut borrow of Engine.
     inner: Rc<RefCell<EngineInner>>,
 }
 

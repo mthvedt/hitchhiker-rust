@@ -10,13 +10,14 @@ use thunderhead_store::TdError;
 
 use engine::traits;
 use engine::error::{Exception, LoggingErrorReporter};
+use engine::value::NativeValue;
 
 use super::context::ContextEnv;
 use super::engine::{self, Engine};
 use super::factory;
 use super::globals::ActiveGlobals;
 use super::spec::Spec;
-use super::value::{self, HandleVal, RootedObj, RootedScript, RootedVal, inner_ref};
+use super::value::{self, HandleVal, Rooted, RootedObj, RootedScript, RootedVal};
 
 pub struct Script {
     // TODO: can/should we use path in error reporting?
@@ -68,7 +69,7 @@ impl LoadMode for CompileOnly {
                     options,
                     chars.as_ptr(),
                     len,
-                    value::handle_mut_from_rooted(&mut script).inner
+                    *script.handle_mut()
                 )
             }, acx, script
         ).map(|script| {
@@ -99,7 +100,7 @@ impl LoadMode for Eval {
                     options,
                     chars.as_ptr(),
                     len,
-                    value::handle_mut_from_rooted(&mut r).inner
+                    *r.handle_mut()
                 )
             }, acx, r
         )
@@ -131,7 +132,7 @@ impl ActiveContextInner {
         let cpt;
         {
             let mut jcx = engine::js_context(parent);
-            cpt = jsapi::JSAutoCompartment::new(&mut *jcx, *value::inner_ref(global_obj));
+            cpt = jsapi::JSAutoCompartment::new(&mut *jcx, global_obj.get());
             active_globals = ActiveGlobals::set_scoped(&mut *jcx, LoggingErrorReporter);
         }
 
@@ -157,25 +158,25 @@ impl ActiveContextInner {
         // second argument is class--null class means vanilla object
         unsafe {
             let obj = jsapi::JS_NewObject(&mut *self.js_context(), ptr::null_mut());
-            value::new_rooted(obj, &mut *self.js_context())
+            Rooted::new(obj, &mut *self.js_context())
         }
     }
 
     fn null_value(&mut self) -> RootedVal {
-        value::new_rooted(jsval::NullValue(), &mut *self.js_context())
+        Rooted::new(jsval::NullValue(), &mut *self.js_context())
     }
 
     fn null_script(&mut self) -> RootedScript {
-        value::new_rooted(ptr::null_mut(), &mut *self.js_context())
+        Rooted::new(ptr::null_mut(), &mut *self.js_context())
     }
 
     fn check_exception(&mut self) {
         let mut ex = self.null_value();
         unsafe {
-            if jsapi::JS_GetPendingException(&mut *self.js_context(), value::handle_mut_from_rooted(&mut ex).inner) {
+            if jsapi::JS_GetPendingException(&mut *self.js_context(), *ex.handle_mut()) {
                 jsapi::JS_ClearPendingException(&mut *self.js_context());
                 // TODO handle error
-                let eobj = Exception { message: value::rooted_val_to_string(&ex, self, true).unwrap() };
+                let eobj = Exception { message: ex.to_string(self, true).unwrap() };
                 // TODO: don't panic on err, instead report and exit!
 
                 let jcx;
@@ -196,10 +197,10 @@ impl ActiveContextInner {
             |acx, mut r| unsafe {
                 jsapi::JS_CallFunctionValue(
                     &mut *acx.js_context(),
-                    value::handle_from_rooted(&thisobj).inner, // Function object (aka `this`). TODO: is this correct?
-                    fobj.inner, // The function itself.
+                    *thisobj.handle(), // Function object (aka `this`). TODO: is this correct?
+                    *fobj, // The function itself.
                     args,
-                    value::handle_mut_from_rooted(&mut r).inner,
+                    *r.handle_mut(),
                 )
             }, self, r
         )
@@ -212,8 +213,8 @@ impl ActiveContextInner {
             |acx, mut r| unsafe {
                 jsapi::JS_ExecuteScript(
                     &mut *acx.js_context(),
-                    value::handle_from_rooted(&script.jsval).inner,
-                    value::handle_mut_from_rooted(&mut r).inner,
+                    *script.jsval.handle(),
+                    *r.handle_mut(),
                 )
             }, self, r
         )
@@ -287,22 +288,21 @@ pub fn inner(cx: &mut ActiveContext) -> &mut ActiveContextInner {
 }
 
 impl traits::ActiveContext<Spec> for ActiveContext {
-    fn get_schema(&mut self) -> Result<value::RootedVal, TdError> {
+    fn get_schema(&mut self) -> Result<NativeValue, TdError> {
         // To clarify what's happening here, JSVals are always just pointers or raw values.
-        // It's safe to copy the JSVal as long as it's rooted in the same scope.
+        // It's safe to copy the JSVal as long as it's rooted in a containing scope.
         // So we copy the pointers and/or raw values into an array, a HandleValueArray, and pass it
         // to SpiderMonkey.
-        let globalobj_val = unsafe { jsval::ObjectOrNullValue(inner_ref(&mut *self.inner.global_obj).clone()) };
-        let mut td = try!(self.inner.exec_script(unsafe { &mut (*self.parent_env).td_script }));
-        let tdval = inner_ref(&mut td).clone();
+        let globalobj = unsafe { jsval::ObjectOrNullValue((&mut *self.inner.global_obj).get()) };
+        let td = try!(self.inner.exec_script(unsafe { &mut (*self.parent_env).td_script }));
         let f = try!(self.inner.load::<Eval>(
             "system://get_store.js",
             include_str!("js/system/get_store.js").as_ref()));
 
-        let arr: [jsapi::Value; 2] = [globalobj_val, tdval];
+        let arr: [jsapi::Value; 2] = [globalobj, td.get()];
         let mut args = unsafe { jsapi::HandleValueArray::from_rooted_slice(&arr) };
 
-        self.inner.call_fval(value::handle_from_rooted(&f), &mut args)
+        self.inner.call_fval(f.handle(), &mut args).and_then(|mut val| val.to_native_value(self))
     }
 
     //

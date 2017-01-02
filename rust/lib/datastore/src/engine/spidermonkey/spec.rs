@@ -18,5 +18,5 @@ impl traits::EngineSpec for Spec {
     type Engine = super::engine::Engine;
     type Factory = super::factory::Factory;
     type FactoryHandle = super::factory::FactoryHandle;
-    type Value = super::value::RootedVal;
+    // type Value = super::value::RootedVal;
 }

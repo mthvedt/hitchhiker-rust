@@ -7,9 +7,10 @@ use thunderhead_store::TdError;
 
 use engine::traits;
 
-use super::{engine, value};
+use super::engine;
 use super::active_context::{self, ActiveContextInner, Script};
 use super::spec::Spec;
+use super::value::{self, Rooted};
 
 pub struct ContextEnv {
     /// The script that creates the Td object.
@@ -19,6 +20,7 @@ pub struct ContextEnv {
 pub struct Context {
     /// Our copy of an Engine.
     /// It turns out Engines are just shared references to EngineInners.
+    /// TODO: something safer. (EngineRef?)
     parent: engine::Engine,
     global: value::RootedObj,
     env: ContextEnv,
@@ -42,7 +44,7 @@ pub fn new_context(parent: &mut engine::Engine, base: &[u8]) -> Result<Context, 
 
             assert!(!g.is_null(), "Could not build JS global object"); // TODO record error instead
 
-            g_rooted = value::new_rooted(g, &mut *cx);
+            g_rooted = Rooted::new(g, &mut *cx);
         }
 
         {

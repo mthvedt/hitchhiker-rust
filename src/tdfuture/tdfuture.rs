@@ -1,5 +1,4 @@
-//! tdfuture is the futures apparatus for Thunderhead. It provides a few mechanisms
-//! for better managing futures in Thunderhead.
+//! tdfuture provides a few mechanisms for better managing futures.
 
 // /// A TdTask is a continuation: it accepts an input value or an error value,
 // /// and returns no result. Unlike first-class continuations, a TdTask can only

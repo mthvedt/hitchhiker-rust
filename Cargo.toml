@@ -1,7 +1,5 @@
 [package]
-# TODO: change name to td-store
-
-name = "thunderhead-store"
+name = "htree"
 version = "0.1.0"
 authors = ["Mike Thvedt <mike.thvedt@gmail.com>"]
 

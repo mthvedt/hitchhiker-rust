@@ -1,4 +1,4 @@
-The Thunderhead data store is a persistent hitchhiker B-tree, supporting the following use cases:
+Htree data store is a persistent hitchhiker B-tree, supporting the following use cases:
 - Fast snapshots. (Actually, saving a snapshot is faster than not saving one.)
 - Fast snapshot diffs.
 - Range queries and locking.
@@ -20,7 +20,7 @@ It needs to be external.
 - Futures model. Choice of chains or direct futures.
 
 A transaction allows us to alloc arbitrary bytes, as well as arena-alloc various typed things.
-Publically, we can alloc space for keys and values to be inserted into the tree without copying.
+Publicly, we can alloc space for keys and values to be inserted into the tree without copying.
 The returned 'AllocPointers' maybe from a transaction arena or may simply be boxes or Rcs.
 
 (In any order)

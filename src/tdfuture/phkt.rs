@@ -8,10 +8,10 @@
 ///
 /// ```
 /// # #[macro_use]
-/// # extern crate thunderhead_store;
+/// # extern crate htree;
 ///
-/// # use thunderhead_store::tdfuture::phkt;
-/// # use thunderhead_store::tdfuture::phkt::*;
+/// # use htree::tdfuture::phkt;
+/// # use htree::tdfuture::phkt::*;
 ///
 /// # fn main() {
 ///

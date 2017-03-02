@@ -21,7 +21,6 @@ use futures::{Async, Future, Poll};
 //     Wait,
 // }
 
-// /// A Thunderhead future.
 // trait Future<C: Context> {
 //     type Item;
 

@@ -1,7 +1,3 @@
-//! Allocators used in Thunderhead. These represent a per-task ability to allocate,
-//! verify allocations are valid,
-//! and efficiently free all allocations at the end of the task.
-//!
 //! Right now, these are not used, they're just a design sketch.
 
 use std::cell::UnsafeCell;

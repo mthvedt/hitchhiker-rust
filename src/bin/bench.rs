@@ -5,7 +5,7 @@
 // extern crate test;
 //
 // #[macro_use]
-// extern crate thunderhead_store;
+// extern crate htree;
 //
 // use std::borrow::Borrow;
 // use std::collections::*;
@@ -17,13 +17,6 @@
 // use test::black_box;
 //
 // use rand::{Rng, SeedableRng};
-//
-// use thunderhead_store::*;
-// use thunderhead_store::bench::*;
-// // TODO make it data::slice
-// // use thunderhead_store::slice::*;
-// use thunderhead_store::tree::btree::*;
-// use thunderhead_store::tree::testlib::*;
 //
 // fn insert_hashmap<V: Verifier>(m: &mut HashMap<Vec<u8>, Vec<u8>>, k: &[u8], v: &[u8]) {
 // 	V::run(|| m.insert(Vec::from_iter(k.iter().cloned()), Vec::from_iter(v.iter().cloned())));

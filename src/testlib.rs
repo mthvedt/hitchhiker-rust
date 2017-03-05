@@ -8,7 +8,7 @@ use futures::future::{self, Future, FutureResult};
 
 use alloc::Scoped;
 use data::Range;
-use traits::{KvSource, Source, Sink, TdError};
+use traits::{KvSource, Source, Sink, TreeError};
 
 /// A KvSink with only one supported key/value: the null one.
 #[derive(Clone)]
@@ -32,7 +32,7 @@ impl NullKeyDummyKvSink {
 
 impl Source<[u8]> for NullKeyDummyKvSink {
     type Get = Box<[u8]>;
-    type GetF = future::Ok<Option<Self::Get>, TdError>;
+    type GetF = future::Ok<Option<Self::Get>, TreeError>;
 
     fn get<K: Scoped<[u8]>>(&mut self, k: K) -> Self::GetF {
         if self.check_key(k) {
@@ -63,7 +63,7 @@ impl Source<[u8]> for NullKeyDummyKvSink {
 }
 
 impl Sink<[u8]> for NullKeyDummyKvSink {
-    type PutF = FutureResult<(), TdError>;
+    type PutF = FutureResult<(), TreeError>;
 
     fn max_value_size(&self) -> u64 {
         65536
@@ -77,12 +77,12 @@ impl Sink<[u8]> for NullKeyDummyKvSink {
                     *rc_buf.borrow_mut() = Some(ByteBuffer::from_bytes(v.get().unwrap()));
                     future::result(Ok(()))
                 },
-                None => future::result(Err(TdError::IoError(
+                None => future::result(Err(TreeError::IoError(
                     io::Error::new(io::ErrorKind::NotFound, "Key not supported")))),
             }
         } else {
             // TODO: should be a kv-specific error, not an io error
-            future::result(Err(TdError::IoError(io::Error::new(io::ErrorKind::NotFound, "Key not supported"))))
+            future::result(Err(TreeError::IoError(io::Error::new(io::ErrorKind::NotFound, "Key not supported"))))
         }
     }
 }

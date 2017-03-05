@@ -5,27 +5,25 @@ use futures::Future;
 use alloc::Scoped;
 use data::Range;
 
-// TODO: need a TdError mechanism.
-
 // TODO improve this.
 // TODO: hide details
 #[derive(Debug)]
-pub enum TdError {
+pub enum TreeError {
     EvalError,
     // TODO: distinguish by error role. EvalError, DbError &c
     IoError(io::Error),
     RuntimeError(String),
 }
 
-impl TdError {
-    pub fn new_io<E: Into<Box<std::error::Error + Send + Sync>>>(kind: io::ErrorKind, error: E) -> TdError {
+impl TreeError {
+    pub fn new_io<E: Into<Box<std::error::Error + Send + Sync>>>(kind: io::ErrorKind, error: E) -> TreeError {
         io::Error::new(kind, error).into()
     }
 }
 
-impl From<io::Error> for TdError {
+impl From<io::Error> for TreeError {
     fn from(e: io::Error) -> Self {
-        TdError::IoError(e)
+        TreeError::IoError(e)
     }
 }
 
@@ -42,7 +40,7 @@ impl From<io::Error> for TdError {
 // TODO: can we make subtrees/subranges borrowed? like: subtree(&'b mut self) -> Self<'b>?
 pub trait Source<T: ?Sized + 'static> {
 	type Get: Scoped<T> + 'static;
-    type GetF: Future<Item = Option<Self::Get>, Error = TdError> + 'static;
+    type GetF: Future<Item = Option<Self::Get>, Error = TreeError> + 'static;
 
     // TODO: should we pass in context? why or why not?
     /// Get a value from this KvSource.
@@ -67,7 +65,7 @@ pub trait Source<T: ?Sized + 'static> {
 }
 
 pub trait Sink<T: ?Sized + 'static>: Source<T> {
-    type PutF: Future<Item = (), Error = TdError> + 'static;
+    type PutF: Future<Item = (), Error = TreeError> + 'static;
 
     /// The max size of a value in this KVSource
 

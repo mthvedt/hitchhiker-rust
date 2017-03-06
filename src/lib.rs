@@ -38,10 +38,12 @@ pub mod bench;
 mod data;
 pub use data::Range;
 
+pub mod sync;
+
 pub mod tdfuture;
 
 // #[cfg(test)]
-// TODO: isolate
+// TODO: isolate with a feature
 pub mod testlib;
 
 mod traits;

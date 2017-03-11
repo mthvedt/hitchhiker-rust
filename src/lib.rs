@@ -35,7 +35,8 @@ pub mod bench;
 // TODO do we have data macros?
 // TODO: cleaner separation of interfaces
 #[macro_use]
-mod data;
+pub mod data;
+// TODO remove all data, incl. data::Range
 pub use data::Range;
 
 pub mod sync;
@@ -44,11 +45,13 @@ pub mod tdfuture;
 
 // #[cfg(test)]
 // TODO: isolate with a feature
-pub mod testlib;
+// pub mod testlib;
 
 mod traits;
 pub use traits::*;
 
 pub mod tree;
+pub use tree::btree::*;
+pub use tree::testlib;
 
 pub mod util;

@@ -12,22 +12,32 @@ pub struct Counter {
 }
 
 impl Counter {
+    /// Creates a new Counter wrapping the given unsigned int.
     pub fn new(x: u64) -> Counter {
         Counter { data: x }
     }
 
+    /// Increments this counter by one, wrapping around to 0 if needed.
     pub fn inc(self) -> Counter {
         Counter { data: self.data.wrapping_add(1) }
     }
 
-    pub fn bytes(self) -> [u8; 8] {
+    /// Returns this counter as an array of bytes, in big-endian.
+    pub fn to_bytes(self) -> [u8; 8] {
         unsafe { std::mem::transmute(self.data.to_be()) }
     }
 
+    /// Returns true if this counter is less than the given counter. A counter x is 'less than'
+    /// a counter y if y - x < u64::max_value() / 2 - 1, using wrapping arithmetic.
+    /// Informally, x must be "behind" y by less than maximum distance.
+    // TODO unit test these.
     pub fn circle_lt(self, other: Counter) -> bool {
         return other.data.wrapping_sub(self.data).wrapping_sub(1) < u64::max_value() / 2 - 1;
     }
 
+    /// Returns true if this counter is less than or equal to the given counter. A counter x is 'less than'
+    /// a counter y if y - x < u64::max_value() / 2 - 1, using wrapping arithmetic.
+    /// Informally, x must be "behind" y by less than maximum distance.
     pub fn circle_lt_eq(self, other: Counter) -> bool {
         return other.data.wrapping_sub(self.data) < u64::max_value() / 2;
     }
@@ -40,7 +50,7 @@ impl Datum for Counter {
     }
 
     fn write_bytes<W: DataWrite>(&self, w: W) -> W::Result {
-        w.write(&self.bytes())
+        w.write(&self.to_bytes())
     }
 }
 

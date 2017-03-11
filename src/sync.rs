@@ -38,6 +38,10 @@ impl<'a, T: 'a> Deref for TreeRef<'a, T> {
 pub trait Tree<V: Read>: Sized {
     fn get<K: AsRef<[u8]>>(&self, k: K) -> Result<V, TreeError>;
 
+    // TODO: entry interface, cursor interface
+
+    // TODO: existence check
+
     // TODO: must this return self?
     /// This function returns Self. Ideally, we'd like to be able to return an arbitrary type of subtree,
     /// but this makes Rust's constraint checker behave oddly in some cases, particularly with subtraits.
@@ -85,6 +89,8 @@ pub trait TreeMut<V: Read + Write>:  Sized {
     type Snapshot: Tree<V>;
 
     fn get<K: AsRef<[u8]>>(&self, k: K) -> Result<V, TreeError>;
+
+    // TODO: entry interface, cursor interface
 
     fn put<K: AsRef<[u8]>, VRef: AsRef<V>>(&mut self, k: K, v: VRef) -> Result<(), TreeError>;
 

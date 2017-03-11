@@ -1,9 +1,8 @@
+//! Utilities used internally in trees.
+
 use std::mem;
 
-/*
-Safe array rotation functions. In the long run, we want to replace most usages with memmoves
-and uninitialized data.
-*/
+/// Checked rotate right. The array [1, 2, 3] rotated by 1 becomes [3, 1, 2].
 pub fn rotate_right<T>(arr: &mut [T], pos: usize) {
 	if arr.len() < pos {
 		panic!("{} out of bounds of array length {}", pos, arr.len())
@@ -21,12 +20,14 @@ pub fn rotate_right<T>(arr: &mut [T], pos: usize) {
 	// arr = deabc
 }
 
+// /// Checked rotate left. The array [1, 2, 3] rotated by 1 becomes [2, 3, 1].
 // pub fn rotate_left<T>(arr: &mut [T], pos: usize) {
 // 	// borrow checker...
 // 	let len = arr.len() - pos;
 // 	rotate_right(arr, len);
 // }
 
+/// Checked swap of two slices of identical length.
 pub fn swap<T>(a: &mut [T], b: &mut [T]) {
 	if a.len() != b.len() {
 		panic!("mismatched slice swap");
@@ -38,9 +39,8 @@ pub fn swap<T>(a: &mut [T], b: &mut [T]) {
 	}
 }
 
-/// Helper fn for inserting into an array. We assume there is room in the array, and it is ok to overwrite
-/// the T at position arrsize.
-// TODO: should be utility function.
+/// Inserts the given T into the beginning of the given slice, moving each element over by 1.
+/// The T at the end is swapped into the given T refrence.
 pub fn rotate_in<T>(item: &mut T, arr: &mut [T]) {
 	if arr.len() == 0 {
 		// because rotate_in_slice can't panic
@@ -51,7 +51,7 @@ pub fn rotate_in<T>(item: &mut T, arr: &mut [T]) {
 	mem::swap(item, &mut dummy[0]);
 	rotate_in_slice(dummy.as_mut(), arr);
 	mem::swap(item, &mut dummy[0]);
-	mem::forget(dummy); // How odd this isn't unsafe...
+	mem::forget(dummy);
 }
 
 // pub fn rotate_out<T>(arr: &mut [T], item: &mut T) {
@@ -64,6 +64,9 @@ pub fn rotate_in<T>(item: &mut T, arr: &mut [T]) {
 // 	mem::forget(dummy); // How odd this isn't unsafe...
 // }
 
+/// Inserts the given source slice into the beginning of the given destination slice, moving each element over
+/// by the required amount. The excess elements at the end of the destination slice
+/// are swapped into the source slice, in order.
 pub fn rotate_in_slice<T>(src: &mut [T], dst: &mut [T]) {
 	// for borrow checker
 	let srclen = src.len();

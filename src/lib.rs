@@ -32,14 +32,15 @@ pub mod alloc;
 #[macro_use]
 pub mod bench;
 
+mod counter;
+pub use counter::Counter;
+
 // TODO do we have data macros?
 // TODO: cleaner separation of interfaces
 #[macro_use]
 pub mod data;
 // TODO remove all data, incl. data::Range
 pub use data::Range;
-
-pub mod sync;
 
 pub mod tdfuture;
 

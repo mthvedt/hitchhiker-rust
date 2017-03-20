@@ -87,8 +87,11 @@ impl<T> RcSlice<T> {
 
 impl<T> Deref for RcSlice<T> {
     type Target = [T];
+
     fn deref<'a>(&'a self) -> &'a [T] {
-        unsafe {&*self.data}
+        unsafe {
+            &*self.data
+        }
     }
 }
 

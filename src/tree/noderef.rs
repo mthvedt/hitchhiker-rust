@@ -5,7 +5,8 @@ use std::rc::{Rc, Weak};
 use std::mem;
 use std::ops::{Deref, DerefMut};
 
-use tree::counter::*;
+use counter::Counter;
+
 use tree::memnode::*;
 
 /// A handle to a hot node which can be quickly dereferenced. Note that it's lifetimed--

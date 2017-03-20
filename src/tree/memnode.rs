@@ -6,8 +6,9 @@ use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::ptr;
 
+use counter::Counter;
+
 use tree::bucketref::*;
-use tree::counter::*;
 use tree::noderef::*;
 use tree::util::*;
 

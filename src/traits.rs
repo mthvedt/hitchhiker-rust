@@ -1,12 +1,20 @@
-use std::{self, io};
+use std::io;
+use std::marker::PhantomData;
+use std::ops::{Deref, DerefMut};
 
-use futures::Future;
+use counter::Counter;
 
-use alloc::Scoped;
-use data::Range;
+// Sketch for sync:
+// TODO: rename this to sync
 
+// Proximally, we just need a test interface.
+// We would like it to become the main, sync, simple interface.
+//
+// We need to be able to read, write, and flush.
+//
 // TODO improve this.
 // TODO: hide details
+// TODO: consider location of support traits
 #[derive(Debug)]
 pub enum TreeError {
     EvalError,
@@ -15,83 +23,153 @@ pub enum TreeError {
     RuntimeError(String),
 }
 
-impl TreeError {
-    pub fn new_io<E: Into<Box<std::error::Error + Send + Sync>>>(kind: io::ErrorKind, error: E) -> TreeError {
-        io::Error::new(kind, error).into()
+pub trait MapSpec<'a> {
+    type Entry: Entry<'a, Self>;
+    type Value: ?Sized;
+    type Get: Deref<Target = Self::Value> + 'a;
+}
+
+pub trait Entry<'a, Spec: MapSpec<'a> + ?Sized> {
+    /// Gets a reference to this Entry's value. This is at least as fast as calling read_value
+    /// and discarding the read value, and can be faster depending on implementation.
+    /// Implementations may copy or clone the read value.
+    fn get(&self) -> Spec::Get;
+
+    // TODO: figure out interface
+    /// Reads the value, copies or clones it, and returns it. This is at least as fast
+    /// as calling get and copying the value, and can be faster depending on implementation.
+    fn read(&self) -> Spec::Value where Spec::Value: Sized;
+}
+
+pub trait Cursor<'a, Spec: MapSpec<'a> + ?Sized>: Entry<'a, Spec> + Sized {
+    fn exists(&self) -> bool;
+
+	fn next(self) -> Result<Self, Self>;
+
+    // TODO: do we want backwards cursors?
+}
+
+/// A map where the keys are byte strings.
+pub trait Map<Spec: for<'a> MapSpec<'a> + ?Sized> {
+    // TODO: existence check
+    fn entry<'a, K: AsRef<[u8]>>(&'a self, k: K) -> Result<Option<<Spec as MapSpec<'a>>::Entry>, TreeError>;
+
+    fn get<'a, K: AsRef<[u8]>>(&'a self, k: K) -> Result<Option<<Spec as MapSpec<'a>>::Get>, TreeError> {
+        // Use closures instead of methods for type inference
+        self.entry(k).map(|x| x.map(|y| y.get()))
     }
-}
 
-impl From<io::Error> for TreeError {
-    fn from(e: io::Error) -> Self {
-        TreeError::IoError(e)
+    // TODO: ideally we don't have 'a. Anyway to make it go away?
+    fn read<'a, K>(&'a self, k: K) -> Result<Option<<Spec as MapSpec<'a>>::Value>, TreeError> where
+    K: AsRef<[u8]>,
+    <Spec as MapSpec<'a>>::Value: Sized,
+    {
+        // Use closures instead of methods for type inference
+        self.entry(k).map(|x| x.map(|y| y.read()))
     }
+
+	/// Debug method to check this data structures's invariants.
+    /// Only available with the testlib feature.
+	// TODO: feature-gate.
+	fn check_invariants(&self);
 }
 
-/// N.B.: We would ideally like T to be an associated type, not a generic type.
-/// However, this makes Rust's constraint checker go nuts once we get subtraits (KvSource, KvSink).
-/// In particular, it starts demanding manual constraints for T everywhere, even though
-/// those constraints should be inferable.
-
-// TODO: we might want to make keys generic
-// TODO: do we want subtree/subrange to be part of source?
-// TODO: do we want to expose Scoped? why not Borrow?
-// TODO: T should be associated type
-// TODO: can we make KvSource a Scoped source?
-// TODO: can we make subtrees/subranges borrowed? like: subtree(&'b mut self) -> Self<'b>?
-pub trait Source<T: ?Sized + 'static> {
-	type Get: Scoped<T> + 'static;
-    type GetF: Future<Item = Option<Self::Get>, Error = TreeError> + 'static;
-
-    // TODO: should we pass in context? why or why not?
-    /// Get a value from this KvSource.
-    fn get<K: Scoped<[u8]>>(&mut self, k: K) -> Self::GetF;
-
-    // TODO: StreamResult?
-    // type GetMany: Stream<Item = Self::GetValue, Error = io::Error>;
-    // fn get_many<K: Scoped<[u8]>, I: IntoIterator<Item = K>>(&mut self, i: I) -> Self::GetMany;
-
-    // type GetRange: Stream<Item = Self::GetValue, Error = io::Error>;
-    // fn get_range<K: Scoped<[u8]>>(&mut self, range: Range) -> Self::GetRange;
-
-    /// Note: we have this return Self. Ideally, we would like to retain the ability
-    /// to return different types of subtrees; however, this makes Rust's constraint checker
-    /// interact poorly with subtraits (like Sink, KvSource, KvSink...) See trait-level docs.
-    fn subtree<K: Scoped<[u8]>>(&mut self, k: K) -> Self;
-
-    /// Note: we have this return Self. Ideally, we would like to retain the ability
-    /// to return different types of subrange trees; however, this makes Rust's constraint checker
-    /// interact poorly with subtraits (like Sink, KvSource, KvSink...) See trait-level docs.
-    fn subrange(&mut self, range: Range) -> Self;
+pub trait TreeSpec<'a>: MapSpec<'a> {
+    type Cursor: Cursor<'a, Self>;
+    type SuffixSpec: for<'b> TreeSpec<'b>;
+    type SuffixImpl: Tree<Self::SuffixSpec>;
+    type SubrangeSpec: for<'b> TreeSpec<'b>;
+    type SubrangeImpl: Tree<Self::SubrangeSpec>;
 }
 
-pub trait Sink<T: ?Sized + 'static>: Source<T> {
-    type PutF: Future<Item = (), Error = TreeError> + 'static;
+/// A tree where the keys are byte strings.
+pub trait Tree<Spec: for<'a> TreeSpec<'a> + ?Sized>: Map<Spec> {
+    fn cursor<'a, K: AsRef<[u8]>>(&'a self, k: K) -> Result<<Spec as TreeSpec<'a>>::Cursor, TreeError>;
 
-    /// The max size of a value in this KVSource
-
-    // TODO: this should be a constant? At the very least, max_value_size should be a property
-    // of a Lens.
-    fn max_value_size(&self) -> u64;
-
-    /// Put a small value in the KvSink. For large values, one should use an insert stream (not implemented).
+    // TODO: must this return self?
+    /// Returns a suffix of this Tree, containing all key-value pairs prefixed by the given bytes.
+    /// The keys in the returned Tree are suffices; the given prefix is ommitted from the keys of the returned Tree.
     ///
-    /// Right now, a strict definition of 'small' is not enforced. A small value is any that can reasonably
-    /// fit in an in-memory slice.
+    /// For example, if your Tree contained the key [1, 2, 3], and you requested the suffix [1],
+    /// its key in the suffix Tree would be [2, 3].
     ///
-    /// Not that we don't have put_many or put_range. This use case should be handled
-    fn put_small<K: Scoped<[u8]>, V: Scoped<T>>(&mut self, k: K, v: V) -> Self::PutF;
+    /// N.B.: A suffix Tree is not the same as the computer-science concept of a Suffix Tree.
+    ///
+    /// This function returns Self. Ideally, we'd like to be able to return an arbitrary type of subtree,
+    /// but this makes Rust's constraint checker behave oddly in some cases, particularly with subtraits.
+    fn suffix<'a, K: AsRef<[u8]>>(&'a self, prefix: K) -> <Spec as TreeSpec<'a>>::SuffixImpl;
+
+    fn subrange<'a, K1: AsRef<[u8]>, K2: AsRef<[u8]>>(&self, start: K1, end: K2) -> <Spec as TreeSpec<'a>>::SubrangeImpl;
 }
 
-// TODO: Sink doesn't need to implement Source
+// TODO: MapMut?
 
-pub trait KvSource: Source<[u8]> {}
-impl<S> KvSource for S where S: Source<[u8]> {}
+pub trait TreeMutSpec<'a>: TreeSpec<'a> {
+    type EntryMut: EntryMut<'a, Self>;
+    type CursorMut: Cursor<'a, Self> + EntryMut<'a, Self>;
+    type GetMut: DerefMut<Target = Self::Value> + 'a;
+    type SuffixSpecMut: for<'b> TreeMutSpec<'b>;
+    type SuffixImplMut: TreeMut<Self::SuffixSpecMut>;
+    type SubrangeSpecMut: for<'b> TreeMutSpec<'b>;
+    type SubrangeImplMut: TreeMut<Self::SubrangeSpecMut>;
+}
 
-pub trait KvSink: Sink<[u8]> + KvSource {}
-impl<S> KvSink for S where S: Sink<[u8]> {}
+// TODO: how to handle readable/writable?
+pub trait EntryMut<'a, Spec: TreeMutSpec<'a> + ?Sized>: Entry<'a, Spec> {
+    /// Gets a reference to this Entry's value. This is at least as fast as calling read_value,
+    /// modifying that value, and calling set_value, and can be faster depending on implementation.
+    /// Implementations may copy or clone the read value.
+    fn get_mut(&mut self) -> Spec::GetMut;
 
-pub trait StringSource: Source<str> {}
-impl<S> StringSource for S where S: Source<str> {}
+    /// Sets this Entry's value. This is at least as fast as calling get_value_mut
+    /// and overwriting the read value, and can be faster depending on implementation.
+    fn set<V: AsRef<Spec::Value>>(&mut self, v: V);
+}
 
-pub trait StringSink: Sink<str> + StringSource {}
-impl<S> StringSink for S where S: Sink<str> {}
+// TODO: MapMut
+/// A handle to a mutable tree with byte keys.
+pub trait TreeMut<Spec: for<'a> TreeMutSpec<'a> + ?Sized>: Tree<Spec> {
+    fn entry_mut<'a, K: AsRef<[u8]>>(&'a mut self, k: K) -> Result<Option<<Spec as TreeMutSpec<'a>>::EntryMut>, TreeError>;
+
+    fn cursor_mut<'a, K: AsRef<[u8]>>(&'a mut self, k: K) -> Result<<Spec as TreeMutSpec<'a>>::CursorMut, TreeError>;
+
+    fn get_mut<'a, K: AsRef<[u8]>>(&'a mut self, k: K) -> Result<Option<<Spec as TreeMutSpec<'a>>::GetMut>, TreeError> {
+        self.entry_mut(k).map(|x| x.map(|mut y| y.get_mut()))
+    }
+
+    fn put<K: AsRef<[u8]>, V: AsRef<<Spec as MapSpec<'static>>::Value>>(&mut self, k: K, v: V) -> Result<(), TreeError>;
+
+    fn suffix_mut<'a, K: AsRef<[u8]>>(&'a self, prefix: K) -> <Spec as TreeMutSpec<'a>>::SuffixImplMut;
+
+    fn subrange_mut<'a, K1: AsRef<[u8]>, K2: AsRef<[u8]>>(&self, start: K1, end: K2) -> <Spec as TreeMutSpec<'a>>::SubrangeImplMut;
+}
+
+// // TODO: make these better. What's the dominant design pattern? What's the expected use case?
+pub trait PersistentTreeSpec<'a>: TreeSpec<'a> {
+    type TransientSpec: for<'b> TransientTreeSpec<'b>;
+    type TransientImpl: TransientTree<Self::TransientSpec>;
+}
+
+pub trait PersistentTree<Spec: for<'a> PersistentTreeSpec<'a> + ?Sized>: Tree<Spec> {
+    fn transient(&self) -> <Spec as PersistentTreeSpec<'static>>::TransientImpl;
+}
+
+pub trait TransientTreeSpec<'a>: TreeMutSpec<'a> {
+    type PersistentSpec: for<'b> PersistentTreeSpec<'b>;
+    type PersistentImpl: PersistentTree<Self::PersistentSpec>;
+}
+
+pub trait TransientTree<Spec: for<'a> TransientTreeSpec<'a> + ?Sized>: TreeMut<Spec> {
+    fn persistent(&self) -> <Spec as TransientTreeSpec<'static>>::PersistentImpl;
+}
+
+pub trait HistoryTreeSpec<'a>: TreeSpec<'a> {
+    type DiffSpec: for<'b> HistoryTreeSpec<'b>;
+    type DiffImpl: HistoryTree<Self::DiffSpec>;
+}
+
+pub trait HistoryTree<Spec: for<'a> HistoryTreeSpec<'a> + ?Sized>: Tree<Spec> {
+    fn counter(&self) -> Counter;
+
+    fn diff<'a>(&self, c: Counter) -> <Spec as HistoryTreeSpec<'static>>::DiffImpl;
+}

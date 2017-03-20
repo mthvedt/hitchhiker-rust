@@ -8,9 +8,6 @@
 
 mod bucketref;
 
-mod counter;
-pub use self::counter::Counter;
-
 mod memnode;
 mod node;
 mod noderef;

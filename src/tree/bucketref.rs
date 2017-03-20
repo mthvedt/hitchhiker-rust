@@ -3,7 +3,7 @@ use std::mem;
 
 use data::{RcBytes, WeakBytes, Datum};
 
-use tree::counter::*;
+use counter::Counter;
 
 #[derive(Clone)]
 // TODO RcBytes -> RcBytes

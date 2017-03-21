@@ -84,7 +84,6 @@ impl BucketRef {
 }
 
 #[derive(Clone)]
-// Todo WeakBytes -> WeakBytes
 /// Public for API purposes.
 pub struct WeakBucket {
     k: WeakBytes,

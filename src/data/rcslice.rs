@@ -28,7 +28,7 @@
 //! A thread-local reference-counted slice type.
 //!
 //! This is copy pasted from an unmaintained package made by Huon Wilson.
-//! It shouldn't be published; instead use data::bytes.
+//! It shouldn't be published; instead use rcbytes.
 
 use std;
 

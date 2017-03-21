@@ -5,6 +5,7 @@
 use data::rcslice::{RcSlice, WeakSlice};
 
 use std::borrow::Borrow;
+use std::ops::Deref;
 
 use super::traits::*;
 
@@ -44,6 +45,14 @@ impl RcBytes {
 
 impl Borrow<[u8]> for RcBytes {
     fn borrow(&self) -> &[u8] {
+        self.deref()
+    }
+}
+
+impl Deref for RcBytes {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
         self.data.borrow()
     }
 }

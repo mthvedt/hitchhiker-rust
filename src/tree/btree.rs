@@ -1,4 +1,5 @@
 use std::borrow::Borrow;
+use std::marker::PhantomData;
 
 use counter::Counter;
 
@@ -354,26 +355,29 @@ mod btree_get {
 	}
 }
 
-pub struct BTreeCursor {
+pub struct BTreeCursor<'a> {
 	stack: NodeStack,
 	current_bucket: Option<WeakBucketRef>,
+	_p: PhantomData<&'a u8>,
 }
 
-impl BTreeCursor {
-	fn construct(head: NodeRef, k: &[u8]) -> BTreeCursor {
+impl<'a> BTreeCursor<'a> {
+	fn construct(head: NodeRef, k: &[u8]) -> BTreeCursor<'a> {
 		let (mut stack, _) = NodeStack::construct(head, k);
 		let bucket = stack.ascend_maybe();
 
 		BTreeCursor {
 			stack: stack,
 			current_bucket: bucket,
+			_p :PhantomData,
 		}
 	}
 
-	fn empty() -> BTreeCursor {
+	fn empty() -> BTreeCursor<'a> {
 		BTreeCursor {
 			stack: NodeStack::empty(),
 			current_bucket: None,
+			_p :PhantomData,
 		}
 	}
 }
@@ -388,7 +392,7 @@ impl<'a> DerefSpec<'a> for ByteDerefSpec {
 pub struct PersistentBTreeSpec {}
 
 impl<'a> MapSpec<'a> for PersistentBTreeSpec {
-    type Entry = BTreeCursor;
+    type Entry = BTreeCursor<'a>;
     type Value = [u8];
 
     // TODO: does this work?
@@ -398,9 +402,9 @@ impl<'a> MapSpec<'a> for PersistentBTreeSpec {
 
 // TODO (minor): Implement a 'stackless' Entry that uses less resources than a cursor.
 
-impl<'a> Entry<'a, PersistentBTreeSpec> for BTreeCursor {
+impl<'a> Entry<'a, PersistentBTreeSpec> for BTreeCursor<'a> {
     fn get<'b>(&'b self) -> &'b [u8] {
-        // TODO: shouldnt need unsafe code
+        // TODO: shouldnt need unsafe code, shouldn't need unwrap()
 		let p: *const [u8] = &*self.current_bucket.as_ref().unwrap().value();
         unsafe { &*p }
     }

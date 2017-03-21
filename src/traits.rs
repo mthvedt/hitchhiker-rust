@@ -57,6 +57,7 @@ pub trait Entry<'a, Spec: MapSpec<'a> + ?Sized> {
     // fn read(&self) -> Spec::Value where Spec::Value: Sized;
 }
 
+// TODO: cursors should not be entries, since they can go 'past' the end.
 pub trait Cursor<'a, Spec: MapSpec<'a> + ?Sized>: Entry<'a, Spec> + Sized {
     fn exists(&self) -> bool;
 

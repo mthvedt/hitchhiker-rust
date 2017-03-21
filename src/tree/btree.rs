@@ -418,7 +418,7 @@ impl<'a> Entry<'a, PersistentBTreeSpec> for BTreeCursor<'a> {
     //     Box::from(self.get())
     // }
 }
-//
+
 // impl EntryMut<'static> for BTreeCursor {
 //     type GetMut = RcBytes;
 //
@@ -532,58 +532,18 @@ impl PersistentBTree {
 	}
 }
 
-// /// A map where the keys are byte strings.
-// pub trait Map<V>: Sized {
-//     fn get<K: AsRef<[u8]>>(&self, k: K) -> Result<V, TreeError>;
-//
-// 	/// Debug method to check this data structures's invariants.
-//     /// Only available with the testlib feature.
-// 	// TODO: isolate.
-// 	fn check_invariants(&self);
-// }
-//
-// /// A handle to an immutable tree with byte keys.
-// pub trait Tree<V>: Map<V> + Sized {
-//     // TODO: entry interface, cursor interface
-//
-//     // TODO: existence check
-//
-//     // TODO: must this return self?
-//     /// This function returns Self. Ideally, we'd like to be able to return an arbitrary type of subtree,
-//     /// but this makes Rust's constraint checker behave oddly in some cases, particularly with subtraits.
-//     fn subtree<'a, K: AsRef<[u8]>>(&'a self, k: K) -> HRef<'a, Self, Self>;
-//
-//     fn subrange<'a, K1: AsRef<[u8]>, K2: AsRef<[u8]>>(&self, start: K1, end: K2) -> HRef<'a, Self, Self>;
-// }
-//
-//
-// /// A handle to a mutable tree with byte keys.
-// pub trait TreeMut<V>: Map<V> + Sized {
-//     // type Snapshot: Tree<V>; TODO
-//
-//     // TODO: entry interface, cursor interface
-//
-//     fn put<K: AsRef<[u8]>, VRef: AsRef<V>>(&mut self, k: K, v: VRef) -> Result<(), TreeError>;
-//
-//     fn subtree<'a, K: AsRef<[u8]>>(&'a mut self, k: K) -> HRefMut<'a, Self, Self>;
-//
-//     fn subrange<'a, K1, K2>(&'a mut self, start: K1, end: K2) -> HRefMut<'a, Self, Self> where K1: AsRef<[u8]>, K2: AsRef<[u8]>;
-// }
-//
-//
-// impl Map<RcBytes> for PersistentBTree {
-// 	type GetDatum = RcBytes;
-// 	type Get = RcBytes;
-//
-// 	fn get<K: Key + ?Sized>(&mut self, k: &K) -> Option<Self::Get> {
-// 		self.head.as_ref().and_then(|strongref| btree_get::get(strongref.noderef(), k.bytes()))
-// 	}
-//
-// 	fn check_invariants(&self) {
-// 		self.head.as_ref().map(|strongref| strongref.check_invariants());
-// 	}
-// }
-//
+impl Map<PersistentBTreeSpec> for PersistentBTree {
+    // TODO: existence check
+    fn entry<'a, K: AsRef<[u8]>>(&'a self, k: K) -> Result<Option<BTreeCursor<'a>>, TreeError> {
+        Ok(Some(self.cursor(k.as_ref())))
+    }
+    
+	// TODO: feature-gate.
+	fn check_invariants(&self) {
+      self.head.as_ref().map(|strongref| strongref.check_invariants());
+    }
+}
+
 // impl MutableByteMap for PersistentBTree {
 // 	fn insert<K: Key + ?Sized, V: Datum>(&mut self, k: &K, v: &V) -> () {
 // 		let newhead;

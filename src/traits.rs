@@ -61,7 +61,7 @@ pub trait Entry<'a, Spec: MapSpec<'a> + ?Sized> {
 pub trait Cursor<'a, Spec: MapSpec<'a> + ?Sized>: Entry<'a, Spec> + Sized {
     fn exists(&self) -> bool;
 
-	fn next(self) -> Result<Self, Self>;
+	fn next(&mut self) -> bool;
 }
 
 /// A map where the keys are byte strings.
@@ -69,6 +69,7 @@ pub trait Map<Spec: for<'x> MapSpec<'x> + ?Sized> {
     // TODO: existence check
     fn entry<'a, K: AsRef<[u8]>>(&'a self, k: K) -> Result<Option<<Spec as MapSpec<'a>>::Entry>, TreeError>;
 
+    // TODO: maybe return Result? should we eagerly load the value?
     fn get<'a, K: AsRef<[u8]>>(&'a self, k: K) -> Result<Option<<<Spec as MapSpec<'a>>::GetSpec as DerefSpec<'a>>::Deref>, TreeError> {
         // Use closures instead of methods for type inference
         self.entry(k).map(|x| x.map(|y| y.unwrap()))
@@ -92,13 +93,13 @@ pub trait Map<Spec: for<'x> MapSpec<'x> + ?Sized> {
 pub trait TreeSpec<'a>: MapSpec<'a> {
     type Cursor: Cursor<'a, Self>;
     type SuffixSpec: for<'x> TreeSpec<'x>;
-    type SuffixImpl: Tree<'a, Self::SuffixSpec>;
+    type SuffixImpl: Subtree<'a, Self::SuffixSpec>;
     type SubrangeSpec: for<'x> TreeSpec<'x>;
-    type SubrangeImpl: Tree<'a, Self::SubrangeSpec>;
+    type SubrangeImpl: Subtree<'a, Self::SubrangeSpec>;
 }
 
 /// A tree where the keys are byte strings.
-pub trait Tree<'a, Spec: for<'x> TreeSpec<'x> + ?Sized>: Map<Spec> {
+pub trait Tree<Spec: for<'x> TreeSpec<'x> + ?Sized>: Map<Spec> {
     fn cursor<'b, K: AsRef<[u8]>>(&'b self, k: K) -> Result<<Spec as TreeSpec<'b>>::Cursor, TreeError>;
 
     // TODO: must this return self?
@@ -117,6 +118,8 @@ pub trait Tree<'a, Spec: for<'x> TreeSpec<'x> + ?Sized>: Map<Spec> {
     fn subrange<'b, K1: AsRef<[u8]>, K2: AsRef<[u8]>>(&self, start: K1, end: K2) -> <Spec as TreeSpec<'b>>::SubrangeImpl;
 }
 
+pub trait Subtree<'a, Spec: for<'x> TreeSpec<'x> + ?Sized>: Tree<Spec> {}
+
 // TODO: MapMut?
 
 pub trait DerefMutSpec<'a> {
@@ -129,9 +132,9 @@ pub trait TreeMutSpec<'a>: TreeSpec<'a> {
     type CursorMut: Cursor<'a, Self> + EntryMut<'a, Self>;
     type GetMut: DerefMut<Target = Self::Value>;
     type SuffixMutSpec: for<'x> TreeMutSpec<'x>;
-    type SuffixMutImpl: TreeMut<'a, Self::SuffixMutSpec>;
+    type SuffixMutImpl: TreeMut<Self::SuffixMutSpec> + Subtree<'a, Self::SuffixMutSpec>;
     type SubrangeMutSpec: for<'x> TreeMutSpec<'x>;
-    type SubrangeMutImpl: TreeMut<'a, Self::SubrangeMutSpec>;
+    type SubrangeMutImpl: TreeMut<Self::SubrangeMutSpec> + Subtree<'a, Self::SubrangeMutSpec>;
 }
 
 // TODO: how to handle readable/writable?
@@ -139,16 +142,20 @@ pub trait EntryMut<'a, Spec: TreeMutSpec<'a> + ?Sized>: Entry<'a, Spec> {
     /// Gets a reference to this Entry's value. This is at least as fast as calling read_value,
     /// modifying that value, and calling set_value, and can be faster depending on implementation.
     /// Implementations may copy or clone the read value.
+
+    // TODO: maybe return Result?
     fn get_mut(&mut self) -> Spec::GetMut;
 
     /// Sets this Entry's value. This is at least as fast as calling get_value_mut
     /// and overwriting the read value, and can be faster depending on implementation.
     fn set<V: AsRef<Spec::Value>>(&mut self, v: V);
+
+    fn delete(self) -> Result<(), TreeError>;
 }
 
 // TODO: MapMut
 /// A handle to a mutable tree with byte keys.
-pub trait TreeMut<'a, Spec: for<'x> TreeMutSpec<'x> + ?Sized>: Tree<'a, Spec> {
+pub trait TreeMut<Spec: for<'x> TreeMutSpec<'x> + ?Sized>: Tree<Spec> {
     fn entry_mut<'b, K: AsRef<[u8]>>(&'b mut self, k: K) -> Result<Option<<Spec as TreeMutSpec<'b>>::EntryMut>, TreeError>;
 
     fn cursor_mut<'b, K: AsRef<[u8]>>(&'b mut self, k: K) -> Result<<Spec as TreeMutSpec<'b>>::CursorMut, TreeError>;
@@ -159,18 +166,23 @@ pub trait TreeMut<'a, Spec: for<'x> TreeMutSpec<'x> + ?Sized>: Tree<'a, Spec> {
 
     fn put<K: AsRef<[u8]>, V: AsRef<<Spec as MapSpec<'static>>::Value>>(&mut self, k: K, v: V) -> Result<(), TreeError>;
 
+    fn delete<K: AsRef<[u8]>>(&mut self, k: K) -> Result<(), TreeError> {
+        self.entry_mut(k).and_then(|x| x.map_or(Ok(()), EntryMut::delete))
+    }
+
     fn suffix_mut<'b, K: AsRef<[u8]>>(&'b self, prefix: K) -> <Spec as TreeMutSpec<'b>>::SuffixMutImpl;
 
     fn subrange_mut<'b, K1: AsRef<[u8]>, K2: AsRef<[u8]>>(&'b self, start: K1, end: K2) -> <Spec as TreeMutSpec<'b>>::SubrangeMutImpl;
 }
 
 // // TODO: make these better. What's the dominant design pattern? What's the expected use case?
+// TODO: can we eliminate a lifetime?
 pub trait PersistentTreeSpec<'a, 'p>: TreeSpec<'a> {
     type TransientSpec: for<'x> TransientTreeSpec<'x, 'p>;
     type TransientImpl: TransientTree<'a, 'p, Self::TransientSpec>;
 }
 
-pub trait PersistentTree<'a, Spec: for<'x> PersistentTreeSpec<'x, 'a> + ?Sized>: Tree<'a, Spec> {
+pub trait PersistentTree<'a, Spec: for<'x> PersistentTreeSpec<'x, 'a> + ?Sized>: Tree<Spec> {
     fn transient<'b>(&'b self) -> <Spec as PersistentTreeSpec<'b, 'a>>::TransientImpl;
 }
 
@@ -179,7 +191,7 @@ pub trait TransientTreeSpec<'a, 'p>: TreeMutSpec<'a> {
     type PersistentImpl: PersistentTree<'p, Self::PersistentSpec>;
 }
 
-pub trait TransientTree<'a, 'p, Spec: for<'x> TransientTreeSpec<'x, 'p> + ?Sized>: TreeMut<'a, Spec> {
+pub trait TransientTree<'a, 'p, Spec: for<'x> TransientTreeSpec<'x, 'p> + ?Sized>: TreeMut<Spec> {
     fn persistent(&self) -> <Spec as TransientTreeSpec<'a, 'p>>::PersistentImpl;
 }
 
@@ -188,7 +200,7 @@ pub trait HistoryTreeSpec<'a>: TreeSpec<'a> {
     type DiffImpl: HistoryTree<'a, Self::DiffSpec>;
 }
 
-pub trait HistoryTree<'a, Spec: for<'x> HistoryTreeSpec<'x> + ?Sized>: Tree<'a, Spec> {
+pub trait HistoryTree<'a, Spec: for<'x> HistoryTreeSpec<'x> + ?Sized>: Tree<Spec> {
     fn counter(&self) -> Counter;
 
     fn diff(&self, c: Counter) -> <Spec as HistoryTreeSpec<'a>>::DiffImpl;

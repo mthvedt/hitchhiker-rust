@@ -282,7 +282,7 @@ mod btree_insert {
 	}
 
 	// TODO: flushed should probably return a FatNodeRef as its 2nd node return value.
-	pub fn insert<D: Datum>(top: &mut NodeRef, k: &[u8], v: &D) -> FatNodeRef {
+	pub fn insert(top: &mut NodeRef, k: &[u8], v: &[u8]) -> FatNodeRef {
 		// TODO use an array stack. Minimize allocs
 		// Depth is 0-indexed
 		let (mut stack, exists) = NodeStack::construct(top.clone(), k);
@@ -293,7 +293,7 @@ mod btree_insert {
 		// Prepare to insert
 		let (node, idx) = stack.pop().unwrap();
 		let (mut nhot, _) = node.heat();
-		let insert_result = nhot.apply_mut(|hn| hn.insert_at(idx, BucketRef::new_transient(k, v), None));
+		let insert_result = nhot.apply_mut(|hn| hn.insert_at(idx, BucketRef::transient_from_bytes(k, v), None));
 
 		insert_helper(top, nhot, insert_result, &mut stack)
 	}
@@ -419,6 +419,17 @@ impl<'a> Entry<'a, PersistentBTreeSpec> for BTreeCursor<'a> {
     // }
 }
 
+impl<'a> Cursor<'a, PersistentBTreeSpec> for BTreeCursor<'a> {
+    fn exists(&self) -> bool {
+		self.current_bucket.is_some()
+	}
+
+	fn next(&mut self) -> bool {
+		self.current_bucket = self.stack.advance();
+		self.exists()
+	}
+}
+
 // impl EntryMut<'static> for BTreeCursor {
 //     type GetMut = RcBytes;
 //
@@ -429,42 +440,6 @@ impl<'a> Entry<'a, PersistentBTreeSpec> for BTreeCursor<'a> {
 //     fn set<V: AsRef<Box<[u8]>>>(&mut self, v: V) {
 //         self.get_mut().set_value(v.clone())
 //     }
-// }
-//
-// impl Cursor<'static> for BTreeCursor {
-//     fn exists(&self) -> bool {
-//         self.current_bucket.is_some()
-//     }
-//
-//     fn next(&mut self) -> bool {
-//         // TODO: don't be unsafe
-//         self.current_bucket = self.stack.advance();
-//
-//         self.exists()
-//     }
-// }
-
-// impl Cursor for BTreeCursor {
-// 	// TODO: these should be data streams.
-// 	/// The type of a data stream.
-// 	type GetDatum = RcBytes;
-//
-// 	/// The type returned by the get method.
-// 	type Get = RcBytes;
-//
-// 	fn key(&self) -> Option<RcBytes> {
-// 		self.current_bucket.as_ref().map(WeakBucketRef::key)
-// 	}
-//
-// 	fn value(&self) -> Option<Self::Get> {
-// 		self.current_bucket.as_ref().map(WeakBucketRef::value)
-// 	}
-//
-// 	fn advance(&mut self) -> bool {
-// 		self.current_bucket = self.stack.advance();
-//
-// 		self.current_bucket.is_some()
-// 	}
 // }
 
 // A simple in-memory persistent b-tree.
@@ -537,42 +512,99 @@ impl Map<PersistentBTreeSpec> for PersistentBTree {
     fn entry<'a, K: AsRef<[u8]>>(&'a self, k: K) -> Result<Option<BTreeCursor<'a>>, TreeError> {
         Ok(Some(self.cursor(k.as_ref())))
     }
-    
+
 	// TODO: feature-gate.
 	fn check_invariants(&self) {
       self.head.as_ref().map(|strongref| strongref.check_invariants());
     }
 }
 
-// impl MutableByteMap for PersistentBTree {
-// 	fn insert<K: Key + ?Sized, V: Datum>(&mut self, k: &K, v: &V) -> () {
-// 		let newhead;
-//
-// 		match self.head.as_ref() {
-// 			Some(strongref) => {
-// 				newhead = btree_insert::insert(&mut strongref.noderef(), k.bytes(), v);
-// 			}
-// 			None => {
-// 				newhead = FatNodeRef::new_transient(MemNode::new_from_one(BucketRef::new_transient(k.bytes(), v)))
-// 			}
-// 		}
-//
-// 		self.head = Some(newhead);
-// 	}
-//
-// 	// fn delete<K: Key + ?Sized>(&mut self, k: &K) -> bool {
-// 	// 	let mut dummy = NodePtr::empty();
-// 	// 	mem::swap(&mut dummy, &mut self.head);
-// 	// 	let (newhead, r) = dummy.delete_for_root(k.bytes());
-// 	// 	self.head = newhead;
-// 	// 	r
-// 	// }
-//
-// 	fn delete<K: Key + ?Sized>(&mut self, k: &K) -> bool {
-// 		panic!("not implemented")
-// 	}
-// }
-//
+impl<'a> TreeSpec<'a> for PersistentBTreeSpec {
+    type Cursor = BTreeCursor<'a>;
+    type SuffixSpec = PersistentBTreeSpec;
+    type SuffixImpl = PersistentBTree;
+    type SubrangeSpec = PersistentBTreeSpec;
+    type SubrangeImpl = PersistentBTree;
+}
+
+impl Tree<PersistentBTreeSpec> for PersistentBTree {
+    fn cursor<'b, K: AsRef<[u8]>>(&'b self, k: K) -> Result<BTreeCursor, TreeError> {
+        // TODO: rename internal cursor method
+        Ok(self.cursor(k.as_ref()))
+	}
+
+    fn suffix<'b, K: AsRef<[u8]>>(&'b self, prefix: K) -> PersistentBTree {
+		panic!()
+	}
+
+    fn subrange<'b, K1: AsRef<[u8]>, K2: AsRef<[u8]>>(&self, start: K1, end: K2) -> PersistentBTree {
+		panic!()
+	}
+}
+
+impl<'a> Subtree<'a, PersistentBTreeSpec> for PersistentBTree {} // TODO
+
+impl<'a> TreeMutSpec<'a> for PersistentBTreeSpec {
+    type EntryMut = BTreeCursor<'a>;
+    type CursorMut = BTreeCursor<'a>;
+    type GetMut = &'a mut [u8];
+    type SuffixMutSpec = PersistentBTreeSpec;
+    type SuffixMutImpl = PersistentBTree;
+    type SubrangeMutSpec = PersistentBTreeSpec;
+    type SubrangeMutImpl = PersistentBTree;
+}
+
+// TODO: need a BTreeCursorMut
+
+impl<'a> EntryMut<'a, PersistentBTreeSpec> for BTreeCursor<'a> {
+    fn get_mut(&mut self) -> &'a mut [u8] {
+        panic!()
+    }
+
+    fn set<V: AsRef<[u8]>>(&mut self, v: V) {
+        panic!()
+    }
+
+    fn delete(self) -> Result<(), TreeError> {
+        panic!()
+    }
+}
+
+impl TreeMut<PersistentBTreeSpec> for PersistentBTree {
+    fn entry_mut<'b, K: AsRef<[u8]>>(&'b mut self, k: K) -> Result<Option<BTreeCursor>, TreeError> {
+        self.entry(k.as_ref())
+    }
+
+    fn cursor_mut<'b, K: AsRef<[u8]>>(&'b mut self, k: K) -> Result<BTreeCursor, TreeError> {
+        Tree::cursor(self, k.as_ref())
+    }
+
+    fn put<K: AsRef<[u8]>, V: AsRef<[u8]>>(&mut self, k: K, v: V) -> Result<(), TreeError> {
+		let newhead;
+
+		match self.head.as_ref() {
+			Some(strongref) => {
+				newhead = btree_insert::insert(&mut strongref.noderef(), k.as_ref(), v.as_ref());
+			}
+			None => {
+				newhead = FatNodeRef::new_transient(MemNode::new_from_one(BucketRef::transient_from_bytes(k.as_ref(), v.as_ref())))
+			}
+		}
+
+		self.head = Some(newhead);
+
+        Ok(())
+    }
+
+    fn suffix_mut<'b, K: AsRef<[u8]>>(&'b self, prefix: K) -> Self {
+        panic!()
+    }
+
+    fn subrange_mut<'b, K1: AsRef<[u8]>, K2: AsRef<[u8]>>(&'b self, start: K1, end: K2) -> Self {
+        panic!()
+    }
+}
+
 // pub struct PersistentDiff {
 // 	v: PersistentBTree,
 // 	rear_counter: Counter,

@@ -31,8 +31,16 @@ pub enum BucketRef {
 impl BucketRef {
     pub fn new_transient<V: Datum>(k: &[u8], v: &V) -> BucketRef {
         BucketRef::Transient(Bucket {
-            k: RcBytes::from_key(k),
+            k: RcBytes::new(k),
             v: RcBytes::from_value(v),
+        })
+    }
+
+    // TODO: get rid of Datum, make this transient
+    pub fn transient_from_bytes(k: &[u8], v: &[u8]) -> BucketRef {
+        BucketRef::Transient(Bucket {
+            k: RcBytes::new(k),
+            v: RcBytes::new(v),
         })
     }
 

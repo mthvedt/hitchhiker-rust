@@ -26,6 +26,7 @@ impl RcBytes {
         }
     }
 
+    // TODO these are redundant
     pub fn from_key<K: Key + ?Sized>(k: &K) -> RcBytes {
         Self::new(k.bytes())
     }
